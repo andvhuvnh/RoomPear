@@ -1,0 +1,22 @@
+{
+  "name": "roompear",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A platform for finding roommates and housing",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "cd apps/mobile && npm start",
+    "dev:web": "cd apps/web && npm run dev",
+    "build:mobile": "cd apps/mobile && npm run build",
+    "build:web": "cd apps/web && npm run build"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
+

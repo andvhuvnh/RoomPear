@@ -16,6 +16,11 @@ __pycache__/
 .env.test.local
 .env.production.local
 
+# Supabase
+backend/supabase/.env
+backend/supabase/.env.local
+backend/supabase/.temp/
+
 # IDE
 .vscode/
 .idea/
@@ -27,6 +32,9 @@ __pycache__/
 # Build outputs
 dist/
 build/
+.next/
+.expo/
+.expo-shared/
 *.log
 *.tgz
 *.tar.gz
@@ -36,9 +44,20 @@ coverage/
 .nyc_output/
 *.test.js.snap
 
+# Mobile (Expo)
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+
+# Web (Next.js)
+apps/web/.next/
+apps/web/out/
+
 # Misc
 *.pem
 .cache/
 .temp/
 .tmp/
+.yarn/
+.pnp.*
 

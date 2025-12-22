@@ -43,23 +43,29 @@ A platform for finding roommates and housing. Connect with other users looking f
 
 ## Tech Stack
 
-_To be determined - consider:_
-- Frontend: React/Next.js, React Native (mobile)
-- Backend: Node.js/Express, Python/Django, or similar
-- Database: PostgreSQL, MongoDB
-- Real-time: WebSockets (Socket.io) for chat
-- Authentication: JWT, OAuth
-- Storage: AWS S3 or similar for images
-- Payment: Stripe, PayPal
+- **Backend**: Supabase (PostgreSQL, Auth, Real-time, Storage, Edge Functions)
+- **Mobile**: Expo (React Native)
+- **Web**: Next.js (planned)
+- **Shared**: Monorepo with shared packages for UI and config
+- **Payment**: Stripe (planned)
 
 ## Project Structure
 
 ```
-RoomPear/
-├── frontend/          # Frontend application
-├── backend/           # Backend API
-├── mobile/            # Mobile app (if applicable)
-├── docs/              # Documentation
+roompear/
+├── apps/
+│   ├── mobile/        # Expo (React Native)
+│   └── web/           # Next.js (later)
+├── packages/
+│   ├── ui/            # Shared UI components (future)
+│   └── config/        # Shared config/constants
+├── backend/
+│   └── supabase/      # Migrations, policies, edge functions
+├── docs/
+│   ├── architecture.md
+│   ├── decisions.md
+│   └── PROJECT_PLAN.md
+├── .gitignore
 └── README.md
 ```
 
@@ -70,10 +76,12 @@ _Instructions to be added once tech stack is decided_
 ## Development Roadmap
 
 ### Phase 1: Foundation
-- [ ] Set up project structure
-- [ ] Choose and set up tech stack
-- [ ] Database schema design
-- [ ] Authentication system
+- [x] Set up project structure (monorepo)
+- [x] Choose and set up tech stack (Supabase)
+- [ ] Initialize Supabase project
+- [ ] Database schema design and migrations
+- [ ] Set up Expo mobile app
+- [ ] Authentication system (Supabase Auth)
 
 ### Phase 2: Core Features
 - [ ] User profiles (Feature 6)

@@ -1,0 +1,8 @@
+# Supabase Backend
+
+This directory will contain:
+- Database migrations
+- Row Level Security (RLS) policies
+- Edge Functions
+- Seed data
+
