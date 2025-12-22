@@ -48,6 +48,8 @@ coverage/
 apps/mobile/.expo/
 apps/mobile/dist/
 apps/mobile/web-build/
+apps/mobile/.env
+apps/mobile/.env.local
 
 # Web (Next.js)
 apps/web/.next/
