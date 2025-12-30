@@ -247,7 +247,7 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFDFD', // Pure White
     padding: 20,
     justifyContent: 'center',
   },
@@ -256,28 +256,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 10,
-    color: '#333',
+    color: '#0C5389', // Deep Blue
   },
   subtitle: {
     fontSize: 24,
     textAlign: 'center',
     marginBottom: 40,
-    color: '#666',
+    color: '#189AA2', // Teal / Blue-Green
   },
   form: {
     width: '100%',
   },
   input: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#FDFDFD', // Pure White
     borderRadius: 8,
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#D9E1E6', // Light Cool Gray
+    color: '#0C5389', // Deep Blue
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#46BD7F', // Primary Green
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
@@ -287,38 +288,38 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FDFDFD', // Pure White
     fontSize: 18,
     fontWeight: '600',
   },
   switchText: {
     textAlign: 'center',
     marginTop: 20,
-    color: '#007AFF',
+    color: '#189AA2', // Teal / Blue-Green
     fontSize: 16,
   },
   errorContainer: {
-    backgroundColor: '#FFEBEE',
+    backgroundColor: '#FDFDFD', // Pure White
     borderRadius: 8,
     padding: 12,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#FFCDD2',
+    borderColor: '#0C5389', // Deep Blue
   },
   errorText: {
-    color: '#C62828',
+    color: '#0C5389', // Deep Blue
     fontSize: 14,
   },
   successContainer: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#FDFDFD', // Pure White
     borderRadius: 8,
     padding: 12,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#C8E6C9',
+    borderColor: '#46BD7F', // Primary Green
   },
   successText: {
-    color: '#2E7D32',
+    color: '#46BD7F', // Primary Green
     fontSize: 14,
   },
 });

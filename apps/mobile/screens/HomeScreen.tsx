@@ -83,7 +83,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FDFDFD', // Pure White
     padding: 20,
     justifyContent: 'center',
   },
@@ -92,33 +92,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 40,
-    color: '#333',
+    color: '#0C5389', // Deep Blue
   },
   userInfo: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#D9E1E6', // Light Cool Gray
     borderRadius: 8,
     padding: 20,
     marginBottom: 30,
   },
   label: {
     fontSize: 14,
-    color: '#666',
+    color: '#0C5389', // Deep Blue
     marginTop: 10,
     marginBottom: 5,
   },
   value: {
     fontSize: 18,
-    color: '#333',
+    color: '#0C5389', // Deep Blue
     fontWeight: '500',
   },
   button: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#189AA2', // Teal / Blue-Green
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
   },
   buttonText: {
-    color: '#fff',
+    color: '#FDFDFD', // Pure White
     fontSize: 18,
     fontWeight: '600',
   },
