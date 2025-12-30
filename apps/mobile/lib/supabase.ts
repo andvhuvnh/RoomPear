@@ -10,28 +10,33 @@ const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey || process.
 // The app will show an error message instead
 let supabase: SupabaseClient;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder') || supabaseAnonKey.includes('placeholder')) {
   // Debug logging
   if (__DEV__) {
-    console.warn('⚠️ Supabase Config Missing!');
-    console.log('URL:', supabaseUrl ? '✅' : '❌');
-    console.log('Anon Key:', supabaseAnonKey ? '✅' : '❌');
-    console.log('\nPlease create apps/mobile/.env with:');
-    console.log('EXPO_PUBLIC_SUPABASE_URL=your-project-url');
-    console.log('EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key');
-    console.log('\nGet credentials from: https://app.supabase.com/project/_/settings/api');
-    console.log('Then restart Expo (stop and run npm start again)');
+    console.error('❌ Supabase Config Missing!');
+    console.error('URL:', supabaseUrl || 'NOT SET');
+    console.error('Anon Key:', supabaseAnonKey ? 'SET (but may be invalid)' : 'NOT SET');
+    console.error('\n⚠️  SETUP REQUIRED:');
+    console.error('1. Create apps/mobile/.env file');
+    console.error('2. Add your Supabase credentials:');
+    console.error('   EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co');
+    console.error('   EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key');
+    console.error('\n3. Get credentials from: https://app.supabase.com/project/_/settings/api');
+    console.error('4. Restart Expo (stop and run npm start again)');
   }
   
-  // Create a dummy client to prevent crashes
-  // This will fail on actual API calls, but allows the app to load
-  supabase = createClient('https://placeholder.supabase.co', 'placeholder-key', {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
+  // Create a dummy client that will fail with clear errors
+  supabase = createClient(
+    supabaseUrl || 'https://placeholder.supabase.co', 
+    supabaseAnonKey || 'placeholder-key', 
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    }
+  );
 } else {
   // Debug logging (remove in production)
   if (__DEV__) {
@@ -43,8 +48,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      storage: typeof global !== 'undefined' && typeof global.localStorage !== 'undefined' ? global.localStorage : undefined,
+    },
+    global: {
+      headers: {
+        'x-client-info': 'roompear-mobile',
+      },
     },
   });
+  
+  // Test connection
+  if (__DEV__) {
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.warn('Supabase session check error:', error);
+      } else {
+        console.log('Supabase client initialized successfully');
+      }
+    });
+  }
 }
 
 export { supabase };

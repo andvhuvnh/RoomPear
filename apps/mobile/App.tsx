@@ -1,62 +1,40 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
 import { useEffect, useState } from 'react';
-import Constants from 'expo-constants';
+import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
+import AuthScreen from './screens/AuthScreen';
+import HomeScreen from './screens/HomeScreen';
 
 export default function App() {
-  const [isConnected, setIsConnected] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if Supabase is configured
-    const checkConfig = () => {
-      const url = Constants.expoConfig?.extra?.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const key = Constants.expoConfig?.extra?.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      
-      if (url && key && !url.includes('placeholder')) {
-        setIsConnected(true);
-      } else {
-        setIsConnected(false);
-      }
-    };
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
 
-    checkConfig();
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  if (loading) {
+    return null; // Or a loading screen
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>RoomPear</Text>
-      <Text style={styles.subtitle}>
-        {isConnected ? '✅ Supabase Connected' : '⚠️ Configure Supabase'}
-      </Text>
-      <Text style={styles.hint}>
-        Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env
-      </Text>
+    <>
       <StatusBar style="auto" />
-    </View>
+      {session ? <HomeScreen /> : <AuthScreen />}
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 18,
-    marginBottom: 20,
-  },
-  hint: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-});
