@@ -14,6 +14,10 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { savePreferences, Preferences } from '../lib/preferences';
@@ -227,6 +231,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={age}
               onChangeText={setAge}
               keyboardType="numeric"
+              returnKeyType="next"
+              blurOnSubmit={true}
+              onSubmitEditing={Keyboard.dismiss}
             />
             <Text style={styles.questionLabel}>Gender</Text>
             {['Male', 'Female', 'Non-binary', 'Prefer not to say', 'Other'].map((option) => (
@@ -254,6 +261,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               placeholder="Ethnicity"
               value={ethnicity}
               onChangeText={setEthnicity}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={Keyboard.dismiss}
             />
             <Text style={styles.hint}>
               This helps us create better matches
@@ -272,12 +282,16 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               placeholder="City"
               value={city}
               onChangeText={setCity}
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
               placeholder="State"
               value={state}
               onChangeText={setState}
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
@@ -285,6 +299,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={zipCode}
               onChangeText={setZipCode}
               keyboardType="numeric"
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={Keyboard.dismiss}
             />
           </View>
         );
@@ -301,6 +318,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={minBudget}
               onChangeText={setMinBudget}
               keyboardType="numeric"
+              returnKeyType="next"
+              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
@@ -308,6 +327,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={maxBudget}
               onChangeText={setMaxBudget}
               keyboardType="numeric"
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={Keyboard.dismiss}
             />
           </View>
         );
@@ -351,6 +373,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               placeholder="YYYY-MM-DD (e.g., 2024-03-01)"
               value={moveInDate}
               onChangeText={setMoveInDate}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={Keyboard.dismiss}
             />
             <Text style={styles.hint}>
               You can update this later
@@ -360,7 +385,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
       case 'lifestyle':
         return (
-          <ScrollView style={styles.stepContent}>
+          <View style={styles.stepContent}>
             <Text style={styles.stepDescription}>
               A few questions about your lifestyle
             </Text>
@@ -480,7 +505,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         );
 
       case 'must-haves':
@@ -508,54 +533,71 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         transparent={true}
         onRequestClose={() => {}}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Progress indicator */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
-                  ]}
-                />
-              </View>
-              <Text style={styles.progressText}>
-                Step {getStepNumber()} of {getTotalSteps()}
-              </Text>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={styles.modalContent}>
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                  >
+                    {/* Progress indicator */}
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressBar}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.progressText}>
+                        Step {getStepNumber()} of {getTotalSteps()}
+                      </Text>
+                    </View>
+
+                    {/* Step title */}
+                    <Text style={styles.stepTitle}>{getStepTitle()}</Text>
+
+                    {/* Step content */}
+                    {renderStepContent()}
+
+                    {/* Action buttons */}
+                    <View style={styles.buttonContainer}>
+                      <TouchableOpacity
+                        style={[styles.button, styles.skipButton]}
+                        onPress={handleSkip}
+                        disabled={loading}
+                      >
+                        <Text style={styles.skipButtonText}>Skip</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.button, styles.nextButton]}
+                        onPress={handleNext}
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.nextButtonText}>
+                            {currentStep === 'must-haves' ? 'Complete' : 'Next'}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
-
-            {/* Step title */}
-            <Text style={styles.stepTitle}>{getStepTitle()}</Text>
-
-            {/* Step content */}
-            {renderStepContent()}
-
-            {/* Action buttons */}
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.skipButton]}
-                onPress={handleSkip}
-                disabled={loading}
-              >
-                <Text style={styles.skipButtonText}>Skip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.nextButton]}
-                onPress={handleNext}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.nextButtonText}>
-                    {currentStep === 'must-haves' ? 'Complete' : 'Next'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -578,7 +620,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: '85%',
     shadowColor: '#0C5389', // Deep Blue
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -617,6 +659,9 @@ const styles = StyleSheet.create({
     color: '#0C5389', // Deep Blue
     marginBottom: 20,
     textAlign: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   stepContent: {
     minHeight: 200,
