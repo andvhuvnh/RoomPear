@@ -12,6 +12,23 @@ import { supabase } from '../lib/supabase';
 
 type AuthMode = 'signin' | 'signup';
 
+const COLORS = {
+  blue: '#0C5389',
+  teal: '#189AA2',
+  green: '#46BD7F',
+  white: '#FDFDFD',
+  ink: '#0B1B2B',
+  text: '#2B3A4A',
+  border: '#D9E1E6',
+  placeholder: '#7B8A99',
+  dangerBg: '#FFEBEE',
+  dangerBorder: '#FFCDD2',
+  dangerText: '#C62828',
+  successBg: '#E8F5E9',
+  successBorder: '#C8E6C9',
+  successText: '#2E7D32',
+};
+
 export default function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
@@ -29,33 +46,24 @@ export default function AuthScreen() {
     if (!email || !password) {
       const errorMsg = 'Please fill in all fields';
       setError(errorMsg);
-      console.error('Validation error:', errorMsg);
       Alert.alert('Error', errorMsg);
       return;
     }
 
     setLoading(true);
-    console.log('Attempting sign in with email:', email);
-    
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      console.log('Sign in response:', { data, error });
+      if (error) throw error;
 
-      if (error) {
-        console.error('Sign in error:', error);
-        throw error;
-      }
-
-      console.log('Sign in successful!', data);
       setSuccess('Signed in successfully!');
-      // Success - auth state will update automatically
+      console.log('Sign in successful!', data);
     } catch (error: any) {
       const errorMsg = error.message || 'Failed to sign in';
-      console.error('Sign in catch error:', error);
       setError(errorMsg);
       Alert.alert('Sign In Error', errorMsg);
     } finally {
@@ -67,34 +75,29 @@ export default function AuthScreen() {
     setError(null);
     setSuccess(null);
 
-    // Validate required fields
     if (!email || !password || !name || !phone) {
       const missingFields = [];
       if (!email) missingFields.push('email');
       if (!password) missingFields.push('password');
       if (!name) missingFields.push('name');
       if (!phone) missingFields.push('phone number');
-      
+
       const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
       setError(errorMsg);
-      console.error('Validation error:', errorMsg);
       Alert.alert('Error', errorMsg);
       return;
     }
 
-    // Basic phone validation (digits, spaces, dashes, parentheses)
     const phoneRegex = /^[\d\s\-\(\)]+$/;
     if (!phoneRegex.test(phone) || phone.replace(/\D/g, '').length < 10) {
       const errorMsg = 'Please enter a valid phone number';
       setError(errorMsg);
-      console.error('Validation error:', errorMsg);
       Alert.alert('Error', errorMsg);
       return;
     }
 
     setLoading(true);
-    console.log('Attempting sign up with email:', email);
-    
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -107,24 +110,15 @@ export default function AuthScreen() {
         },
       });
 
-      console.log('Sign up response:', { data, error });
-
-      if (error) {
-        console.error('Sign up error:', error);
-        throw error;
-      }
+      if (error) throw error;
 
       const successMsg = 'Account created! Please check your email to verify your account.';
-      console.log('Sign up successful!', data);
       setSuccess(successMsg);
-      Alert.alert(
-        'Success',
-        successMsg,
-        [{ text: 'OK', onPress: () => setMode('signin') }]
-      );
+
+      Alert.alert('Success', successMsg, [{ text: 'OK', onPress: () => setMode('signin') }]);
+      console.log('Sign up successful!', data);
     } catch (error: any) {
       const errorMsg = error.message || 'Failed to sign up';
-      console.error('Sign up catch error:', error);
       setError(errorMsg);
       Alert.alert('Sign Up Error', errorMsg);
     } finally {
@@ -134,193 +128,245 @@ export default function AuthScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>RoomPear</Text>
-      <Text style={styles.subtitle}>
-        {mode === 'signin' ? 'Sign In' : 'Create Account'}
-      </Text>
+      <View style={styles.blobTop} />
+      <View style={styles.blobBottom} />
 
-      <View style={styles.form}>
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-        
-        {success && (
-          <View style={styles.successContainer}>
-            <Text style={styles.successText}>{success}</Text>
-          </View>
-        )}
+      <View style={styles.content}>
+        <View style={styles.brandHeader}>
+          <Text style={styles.title}>RoomPear</Text>
+          <Text style={styles.tagline}>Swipe to find your next roommate</Text>
+        </View>
 
-        {mode === 'signup' && (
-          <>
-            <TextInput
-              style={styles.input}
-              placeholder="Name *"
-              value={name}
-              onChangeText={(text) => {
-                setName(text);
-                setError(null);
-                setSuccess(null);
-              }}
-              autoCapitalize="words"
-              editable={!loading}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Phone Number *"
-              value={phone}
-              onChangeText={(text) => {
-                setPhone(text);
-                setError(null);
-                setSuccess(null);
-              }}
-              keyboardType="phone-pad"
-              editable={!loading}
-            />
-          </>
-        )}
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={(text) => {
-            setEmail(text);
-            setError(null);
-            setSuccess(null);
-          }}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          editable={!loading}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            setError(null);
-            setSuccess(null);
-          }}
-          secureTextEntry
-          editable={!loading}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={mode === 'signin' ? handleSignIn : handleSignUp}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>
-              {mode === 'signin' ? 'Sign In' : 'Sign Up'}
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => {
-            setMode(mode === 'signin' ? 'signup' : 'signin');
-            setEmail('');
-            setPassword('');
-            setName('');
-            setPhone('');
-          }}
-          disabled={loading}
-        >
-          <Text style={styles.switchText}>
-            {mode === 'signin'
-              ? "Don't have an account? Sign Up"
-              : 'Already have an account? Sign In'}
+        <View style={styles.card}>
+          <Text style={styles.subtitle}>
+            {mode === 'signin' ? 'Welcome back' : 'Create your account'}
           </Text>
-        </TouchableOpacity>
+
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {success && (
+            <View style={styles.successContainer}>
+              <Text style={styles.successText}>{success}</Text>
+            </View>
+          )}
+
+          <View style={styles.form}>
+            {mode === 'signup' && (
+              <>
+                <Text style={styles.label}>Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your name"
+                  placeholderTextColor={COLORS.placeholder}
+                  value={name}
+                  onChangeText={(text) => {
+                    setName(text);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  autoCapitalize="words"
+                  editable={!loading}
+                />
+
+                <Text style={styles.label}>Phone</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="(555) 123-4567"
+                  placeholderTextColor={COLORS.placeholder}
+                  value={phone}
+                  onChangeText={(text) => {
+                    setPhone(text);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  keyboardType="phone-pad"
+                  editable={!loading}
+                />
+              </>
+            )}
+
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@example.com"
+              placeholderTextColor={COLORS.placeholder}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setError(null);
+                setSuccess(null);
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              editable={!loading}
+            />
+
+            <Text style={styles.label}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="••••••••"
+              placeholderTextColor={COLORS.placeholder}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                setError(null);
+                setSuccess(null);
+              }}
+              secureTextEntry
+              editable={!loading}
+            />
+
+            <TouchableOpacity
+              style={[styles.primaryButton, loading && styles.buttonDisabled]}
+              onPress={mode === 'signin' ? handleSignIn : handleSignUp}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {mode === 'signin' ? 'Continue' : 'Create account'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setMode(mode === 'signin' ? 'signup' : 'signin');
+                setEmail('');
+                setPassword('');
+                setName('');
+                setPhone('');
+                setError(null);
+                setSuccess(null);
+              }}
+              disabled={loading}
+              style={styles.switchWrap}
+            >
+              <Text style={styles.switchText}>
+                {mode === 'signin'
+                  ? "Don't have an account? Sign Up"
+                  : 'Already have an account? Sign In'}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.disclaimer}>
+              By continuing, you agree to RoomPear’s Terms and Privacy Policy.
+            </Text>
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FDFDFD', // Pure White
-    padding: 20,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#0C5389', // Deep Blue
-  },
-  subtitle: {
-    fontSize: 24,
-    textAlign: 'center',
-    marginBottom: 40,
-    color: '#189AA2', // Teal / Blue-Green
-  },
-  form: {
-    width: '100%',
-  },
-  input: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#D9E1E6', // Light Cool Gray
-    color: '#0C5389', // Deep Blue
-  },
-  button: {
-    backgroundColor: '#46BD7F', // Primary Green
-    borderRadius: 8,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#FDFDFD', // Pure White
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  switchText: {
-    textAlign: 'center',
-    marginTop: 20,
-    color: '#189AA2', // Teal / Blue-Green
-    fontSize: 16,
-  },
-  errorContainer: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#0C5389', // Deep Blue
-  },
-  errorText: {
-    color: '#0C5389', // Deep Blue
-    fontSize: 14,
-  },
-  successContainer: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#46BD7F', // Primary Green
-  },
-  successText: {
-    color: '#46BD7F', // Primary Green
-    fontSize: 14,
-  },
-});
+  container: { flex: 1, backgroundColor: COLORS.white },
+  content: { flex: 1, paddingHorizontal: 20, justifyContent: 'center' },
 
+  blobTop: {
+    position: 'absolute',
+    top: -140,
+    right: -120,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: COLORS.teal,
+    opacity: 0.14,
+  },
+  blobBottom: {
+    position: 'absolute',
+    bottom: -170,
+    left: -140,
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    backgroundColor: COLORS.green,
+    opacity: 0.12,
+  },
+
+  brandHeader: { alignItems: 'center', marginBottom: 16 },
+  title: { fontSize: 36, fontWeight: '800', color: COLORS.ink, letterSpacing: 0.2 },
+  tagline: { marginTop: 6, fontSize: 14, color: COLORS.text, opacity: 0.9 },
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+
+  subtitle: {
+    marginTop: 6,
+    marginBottom: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.ink,
+    textAlign: 'center',
+  },
+
+  form: { width: '100%' },
+  label: { fontSize: 12, fontWeight: '700', color: COLORS.text, marginBottom: 6, marginTop: 10 },
+  input: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    color: COLORS.ink,
+  },
+
+  primaryButton: {
+    backgroundColor: COLORS.blue,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+  buttonDisabled: { opacity: 0.65 },
+
+  switchWrap: { marginTop: 14 },
+  switchText: { textAlign: 'center', color: COLORS.blue, fontSize: 15, fontWeight: '700' },
+
+  disclaimer: {
+    marginTop: 12,
+    fontSize: 12,
+    color: COLORS.text,
+    opacity: 0.75,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+
+  errorContainer: {
+    backgroundColor: COLORS.dangerBg,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.dangerBorder,
+  },
+  errorText: { color: COLORS.dangerText, fontSize: 14 },
+
+  successContainer: {
+    backgroundColor: COLORS.successBg,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.successBorder,
+  },
+  successText: { color: COLORS.successText, fontSize: 14 },
+});
