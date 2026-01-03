@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -38,6 +39,14 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleGooglePlaceholder = () => {
+    Alert.alert('Coming soon', 'Google sign-in will be available soon.');
+  };
+
+  const handleApplePlaceholder = () => {
+    Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
+  };
 
   const handleSignIn = async () => {
     setError(null);
@@ -234,6 +243,30 @@ export default function AuthScreen() {
               )}
             </TouchableOpacity>
 
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.oauthButton, loading && styles.buttonDisabled]}
+              onPress={handleGooglePlaceholder}
+              disabled={loading}
+            >
+              <Text style={styles.oauthText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={[styles.appleButton, loading && styles.buttonDisabled]}
+                onPress={handleApplePlaceholder}
+                disabled={loading}
+              >
+                <Text style={styles.appleText}>Continue with Apple</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={() => {
                 setMode(mode === 'signin' ? 'signup' : 'signin');
@@ -337,6 +370,52 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
   buttonDisabled: { opacity: 0.65 },
+
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+    opacity: 0.9,
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    fontSize: 12,
+    color: COLORS.text,
+    opacity: 0.7,
+    fontWeight: '700',
+  },
+
+  oauthButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+  },
+  oauthText: {
+    color: COLORS.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  appleButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 10,
+    backgroundColor: '#000000',
+  },
+  appleText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
 
   switchWrap: { marginTop: 14 },
   switchText: { textAlign: 'center', color: COLORS.blue, fontSize: 15, fontWeight: '700' },

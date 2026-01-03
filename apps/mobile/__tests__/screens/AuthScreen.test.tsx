@@ -13,6 +13,7 @@ jest.mock('../../lib/supabase', () => ({
     auth: {
       signInWithPassword: jest.fn(),
       signUp: jest.fn(),
+      signInWithOAuth: jest.fn(),
     },
   },
 }));
@@ -129,6 +130,25 @@ describe('AuthScreen', () => {
 
     await waitFor(() => {
       expect(getByText('Invalid credentials')).toBeDefined();
+    });
+  });
+
+  it('should initiate Apple OAuth when Apple button pressed on iOS', async () => {
+    (supabase.auth.signInWithOAuth as jest.Mock).mockResolvedValue({
+      data: null,
+      error: null,
+    });
+
+    // Force Platform to iOS so the Apple button is rendered
+    const Platform = require('react-native').Platform;
+    Platform.OS = 'ios';
+
+    const { getByText } = render(<AuthScreen />);
+
+    fireEvent.press(getByText('Continue with Apple'));
+
+    await waitFor(() => {
+      expect(supabase.auth.signInWithOAuth).toHaveBeenCalledWith({ provider: 'apple' });
     });
   });
 });
