@@ -48,6 +48,10 @@ export default function AuthScreen() {
     Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
   };
 
+  const handleFacebookPlaceholder = () => {
+  Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
+  };
+
   const handleSignIn = async () => {
     setError(null);
     setSuccess(null);
@@ -249,6 +253,7 @@ export default function AuthScreen() {
               <View style={styles.dividerLine} />
             </View>
 
+            {/* GOOGLE */}
             <TouchableOpacity
               style={[styles.oauthButton, loading && styles.buttonDisabled]}
               onPress={handleGooglePlaceholder}
@@ -257,6 +262,7 @@ export default function AuthScreen() {
               <Text style={styles.oauthText}>Continue with Google</Text>
             </TouchableOpacity>
 
+            {/* APPLE */}
             {Platform.OS === 'ios' && (
               <TouchableOpacity
                 style={[styles.appleButton, loading && styles.buttonDisabled]}
@@ -266,6 +272,16 @@ export default function AuthScreen() {
                 <Text style={styles.appleText}>Continue with Apple</Text>
               </TouchableOpacity>
             )}
+
+            {/* FACEBOOK */}
+            <TouchableOpacity
+              style={[styles.oauthButton, loading && styles.buttonDisabled]}
+              onPress={handleFacebookPlaceholder}
+              disabled={loading}
+            >
+              <Text style={styles.oauthText}>Continue with Facebook</Text>
+            </TouchableOpacity>
+
 
             <TouchableOpacity
               onPress={() => {
@@ -398,6 +414,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: '#FFFFFF',
+    marginTop: 10,
   },
   oauthText: {
     color: COLORS.ink,
