@@ -12,7 +12,7 @@ export interface Preferences {
   zip_code?: string;
   min_budget?: number;
   max_budget?: number;
-  room_type?: 'private' | 'shared' | 'flexible';
+  room_type?: 'private' | 'shared' | 'either Private or Shared';
   move_in_date?: string;
   lease_duration_months?: number;
   pets_allowed?: boolean;

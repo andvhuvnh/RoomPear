@@ -14,11 +14,9 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Keyboard,
-  TouchableWithoutFeedback,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 import { savePreferences, Preferences } from '../lib/preferences';
 
@@ -52,8 +50,10 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
   const [zipCode, setZipCode] = useState('');
   const [minBudget, setMinBudget] = useState('');
   const [maxBudget, setMaxBudget] = useState('');
-  const [roomType, setRoomType] = useState<'private' | 'shared' | 'flexible' | ''>('');
-  const [moveInDate, setMoveInDate] = useState('');
+  const [budgetError, setBudgetError] = useState('');
+  const [roomType, setRoomType] = useState<'private' | 'shared' | 'either Private or Shared' | ''>('');
+  const [moveInDate, setMoveInDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [petsAllowed, setPetsAllowed] = useState<boolean | null>(null);
   const [smokingAllowed, setSmokingAllowed] = useState<boolean | null>(null);
   const [cleanlinessLevel, setCleanlinessLevel] = useState<number | null>(null);
@@ -70,10 +70,55 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     });
   }, []);
 
+  const ensureProfileExists = async () => {
+    if (!userId) return false;
+
+    try {
+      // Check if profile exists
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .single();
+
+      // If profile doesn't exist, create it
+      if (!existingProfile) {
+        // Get user email from auth
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: userId,
+            email: user.email || '',
+            name: user.user_metadata?.name || user.email || 'User',
+            phone: user.user_metadata?.phone || '000-000-0000',
+          });
+
+        if (insertError) {
+          console.error('Error creating profile:', insertError);
+          return false;
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('Error ensuring profile exists:', error);
+      return false;
+    }
+  };
+
   const saveProfileInfo = async () => {
     if (!userId) return;
 
     try {
+      // Ensure profile exists first
+      const profileExists = await ensureProfileExists();
+      if (!profileExists) {
+        console.error('Failed to ensure profile exists');
+        return;
+      }
+
       const updates: any = {};
       if (age) updates.age = parseInt(age);
       if (gender) updates.gender = gender;
@@ -108,9 +153,15 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
           state: state.trim() || undefined,
           zip_code: zipCode.trim() || undefined,
         });
+        setBudgetError(''); // Clear any previous budget error
         setCurrentStep('budget');
         break;
       case 'budget':
+        // Validate budget before proceeding
+        if (minBudget && maxBudget && parseFloat(minBudget) > parseFloat(maxBudget)) {
+          Alert.alert('Invalid Budget', 'Min budget cannot be higher than max budget');
+          return;
+        }
         setPreferences({
           ...preferences,
           min_budget: minBudget ? parseFloat(minBudget) : undefined,
@@ -128,7 +179,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
       case 'move-in-date':
         setPreferences({
           ...preferences,
-          move_in_date: moveInDate || undefined,
+          move_in_date: moveInDate ? moveInDate.toISOString().split('T')[0] : undefined,
         });
         setCurrentStep('lifestyle');
         break;
@@ -145,6 +196,36 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
       case 'must-haves':
         // Skip must-haves for now (can add later)
         handleComplete();
+        break;
+    }
+  };
+
+  const handlePrevious = () => {
+    // Clear budget error when leaving budget step
+    if (currentStep === 'budget') {
+      setBudgetError('');
+    }
+    // Navigate to previous step
+    switch (currentStep) {
+      case 'location':
+        setCurrentStep('about-you');
+        break;
+      case 'budget':
+        setCurrentStep('location');
+        break;
+      case 'room-type':
+        setCurrentStep('budget');
+        break;
+      case 'move-in-date':
+        setCurrentStep('room-type');
+        break;
+      case 'lifestyle':
+        setCurrentStep('move-in-date');
+        break;
+      case 'must-haves':
+        setCurrentStep('lifestyle');
+        break;
+      default:
         break;
     }
   };
@@ -176,6 +257,14 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
     setLoading(true);
     try {
+      // Ensure profile exists before saving preferences
+      const profileExists = await ensureProfileExists();
+      if (!profileExists) {
+        Alert.alert('Error', 'Failed to create user profile. Please try again.');
+        setLoading(false);
+        return;
+      }
+
       const result = await savePreferences(userId, preferences);
       if (result.success) {
         onComplete();
@@ -221,7 +310,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     switch (currentStep) {
       case 'about-you':
         return (
-          <View style={styles.stepContent}>
+          <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
             <Text style={styles.stepDescription}>
               Help us get to know you better
             </Text>
@@ -231,9 +320,6 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={age}
               onChangeText={setAge}
               keyboardType="numeric"
-              returnKeyType="next"
-              blurOnSubmit={true}
-              onSubmitEditing={Keyboard.dismiss}
             />
             <Text style={styles.questionLabel}>Gender</Text>
             {['Male', 'Female', 'Non-binary', 'Prefer not to say', 'Other'].map((option) => (
@@ -261,14 +347,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               placeholder="Ethnicity"
               value={ethnicity}
               onChangeText={setEthnicity}
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onSubmitEditing={Keyboard.dismiss}
             />
             <Text style={styles.hint}>
               This helps us create better matches
             </Text>
-          </View>
+          </ScrollView>
         );
 
       case 'location':
@@ -282,16 +365,12 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               placeholder="City"
               value={city}
               onChangeText={setCity}
-              returnKeyType="next"
-              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
               placeholder="State"
               value={state}
               onChangeText={setState}
-              returnKeyType="next"
-              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
@@ -299,9 +378,6 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               value={zipCode}
               onChangeText={setZipCode}
               keyboardType="numeric"
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onSubmitEditing={Keyboard.dismiss}
             />
           </View>
         );
@@ -316,21 +392,33 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               style={styles.input}
               placeholder="Min budget ($)"
               value={minBudget}
-              onChangeText={setMinBudget}
+              onChangeText={(text) => {
+                setMinBudget(text);
+                if (text && maxBudget && parseFloat(text) > parseFloat(maxBudget)) {
+                  setBudgetError('Min budget cannot be higher than max budget');
+                } else {
+                  setBudgetError('');
+                }
+              }}
               keyboardType="numeric"
-              returnKeyType="next"
-              blurOnSubmit={false}
             />
             <TextInput
               style={styles.input}
               placeholder="Max budget ($)"
               value={maxBudget}
-              onChangeText={setMaxBudget}
+              onChangeText={(text) => {
+                setMaxBudget(text);
+                if (text && minBudget && parseFloat(minBudget) > parseFloat(text)) {
+                  setBudgetError('Min budget cannot be higher than max budget');
+                } else {
+                  setBudgetError('');
+                }
+              }}
               keyboardType="numeric"
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onSubmitEditing={Keyboard.dismiss}
             />
+            {budgetError ? (
+              <Text style={styles.errorText}>{budgetError}</Text>
+            ) : null}
           </View>
         );
 
@@ -340,7 +428,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
             <Text style={styles.stepDescription}>
               What type of room are you looking for?
             </Text>
-            {['private', 'shared', 'entire'].map((type) => (
+            {['private', 'shared', 'either Private or Shared'].map((type) => (
               <TouchableOpacity
                 key={type}
                 style={[
@@ -363,20 +451,83 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         );
 
       case 'move-in-date':
+        const formatDate = (date: Date | null): string => {
+          if (!date) return '';
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
+        // Get tomorrow's date (minimum selectable date)
+        const getTomorrow = () => {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(0, 0, 0, 0); // Set to start of day
+          return tomorrow;
+        };
+
+        const displayDate = moveInDate ? formatDate(moveInDate) : '';
+        const tomorrow = getTomorrow();
+
         return (
           <View style={styles.stepContent}>
             <Text style={styles.stepDescription}>
               When would you like to move in?
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD (e.g., 2024-03-01)"
-              value={moveInDate}
-              onChangeText={setMoveInDate}
-              returnKeyType="done"
-              blurOnSubmit={true}
-              onSubmitEditing={Keyboard.dismiss}
-            />
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={[styles.datePickerText, !moveInDate && styles.datePickerPlaceholder]}>
+                {displayDate || 'Select a date'}
+              </Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={moveInDate || tomorrow}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(event, selectedDate) => {
+                  if (Platform.OS === 'android') {
+                    setShowDatePicker(false);
+                    if (event.type === 'set' && selectedDate) {
+                      // Ensure selected date is after today
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const selected = new Date(selectedDate);
+                      selected.setHours(0, 0, 0, 0);
+                      if (selected > today) {
+                        setMoveInDate(selectedDate);
+                      }
+                    }
+                  } else {
+                    // iOS - keep picker open, user will tap Done
+                    if (selectedDate) {
+                      // Ensure selected date is after today
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const selected = new Date(selectedDate);
+                      selected.setHours(0, 0, 0, 0);
+                      if (selected > today) {
+                        setMoveInDate(selectedDate);
+                      }
+                    }
+                  }
+                }}
+                minimumDate={tomorrow}
+              />
+            )}
+            {Platform.OS === 'ios' && showDatePicker && (
+              <View style={styles.iosDatePickerActions}>
+                <TouchableOpacity
+                  style={styles.datePickerActionButton}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <Text style={styles.datePickerActionText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <Text style={styles.hint}>
               You can update this later
             </Text>
@@ -385,7 +536,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
       case 'lifestyle':
         return (
-          <View style={styles.stepContent}>
+          <ScrollView style={styles.stepContent}>
             <Text style={styles.stepDescription}>
               A few questions about your lifestyle
             </Text>
@@ -505,7 +656,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         );
 
       case 'must-haves':
@@ -533,71 +684,63 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         transparent={true}
         onRequestClose={() => {}}
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.modalOverlay}>
-              <TouchableWithoutFeedback onPress={() => {}}>
-                <View style={styles.modalContent}>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.scrollContent}
-                  >
-                    {/* Progress indicator */}
-                    <View style={styles.progressContainer}>
-                      <View style={styles.progressBar}>
-                        <View
-                          style={[
-                            styles.progressFill,
-                            { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.progressText}>
-                        Step {getStepNumber()} of {getTotalSteps()}
-                      </Text>
-                    </View>
-
-                    {/* Step title */}
-                    <Text style={styles.stepTitle}>{getStepTitle()}</Text>
-
-                    {/* Step content */}
-                    {renderStepContent()}
-
-                    {/* Action buttons */}
-                    <View style={styles.buttonContainer}>
-                      <TouchableOpacity
-                        style={[styles.button, styles.skipButton]}
-                        onPress={handleSkip}
-                        disabled={loading}
-                      >
-                        <Text style={styles.skipButtonText}>Skip</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.button, styles.nextButton]}
-                        onPress={handleNext}
-                        disabled={loading}
-                      >
-                        {loading ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.nextButtonText}>
-                            {currentStep === 'must-haves' ? 'Complete' : 'Next'}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </ScrollView>
-                </View>
-              </TouchableWithoutFeedback>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Progress indicator */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                Step {getStepNumber()} of {getTotalSteps()}
+              </Text>
             </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+
+            {/* Step title */}
+            <Text style={styles.stepTitle}>{getStepTitle()}</Text>
+
+            {/* Step content */}
+            {renderStepContent()}
+
+            {/* Action buttons */}
+            <View style={styles.buttonContainer}>
+              {currentStep !== 'about-you' && (
+                <TouchableOpacity
+                  style={[styles.button, styles.previousButton]}
+                  onPress={handlePrevious}
+                  disabled={loading}
+                >
+                  <Text style={styles.previousButtonText}>Previous</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.button, styles.skipButton]}
+                onPress={handleSkip}
+                disabled={loading}
+              >
+                <Text style={styles.skipButtonText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.nextButton]}
+                onPress={handleNext}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.nextButtonText}>
+                    {currentStep === 'must-haves' ? 'Complete' : 'Next'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -620,7 +763,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '85%',
+    maxHeight: '80%',
     shadowColor: '#0C5389', // Deep Blue
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -659,9 +802,6 @@ const styles = StyleSheet.create({
     color: '#0C5389', // Deep Blue
     marginBottom: 20,
     textAlign: 'center',
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   stepContent: {
     minHeight: 200,
@@ -737,6 +877,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
   },
+  errorText: {
+    fontSize: 14,
+    color: '#FF6B6B', // Red for errors
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  datePickerButton: {
+    backgroundColor: '#FDFDFD', // Pure White
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#D9E1E6', // Light Cool Gray
+    alignItems: 'center',
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: '#0C5389', // Deep Blue
+  },
+  datePickerPlaceholder: {
+    color: '#999', // Gray for placeholder
+  },
+  iosDatePickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  datePickerActionButton: {
+    padding: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#46BD7F', // Primary Green
+    borderRadius: 8,
+  },
+  datePickerActionText: {
+    color: '#FDFDFD', // Pure White
+    fontSize: 16,
+    fontWeight: '600',
+  },
   buttonContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -747,6 +927,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
+  },
+  previousButton: {
+    backgroundColor: '#D9E1E6', // Light Cool Gray
+  },
+  previousButtonText: {
+    color: '#0C5389', // Deep Blue
+    fontSize: 16,
+    fontWeight: '600',
   },
   skipButton: {
     backgroundColor: '#D9E1E6', // Light Cool Gray
