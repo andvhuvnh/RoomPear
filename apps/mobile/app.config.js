@@ -4,6 +4,7 @@ module.exports = {
   expo: {
     name: 'RoomPear',
     slug: 'roompear',
+    scheme: "roompear",
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
