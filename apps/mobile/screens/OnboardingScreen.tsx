@@ -170,9 +170,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         setCurrentStep('room-type');
         break;
       case 'room-type':
+        // Map 'either Private or Shared' to 'flexible' for database
+        const mappedRoomType = roomType === 'either Private or Shared' ? 'flexible' : roomType;
         setPreferences({
           ...preferences,
-          room_type: roomType || undefined,
+          room_type: mappedRoomType || undefined,
         });
         setCurrentStep('move-in-date');
         break;
@@ -265,6 +267,9 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         return;
       }
 
+      console.log('📤 [OnboardingScreen] About to save preferences:', JSON.stringify(preferences, null, 2));
+      console.log('📤 [OnboardingScreen] room_type value:', preferences.room_type);
+      
       const result = await savePreferences(userId, preferences);
       if (result.success) {
         onComplete();
