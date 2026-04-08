@@ -12,7 +12,7 @@ export interface Preferences {
   zip_code?: string;
   min_budget?: number;
   max_budget?: number;
-  room_type?: 'private' | 'shared' | 'entire' | 'flexible';
+  room_type?: 'private' | 'shared' | 'flexible' | 'entire';
   move_in_date?: string;
   lease_duration_months?: number;
   pets_allowed?: boolean;
@@ -84,6 +84,31 @@ export async function savePreferences(
   preferences: Partial<Preferences>
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Map room_type value to match database constraint
+    // Database allows: 'private', 'shared', 'entire', 'flexible'
+    const mappedPreferences = { ...preferences };
+    const roomTypeValue = mappedPreferences.room_type as string | undefined;
+    
+    console.log('🔍 [savePreferences] Original room_type value:', roomTypeValue, 'Type:', typeof roomTypeValue);
+    console.log('🔍 [savePreferences] Full preferences object:', JSON.stringify(preferences, null, 2));
+    
+    // Map any variation of "either" to "flexible"
+    if (roomTypeValue) {
+      const normalizedValue = roomTypeValue.trim().toLowerCase();
+      if (normalizedValue.includes('either') || 
+          roomTypeValue === 'either Private or Shared' ||
+          roomTypeValue === 'Either Private or Shared') {
+        console.log('✅ [savePreferences] Mapping room_type from "' + roomTypeValue + '" to "flexible"');
+        mappedPreferences.room_type = 'flexible';
+      } else if (!['private', 'shared', 'entire', 'flexible'].includes(roomTypeValue)) {
+        // If it's not a valid value, set to undefined to avoid constraint violation
+        console.warn('⚠️ [savePreferences] Invalid room_type value:', roomTypeValue, '- setting to undefined');
+        mappedPreferences.room_type = undefined;
+      }
+    }
+    
+    console.log('💾 [savePreferences] Final room_type value being saved:', mappedPreferences.room_type);
+
     // Check if preferences exist
     const existing = await hasPreferences(userId);
 
@@ -92,7 +117,7 @@ export async function savePreferences(
       const { error } = await supabase
         .from('preferences')
         .update({
-          ...preferences,
+          ...mappedPreferences,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', userId);
@@ -107,7 +132,7 @@ export async function savePreferences(
         .from('preferences')
         .insert({
           user_id: userId,
-          ...preferences,
+          ...mappedPreferences,
         });
 
       if (error) {
