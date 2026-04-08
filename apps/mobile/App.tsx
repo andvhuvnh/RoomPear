@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
+import { profilePhotoPathsFromRow } from './lib/profileDisplay';
 import AuthScreen from './screens/AuthScreen';
-import HomeScreen from './screens/HomeScreen';
+import ProfileScreen from './screens/HomeScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import ProfileCompletionScreen from './screens/ProfileCompletionScreen';
+import ProfileCardScreen from './screens/ProfileCardScreen';
 
-type AppState = 'loading' | 'auth' | 'onboarding' | 'profile-completion' | 'home';
+type AppState = 'loading' | 'auth' | 'onboarding' | 'profile-completion' | 'profile-card' | 'home';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -49,21 +51,37 @@ export default function App() {
       return;
     }
 
-    // Check if user has completed profile (has bio, occupation, or hobbies)
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('bio, occupation, hobbies')
+      .select('bio, occupation, hobbies, profile_photo_url')
       .eq('id', session.user.id)
       .single();
 
-    // Show profile completion if user hasn't added any profile details
-    // They can skip, but we'll show it if they haven't filled anything
-    const hasProfileDetails = profile?.bio || profile?.occupation || (profile?.hobbies && profile.hobbies.length > 0);
-    
+    if (profileError) {
+      console.error('checkUserState: profile fetch failed', profileError);
+    }
+
+    const photoPaths = profilePhotoPathsFromRow(profile?.profile_photo_url);
+    const hasProfileCardPhotos = photoPaths.length >= 3;
+
+    const hasProfileDetails = Boolean(
+      profile?.bio?.trim() ||
+        profile?.occupation?.trim() ||
+        (profile?.hobbies && profile.hobbies.length > 0)
+    );
+
+    // Photo card is the final setup step. If bio/occupation/hobbies are all empty (all optional),
+    // we must still allow home once 3+ photos are saved — otherwise users loop back to
+    // profile-completion forever after finishing the card.
+    if (hasProfileCardPhotos) {
+      setAppState('home');
+      return;
+    }
+
     if (!hasProfileDetails) {
       setAppState('profile-completion');
     } else {
-      setAppState('home');
+      setAppState('profile-card');
     }
   };
 
@@ -77,6 +95,14 @@ export default function App() {
 
   // Callback for when profile completion is done
   const handleProfileComplete = async () => {
+    if (session) {
+      // After profile completion, go to profile card screen
+      setAppState('profile-card');
+    }
+  };
+
+  // Callback for when profile card is done
+  const handleProfileCardComplete = async () => {
     if (session) {
       await checkUserState(session);
     }
@@ -96,7 +122,10 @@ export default function App() {
       {appState === 'profile-completion' && (
         <ProfileCompletionScreen onComplete={handleProfileComplete} />
       )}
-      {appState === 'home' && <HomeScreen />}
+      {appState === 'profile-card' && (
+        <ProfileCardScreen onComplete={handleProfileCardComplete} />
+      )}
+      {appState === 'home' && <ProfileScreen />}
     </>
   );
 }
