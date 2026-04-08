@@ -20,7 +20,7 @@ import { appendProfilePhoto, removeProfilePhotoAt, MAX_PROFILE_PHOTOS } from '..
 import PublicProfileCard from '../components/PublicProfileCard';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
 
-export default function ProfileScreen() {
+export default function UserProfileScreen() {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
