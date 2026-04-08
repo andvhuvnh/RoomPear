@@ -1,40 +1,48 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Image,
+  ScrollView,
+  Modal,
+  TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { supabase } from '../lib/supabase';
-import { useEffect, useState } from 'react';
-import { pickImage, uploadAndUpdateProfileImage, getProfileImageUrl } from '../lib/storage';
+import { useEffect, useState, useCallback } from 'react';
+import {
+  pickImage,
+  uploadProfileImage,
+  getProfileImageUrls,
+  deleteProfileImage,
+} from '../lib/storage';
+import { getPreferences, type Preferences } from '../lib/preferences';
+import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
+import PublicProfileCard from '../components/PublicProfileCard';
 
-export default function HomeScreen() {
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [imageError, setImageError] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+export default function ProfileScreen() {
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [profile, setProfile] = useState<Record<string, any> | null>(null);
+  const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [photoPaths, setPhotoPaths] = useState<string[]>([]);
 
-  useEffect(() => {
-    // Get current user
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      if (user) {
-        // Fetch profile
-        fetchProfile(user.id);
-      }
-    });
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editPhotosOpen, setEditPhotosOpen] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPhotos, setSavingPhotos] = useState(false);
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
-      }
-    });
+  const [editName, setEditName] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editOccupation, setEditOccupation] = useState('');
+  const [editHobbies, setEditHobbies] = useState<string[]>([]);
+  const [editHobbyDraft, setEditHobbyDraft] = useState('');
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchProfile = async (userId: string) => {
+  const loadProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -43,159 +51,379 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Error fetching profile:', error);
-    } else {
-      console.log('Profile fetched:', data);
-      console.log('Profile photo path:', data?.profile_photo_url);
-      setProfile(data);
-      // Reset image error when profile is fetched
-      setImageError(false);
-      
-      // Generate signed URL for the profile image if it exists
-      if (data?.profile_photo_url) {
-        const signedUrl = await getProfileImageUrl(data.profile_photo_url);
-        setImageUrl(signedUrl);
-        console.log('Generated signed URL for profile image');
-      } else {
-        setImageUrl(null);
-      }
+      return;
     }
+
+    setProfile(data);
+
+    const paths = profilePhotoPathsFromRow(data?.profile_photo_url);
+    setPhotoPaths(paths);
+
+    if (data?.profile_photo_url) {
+      const signedUrls = await getProfileImageUrls(data.profile_photo_url);
+      setImageUrls(signedUrls ?? []);
+    } else {
+      setImageUrls([]);
+    }
+
+    const p = await getPreferences(userId);
+    setPrefs(p);
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      setUser(u ? { id: u.id, email: u.email } : null);
+      if (u) loadProfile(u.id);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user;
+      setUser(u ? { id: u.id, email: u.email } : null);
+      if (u) loadProfile(u.id);
+      else {
+        setProfile(null);
+        setPrefs(null);
+        setImageUrls([]);
+        setPhotoPaths([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadProfile]);
+
+  const openEditProfile = () => {
+    if (!profile) return;
+    setEditName(profile.name?.trim() ?? '');
+    setEditBio(profile.bio?.trim() ?? '');
+    setEditOccupation(profile.occupation?.trim() ?? '');
+    setEditHobbies(Array.isArray(profile.hobbies) ? [...profile.hobbies] : []);
+    setEditHobbyDraft('');
+    setEditProfileOpen(true);
+  };
+
+  const handleAddEditHobby = () => {
+    const t = editHobbyDraft.trim();
+    if (!t || editHobbies.includes(t) || editHobbies.length >= 10) return;
+    setEditHobbies([...editHobbies, t]);
+    setEditHobbyDraft('');
+  };
+
+  const handleRemoveEditHobby = (h: string) => {
+    setEditHobbies(editHobbies.filter((x) => x !== h));
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          name: editName.trim() || profile?.name,
+          bio: editBio.trim() || null,
+          occupation: editOccupation.trim() || null,
+          hobbies: editHobbies,
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+      setEditProfileOpen(false);
+      await loadProfile(user.id);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to save');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    if (!user) return;
+    if (photoPaths.length >= 5) {
+      Alert.alert('Photos', 'You can have up to 5 photos.');
+      return;
+    }
+    const uri = await pickImage();
+    if (!uri) return;
+
+    setSavingPhotos(true);
+    try {
+      const { path, error } = await uploadProfileImage(user.id, uri);
+      if (error || !path) {
+        Alert.alert('Upload failed', error ?? 'Unknown error');
+        return;
+      }
+      const next = [...photoPaths, path].slice(0, 5);
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({ profile_photo_url: JSON.stringify(next) })
+        .eq('id', user.id);
+
+      if (upErr) {
+        Alert.alert('Error', upErr.message);
+        return;
+      }
+      await loadProfile(user.id);
+    } finally {
+      setSavingPhotos(false);
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    if (!user) return;
+    const next = photoPaths.filter((_, i) => i !== index);
+    if (next.length < 3) {
+      Alert.alert('Photos', 'Keep at least 3 photos on your profile card.');
+      return;
+    }
+    const removed = photoPaths[index];
+
+    Alert.alert('Remove photo', 'Remove this photo from your profile?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setSavingPhotos(true);
+          try {
+            await deleteProfileImage(user.id, removed);
+            const { error } = await supabase
+              .from('profiles')
+              .update({ profile_photo_url: JSON.stringify(next) })
+              .eq('id', user.id);
+            if (error) {
+              Alert.alert('Error', error.message);
+              return;
+            }
+            await loadProfile(user.id);
+          } finally {
+            setSavingPhotos(false);
+          }
+        },
+      },
+    ]);
   };
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert('Error', error.message);
-    }
+    if (error) Alert.alert('Error', error.message);
   };
 
-  const handleUpdateProfileImage = async () => {
-    if (!user) return;
-
-    const imageUri = await pickImage();
-    if (!imageUri) return;
-
-    // Show loading state (you could use a loading indicator here)
-    console.log('Starting image upload...');
-    
-    const { path, error } = await uploadAndUpdateProfileImage(user.id, imageUri);
-    
-    if (error) {
-      console.error('Upload error:', error);
-      Alert.alert('Error', error);
-    } else if (path) {
-      console.log('✅ Upload successful, path:', path);
-      
-      // Reset image error state
-      setImageError(false);
-      // Update local state immediately with the new path
-      setProfile((prev: any) => {
-        const updated = { ...prev, profile_photo_url: path };
-        console.log('Updated profile state:', updated);
-        return updated;
-      });
-      // Generate signed URL for the new image
-      if (path) {
-        const signedUrl = await getProfileImageUrl(path);
-        setImageUrl(signedUrl);
-      }
-      // Also refresh from server to ensure consistency
-      await fetchProfile(user.id);
-      Alert.alert('Success', 'Profile picture updated!');
-    }
-  };
+  const displayName = profile?.name?.trim() || '';
+  const displayAge =
+    typeof profile?.age === 'number' && !Number.isNaN(profile.age)
+      ? profile.age
+      : null;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to RoomPear!</Text>
-      
-      {user && (
-        <View style={styles.userInfo}>
-          {/* Profile Image */}
-          <View style={styles.profileImageContainer}>
-            {profile?.profile_photo_url ? (
-              <>
-                {!imageError && imageUrl ? (
-                  <Image
-                    key={`img-${imageUrl}`} // Force re-render when URL changes
-                    source={{ uri: imageUrl }}
-                    style={styles.profileImage}
-                    resizeMode="cover"
-                    onError={(error) => {
-                      console.error('❌ Error loading profile image');
-                      console.error('Error details:', error.nativeEvent?.error || error);
-                      console.error('Failed URL:', imageUrl);
-                      setImageError(true);
-                    }}
-                    onLoad={() => {
-                      console.log('✅ Profile image loaded successfully');
-                      console.log('Image URL:', imageUrl);
-                      setImageError(false);
-                    }}
-                    onLoadStart={() => {
-                      console.log('🔄 Starting to load image');
-                      console.log('URL:', imageUrl);
-                    }}
-                    onLoadEnd={() => {
-                      console.log('🔄 Image load ended');
-                    }}
-                  />
-                ) : (
-                  <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
-                    <Text style={styles.profileImageText}>
-                      {profile?.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
-                    </Text>
-                    {__DEV__ && (
-                      <Text style={styles.debugText} numberOfLines={1}>
-                        Load error
-                      </Text>
-                    )}
-                  </View>
-                )}
-                {/* Debug: Show URL in dev mode */}
-                {__DEV__ && (
-                  <Text style={styles.debugText} numberOfLines={2}>
-                    {profile.profile_photo_url}
-                  </Text>
-                )}
-              </>
-            ) : (
-              <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
-                <Text style={styles.profileImageText}>
-                  {profile?.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.tagline}>How you appear to others</Text>
+
+        {user && (
+          <>
+            <PublicProfileCard
+              imageUrls={imageUrls}
+              name={displayName}
+              age={displayAge}
+              location={formatLocationLine(prefs)}
+              bio={profile?.bio ?? ''}
+              hobbies={Array.isArray(profile?.hobbies) ? profile.hobbies : []}
+            />
+
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.primaryButton} onPress={openEditProfile}>
+                <Text style={styles.primaryButtonText}>Edit profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => setEditPhotosOpen(true)}
+              >
+                <Text style={styles.secondaryButtonText}>Edit photos</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.accountCard}>
+              <Text style={styles.accountTitle}>Account</Text>
+              {user.email ? (
+                <View style={styles.accountRow}>
+                  <Text style={styles.accountLabel}>Email</Text>
+                  <Text style={styles.accountValue}>{user.email}</Text>
+                </View>
+              ) : null}
+              {profile?.phone ? (
+                <View style={styles.accountRow}>
+                  <Text style={styles.accountLabel}>Phone</Text>
+                  <Text style={styles.accountValue}>{profile.phone}</Text>
+                </View>
+              ) : null}
+              <View style={styles.accountRow}>
+                <Text style={styles.accountLabel}>Plan</Text>
+                <Text style={styles.accountValue}>
+                  {(profile?.subscription_tier as string) || 'free'}
                 </Text>
-                {__DEV__ && (
-                  <Text style={styles.debugText}>
-                    No URL set
-                  </Text>
-                )}
               </View>
-            )}
-            <TouchableOpacity
-              style={styles.changePhotoButton}
-              onPress={handleUpdateProfileImage}
-            >
-              <Text style={styles.changePhotoButtonText}>Change Photo</Text>
+              <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+                <Text style={styles.signOutButtonText}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={editProfileOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditProfileOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditProfileOpen(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit profile</Text>
+            <TouchableOpacity onPress={handleSaveProfile} disabled={savingProfile}>
+              {savingProfile ? (
+                <ActivityIndicator color="#189AA2" />
+              ) : (
+                <Text style={styles.modalSave}>Save</Text>
+              )}
             </TouchableOpacity>
           </View>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your name"
+              placeholderTextColor="#189AA280"
+            />
 
-          <Text style={styles.label}>Email:</Text>
-          <Text style={styles.value}>{user.email}</Text>
-          
-          {profile && (
-            <>
-              <Text style={styles.label}>Name:</Text>
-              <Text style={styles.value}>{profile.name || 'Not set'}</Text>
-              
-              <Text style={styles.label}>Subscription:</Text>
-              <Text style={styles.value}>{profile.subscription_tier || 'free'}</Text>
-            </>
-          )}
+            <Text style={styles.fieldLabel}>Bio</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.bioInput]}
+              value={editBio}
+              onChangeText={setEditBio}
+              placeholder="Tell people about yourself"
+              placeholderTextColor="#189AA280"
+              multiline
+              textAlignVertical="top"
+              maxLength={500}
+            />
+
+            <Text style={styles.fieldLabel}>Occupation</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editOccupation}
+              onChangeText={setEditOccupation}
+              placeholder="What do you do?"
+              placeholderTextColor="#189AA280"
+            />
+
+            <Text style={styles.fieldLabel}>Hobbies</Text>
+            <View style={styles.hobbyRow}>
+              <TextInput
+                style={[styles.fieldInput, styles.hobbyInput]}
+                value={editHobbyDraft}
+                onChangeText={setEditHobbyDraft}
+                placeholder="Add a hobby"
+                placeholderTextColor="#189AA280"
+                onSubmitEditing={handleAddEditHobby}
+                returnKeyType="done"
+              />
+              <TouchableOpacity style={styles.hobbyAddBtn} onPress={handleAddEditHobby}>
+                <Text style={styles.hobbyAddBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.hobbyTags}>
+              {editHobbies.map((h) => (
+                <TouchableOpacity
+                  key={h}
+                  style={styles.hobbyTag}
+                  onPress={() => handleRemoveEditHobby(h)}
+                >
+                  <Text style={styles.hobbyTagText}>{h}</Text>
+                  <Text style={styles.hobbyTagX}> ×</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.hint}>Location is set from your housing preferences during onboarding.</Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={editPhotosOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditPhotosOpen(false)}
+      >
+        <View style={styles.modalRoot}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditPhotosOpen(false)}>
+              <Text style={styles.modalCancel}>Done</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Photos</Text>
+            <View style={{ width: 48 }} />
+          </View>
+          <ScrollView contentContainerStyle={styles.photosModalContent}>
+            <Text style={styles.photosHelp}>
+              First photo is your cover. Swipe on your profile card to see the rest. Keep 3–5 photos.
+            </Text>
+            {savingPhotos ? (
+              <ActivityIndicator style={{ marginVertical: 16 }} color="#189AA2" />
+            ) : null}
+            <View style={styles.photoList}>
+              {imageUrls.map((url, index) => (
+                <View key={url + index} style={styles.photoRow}>
+                  <Image source={{ uri: url }} style={styles.photoRowImage} />
+                  <View style={styles.photoRowMeta}>
+                    <Text style={styles.photoRowLabel}>
+                      {index === 0 ? 'Cover photo' : `Photo ${index + 1}`}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleRemovePhoto(index)}
+                      disabled={savingPhotos}
+                    >
+                      <Text style={styles.photoRemoveLink}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.addPhotoBtn,
+                photoPaths.length >= 5 && styles.addPhotoBtnDisabled,
+              ]}
+              onPress={handleAddPhoto}
+              disabled={savingPhotos || photoPaths.length >= 5}
+            >
+              <Text style={styles.addPhotoBtnText}>
+                {photoPaths.length >= 5 ? 'Maximum 5 photos' : '+ Add photo'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
-      )}
-
-      <TouchableOpacity style={styles.button} onPress={handleSignOut}>
-        <Text style={styles.buttonText}>Sign Out</Text>
-      </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -203,81 +431,262 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FDFDFD', // Pure White
+    backgroundColor: '#E8EEF2',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 20,
-    justifyContent: 'center',
+    paddingTop: 56,
+    paddingBottom: 40,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 40,
-    color: '#0C5389', // Deep Blue
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#0C5389',
+    marginBottom: 4,
   },
-  userInfo: {
-    backgroundColor: '#D9E1E6', // Light Cool Gray
-    borderRadius: 8,
-    padding: 20,
-    marginBottom: 30,
-  },
-  profileImageContainer: {
-    alignItems: 'center',
+  tagline: {
+    fontSize: 15,
+    color: '#189AA2',
     marginBottom: 20,
   },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#189AA2', // Teal / Blue-Green
+  actionRow: {
+    marginTop: 24,
   },
-  profileImagePlaceholder: {
-    justifyContent: 'center',
+  primaryButton: {
+    backgroundColor: '#46BD7F',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  primaryButtonText: {
+    color: '#FDFDFD',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#189AA2',
+  },
+  secondaryButtonText: {
+    color: '#0C5389',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  accountCard: {
+    marginTop: 28,
+    backgroundColor: '#FDFDFD',
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  accountTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#0C5389',
+    marginBottom: 14,
+  },
+  accountRow: {
+    marginBottom: 12,
+  },
+  accountLabel: {
+    fontSize: 12,
+    color: '#189AA2',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  accountValue: {
+    fontSize: 16,
+    color: '#0C5389',
+  },
+  signOutButton: {
+    marginTop: 16,
+    backgroundColor: '#D9E1E6',
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  profileImageText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#FDFDFD', // Pure White
+  signOutButtonText: {
+    color: '#0C5389',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  changePhotoButton: {
-    marginTop: 10,
-    paddingVertical: 8,
+  modalRoot: {
+    flex: 1,
+    backgroundColor: '#FDFDFD',
+    paddingTop: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    backgroundColor: '#189AA2', // Teal / Blue-Green
-    borderRadius: 6,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#D9E1E6',
   },
-  changePhotoButtonText: {
-    color: '#FDFDFD', // Pure White
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#0C5389',
+  },
+  modalCancel: {
+    fontSize: 17,
+    color: '#189AA2',
+    width: 72,
+  },
+  modalSave: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#46BD7F',
+    width: 72,
+    textAlign: 'right',
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  fieldLabel: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#0C5389',
+    marginBottom: 8,
   },
-  label: {
+  fieldInput: {
+    backgroundColor: '#F5F8FA',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#0C5389',
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  bioInput: {
+    minHeight: 100,
+  },
+  hobbyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  hobbyInput: {
+    flex: 1,
+    marginBottom: 0,
+    marginRight: 8,
+  },
+  hobbyAddBtn: {
+    backgroundColor: '#189AA2',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  hobbyAddBtnText: {
+    color: '#FDFDFD',
+    fontWeight: '600',
+  },
+  hobbyTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 18,
+  },
+  hobbyTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#189AA2',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  hobbyTagText: {
+    color: '#FDFDFD',
     fontSize: 14,
-    color: '#0C5389', // Deep Blue
-    marginTop: 10,
-    marginBottom: 5,
   },
-  value: {
-    fontSize: 18,
-    color: '#0C5389', // Deep Blue
-    fontWeight: '500',
+  hobbyTagX: {
+    color: '#FDFDFD',
+    fontSize: 14,
+    opacity: 0.9,
   },
-  button: {
-    backgroundColor: '#189AA2', // Teal / Blue-Green
-    borderRadius: 8,
-    padding: 15,
+  hint: {
+    fontSize: 13,
+    color: '#189AA2',
+    opacity: 0.85,
+    lineHeight: 18,
+  },
+  photosModalContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  photosHelp: {
+    fontSize: 14,
+    color: '#0C5389',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  photoList: {
+    width: '100%',
+  },
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: '#F5F8FA',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  photoRowImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 10,
+    backgroundColor: '#D9E1E6',
+  },
+  photoRowMeta: {
+    flex: 1,
+    marginLeft: 14,
+    justifyContent: 'center',
+  },
+  photoRowLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C5389',
+    marginBottom: 6,
+  },
+  photoRemoveLink: {
+    fontSize: 15,
+    color: '#E85D4C',
+    fontWeight: '600',
+  },
+  addPhotoBtn: {
+    marginTop: 20,
+    backgroundColor: '#46BD7F',
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  buttonText: {
-    color: '#FDFDFD', // Pure White
-    fontSize: 18,
-    fontWeight: '600',
+  addPhotoBtnDisabled: {
+    opacity: 0.5,
   },
-  debugText: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'center',
+  addPhotoBtnText: {
+    color: '#FDFDFD',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
-

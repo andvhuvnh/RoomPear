@@ -36,6 +36,48 @@ export async function verifyBucketAccess(): Promise<{ exists: boolean; isAccessi
 }
 
 /**
+ * Get signed URLs for profile images (handles both single path and JSON array)
+ * @param imagePathOrUrl - The file path, JSON array string, or full URL
+ * @returns Array of signed URLs, or null if error
+ */
+export async function getProfileImageUrls(imagePathOrUrl: string | null | undefined): Promise<string[] | null> {
+  if (!imagePathOrUrl) {
+    return null;
+  }
+
+  try {
+    // Check if it's a JSON array
+    let paths: string[] = [];
+    try {
+      const parsed = JSON.parse(imagePathOrUrl);
+      if (Array.isArray(parsed)) {
+        paths = parsed;
+      } else {
+        // Single path
+        paths = [imagePathOrUrl];
+      }
+    } catch {
+      // Not JSON, treat as single path
+      paths = [imagePathOrUrl];
+    }
+
+    // Generate signed URLs for all paths
+    const signedUrls: string[] = [];
+    for (const path of paths) {
+      const url = await getProfileImageUrl(path);
+      if (url) {
+        signedUrls.push(url);
+      }
+    }
+
+    return signedUrls.length > 0 ? signedUrls : null;
+  } catch (error: any) {
+    console.error('Error in getProfileImageUrls:', error);
+    return null;
+  }
+}
+
+/**
  * Get a signed URL for a profile image
  * This function extracts the file path from a stored URL or path and generates a signed URL
  * @param imagePathOrUrl - The file path (e.g., "userId/timestamp.jpg") or full URL
