@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback } from 'react';
 import { getProfileImageUrls, pickImage } from '../lib/storage';
@@ -20,7 +21,8 @@ import { appendProfilePhoto, removeProfilePhotoAt, MAX_PROFILE_PHOTOS } from '..
 import PublicProfileCard from '../components/PublicProfileCard';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
 
-export default function ProfileScreen() {
+export default function UserProfileScreen() {
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -199,7 +201,13 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: 16 + insets.top,
+            paddingBottom: 32 + insets.bottom,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.title}>Profile</Text>
@@ -373,9 +381,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingTop: 56,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
   },
   title: {
     fontSize: 30,

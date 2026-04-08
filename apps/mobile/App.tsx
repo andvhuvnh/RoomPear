@@ -1,12 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
 import { profilePhotoPathsFromRow } from './lib/profileDisplay';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
-import ProfileScreen from './screens/HomeScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
+import MainTabNavigator from './navigation/MainTabNavigator';
 import ProfileCompletionScreen from './screens/ProfileCompletionScreen';
 import ProfileCardScreen from './screens/ProfileCardScreen';
 
@@ -109,11 +112,17 @@ export default function App() {
   };
 
   if (loading || appState === 'loading') {
-    return null; // Or a loading screen
+    return (
+      <SafeAreaProvider>
+        <View style={styles.loadingRoot}>
+          <ActivityIndicator size="large" color="#0C5389" />
+        </View>
+      </SafeAreaProvider>
+    );
   }
 
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="auto" />
       {appState === 'auth' && <AuthScreen />}
       {appState === 'onboarding' && (
@@ -125,7 +134,20 @@ export default function App() {
       {appState === 'profile-card' && (
         <ProfileCardScreen onComplete={handleProfileCardComplete} />
       )}
-      {appState === 'home' && <ProfileScreen />}
-    </>
+      {appState === 'home' && (
+        <NavigationContainer>
+          <MainTabNavigator />
+        </NavigationContainer>
+      )}
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E8EEF2',
+  },
+});
