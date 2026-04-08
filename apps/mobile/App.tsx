@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
@@ -111,7 +112,13 @@ export default function App() {
   };
 
   if (loading || appState === 'loading') {
-    return null; // Or a loading screen
+    return (
+      <SafeAreaProvider>
+        <View style={styles.loadingRoot}>
+          <ActivityIndicator size="large" color="#0C5389" />
+        </View>
+      </SafeAreaProvider>
+    );
   }
 
   return (
@@ -135,3 +142,12 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E8EEF2',
+  },
+});

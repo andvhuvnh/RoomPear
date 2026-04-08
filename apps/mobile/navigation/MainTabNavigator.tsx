@@ -23,16 +23,31 @@ const TAB_ICON: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> =
   Profile: 'person-outline',
 };
 
+const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
+  Home: 'home',
+  Matches: 'heart',
+  Messages: 'chatbubble',
+  Profile: 'person',
+};
+
 export default function MainTabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: '#111',
         tabBarInactiveTintColor: '#888',
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons name={TAB_ICON[route.name]} size={size} color={color} />
-        ),
+        tabBarIcon: ({ color, size, focused }) => {
+          const name = route.name as keyof MainTabParamList;
+          return (
+            <Ionicons
+              name={focused ? TAB_ICON_FOCUSED[name] : TAB_ICON[name]}
+              size={size}
+              color={color}
+            />
+          );
+        },
       })}
     >
       <Tab.Screen
