@@ -4,9 +4,11 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
 import { profilePhotoPathsFromRow } from './lib/profileDisplay';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
-import ProfileScreen from './screens/HomeScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
+import MainTabNavigator from './navigation/MainTabNavigator';
 import ProfileCompletionScreen from './screens/ProfileCompletionScreen';
 import ProfileCardScreen from './screens/ProfileCardScreen';
 
@@ -113,7 +115,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="auto" />
       {appState === 'auth' && <AuthScreen />}
       {appState === 'onboarding' && (
@@ -125,7 +127,11 @@ export default function App() {
       {appState === 'profile-card' && (
         <ProfileCardScreen onComplete={handleProfileCardComplete} />
       )}
-      {appState === 'home' && <ProfileScreen />}
-    </>
+      {appState === 'home' && (
+        <NavigationContainer>
+          <MainTabNavigator />
+        </NavigationContainer>
+      )}
+    </SafeAreaProvider>
   );
 }
