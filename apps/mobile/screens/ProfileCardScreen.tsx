@@ -1,10 +1,9 @@
 /**
- * Profile Card Screen
- * Screen for uploading 3-5 photos for the user's profile card
- * Appears after profile completion
+ * Profile photos onboarding — add 3–5 photos with live profile card preview.
+ * Uses shared PublicProfileCard + lib/profilePhotos for uploads.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,9 +15,14 @@ import {
   Image,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { pickImage, uploadProfileImage, getProfileImageUrls } from '../lib/storage';
+import { pickImage, getProfileImageUrls } from '../lib/storage';
 import { getPreferences } from '../lib/preferences';
-import { formatLocationLine } from '../lib/profileDisplay';
+import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
+import {
+  uploadStagedPhotosAndMerge,
+  MAX_PROFILE_PHOTOS,
+  MIN_PROFILE_PHOTOS,
+} from '../lib/profilePhotos';
 import PublicProfileCard from '../components/PublicProfileCard';
 
 interface ProfileCardScreenProps {
@@ -26,96 +30,81 @@ interface ProfileCardScreenProps {
 }
 
 export default function ProfileCardScreen({ onComplete }: ProfileCardScreenProps) {
-  const [phase, setPhase] = useState<'upload' | 'preview'>('upload');
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [profilePhotos, setProfilePhotos] = useState<string[]>([]); // Array of local URIs
-  const [uploadingPhotos, setUploadingPhotos] = useState(false);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [savedPathCount, setSavedPathCount] = useState(0);
+  const [savedImageUrls, setSavedImageUrls] = useState<string[]>([]);
+  const [stagingUris, setStagingUris] = useState<string[]>([]);
+
   const [previewName, setPreviewName] = useState('');
   const [previewAge, setPreviewAge] = useState<number | null>(null);
   const [previewLocation, setPreviewLocation] = useState('');
   const [previewBio, setPreviewBio] = useState('');
   const [previewHobbies, setPreviewHobbies] = useState<string[]>([]);
 
+  const cardImageUrls = useMemo(
+    () => [...savedImageUrls, ...stagingUris].slice(0, MAX_PROFILE_PHOTOS),
+    [savedImageUrls, stagingUris]
+  );
+
+  const loadPreview = useCallback(async (uid: string) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, age, bio, hobbies, profile_photo_url')
+      .eq('id', uid)
+      .single();
+
+    setPreviewName(profile?.name?.trim() ?? '');
+    setPreviewAge(
+      typeof profile?.age === 'number' && !Number.isNaN(profile.age)
+        ? profile.age
+        : null
+    );
+    setPreviewBio(profile?.bio?.trim() ?? '');
+    setPreviewHobbies(Array.isArray(profile?.hobbies) ? profile.hobbies : []);
+
+    const prefs = await getPreferences(uid);
+    setPreviewLocation(formatLocationLine(prefs));
+
+    const paths = profilePhotoPathsFromRow(profile?.profile_photo_url);
+    setSavedPathCount(paths.length);
+    if (paths.length > 0) {
+      const signed = await getProfileImageUrls(JSON.stringify(paths));
+      setSavedImageUrls(signed ?? []);
+    } else {
+      setSavedImageUrls([]);
+    }
+  }, []);
+
   useEffect(() => {
-    // Get current user
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setUserId(user.id);
-        // Load existing photos if any
-        loadExistingPhotos(user.id);
+        loadPreview(user.id);
       }
     });
-  }, []);
+  }, [loadPreview]);
 
-  const loadExistingPhotos = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('profile_photo_url')
-        .eq('id', userId)
-        .single();
-
-      if (!error && data?.profile_photo_url) {
-        try {
-          const parsed = JSON.parse(data.profile_photo_url);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // Photos already exist, user can skip or add more
-            // For now, we'll let them add new photos
-          }
-        } catch {
-          // Not JSON, might be single photo - ignore for now
-        }
-      }
-    } catch (error) {
-      console.error('Error loading existing photos:', error);
-    }
-  };
+  const totalSlots = savedPathCount + stagingUris.length;
 
   const handleAddPhoto = async () => {
-    if (profilePhotos.length >= 5) {
-      Alert.alert('Maximum Photos', 'You can add up to 5 photos');
+    if (totalSlots >= MAX_PROFILE_PHOTOS) {
+      Alert.alert('Maximum Photos', `You can add up to ${MAX_PROFILE_PHOTOS} photos`);
       return;
     }
 
     const photoUri = await pickImage();
     if (photoUri) {
-      setProfilePhotos([...profilePhotos, photoUri]);
+      setStagingUris((prev) => {
+        const maxNew = MAX_PROFILE_PHOTOS - savedPathCount;
+        if (prev.length >= maxNew) return prev;
+        return [...prev, photoUri].slice(0, maxNew);
+      });
     }
   };
 
-  const handleRemovePhoto = (index: number) => {
-    const newPhotos = profilePhotos.filter((_, i) => i !== index);
-    setProfilePhotos(newPhotos);
-  };
-
-  const handleUploadPhotos = async () => {
-    if (!userId || profilePhotos.length === 0) return [];
-
-    setUploadingPhotos(true);
-    try {
-      const uploadedPaths: string[] = [];
-
-      // Upload each photo
-      for (const photoUri of profilePhotos) {
-        const { path, error } = await uploadProfileImage(userId, photoUri);
-        if (error || !path) {
-          console.error('Error uploading photo:', error);
-          Alert.alert('Upload Error', `Failed to upload one or more photos: ${error}`);
-          continue;
-        }
-        uploadedPaths.push(path);
-      }
-
-      setUploadingPhotos(false);
-      return uploadedPaths;
-    } catch (error: any) {
-      console.error('Error uploading photos:', error);
-      setUploadingPhotos(false);
-      Alert.alert('Error', error.message || 'Failed to upload photos');
-      return [];
-    }
+  const handleRemoveStaging = (index: number) => {
+    setStagingUris((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -124,79 +113,28 @@ export default function ProfileCardScreen({ onComplete }: ProfileCardScreenProps
       return;
     }
 
-    // Validate minimum photos requirement
-    if (profilePhotos.length < 3) {
-      Alert.alert('Photos Required', 'Please add at least 3 photos (up to 5)');
+    if (savedPathCount + stagingUris.length < MIN_PROFILE_PHOTOS) {
+      Alert.alert(
+        'Photos Required',
+        `Please add at least ${MIN_PROFILE_PHOTOS} photos (up to ${MAX_PROFILE_PHOTOS})`
+      );
+      return;
+    }
+
+    if (stagingUris.length === 0) {
+      onComplete();
       return;
     }
 
     setLoading(true);
     try {
-      // Upload photos first
-      const uploadedPaths = await handleUploadPhotos();
-      
-      if (uploadedPaths.length === 0 && profilePhotos.length > 0) {
-        Alert.alert('Error', 'Failed to upload photos. Please try again.');
+      const result = await uploadStagedPhotosAndMerge(userId, stagingUris);
+      if (!result.ok) {
+        Alert.alert('Error', result.error ?? 'Failed to save photos');
         setLoading(false);
         return;
       }
-
-      // Get existing photos if any (from onboarding)
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('profile_photo_url')
-        .eq('id', userId)
-        .single();
-
-      let existingPhotos: string[] = [];
-      if (existingProfile?.profile_photo_url) {
-        try {
-          const parsed = JSON.parse(existingProfile.profile_photo_url);
-          if (Array.isArray(parsed)) {
-            existingPhotos = parsed;
-          }
-        } catch {
-          // Not JSON, might be single photo - convert to array
-          existingPhotos = [existingProfile.profile_photo_url];
-        }
-      }
-
-      // Combine existing and new photos, limit to 5 total
-      const allPhotos = [...existingPhotos, ...uploadedPaths].slice(0, 5);
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({ profile_photo_url: JSON.stringify(allPhotos) })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error updating profile photos:', error);
-        Alert.alert('Error', 'Failed to save photos');
-        setLoading(false);
-        return;
-      }
-
-      const signedUrls = await getProfileImageUrls(JSON.stringify(allPhotos));
-      const { data: profileRow } = await supabase
-        .from('profiles')
-        .select('name, age, bio, hobbies')
-        .eq('id', userId)
-        .single();
-      const prefs = await getPreferences(userId);
-
-      setPreviewUrls(signedUrls ?? []);
-      setPreviewName(profileRow?.name?.trim() || '');
-      setPreviewAge(
-        typeof profileRow?.age === 'number' && !Number.isNaN(profileRow.age)
-          ? profileRow.age
-          : null
-      );
-      setPreviewLocation(formatLocationLine(prefs));
-      setPreviewBio(profileRow?.bio?.trim() ?? '');
-      setPreviewHobbies(
-        Array.isArray(profileRow?.hobbies) ? profileRow.hobbies : []
-      );
-      setPhase('preview');
+      onComplete();
     } catch (error: any) {
       console.error('Error saving photos:', error);
       Alert.alert('Error', error.message || 'Failed to save photos');
@@ -206,124 +144,81 @@ export default function ProfileCardScreen({ onComplete }: ProfileCardScreenProps
   };
 
   const handleSkip = () => {
-    // Allow skipping if they already have photos from onboarding
     onComplete();
   };
-
-  const handlePreviewContinue = () => {
-    onComplete();
-  };
-
-  if (phase === 'preview') {
-    return (
-      <View style={styles.container}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.content}>
-            <Text style={styles.title}>Your profile card</Text>
-            <Text style={styles.subtitle}>
-              This is how other people see you. Swipe the photos to browse.
-            </Text>
-
-            <PublicProfileCard
-              imageUrls={previewUrls}
-              name={previewName}
-              age={previewAge}
-              location={previewLocation}
-              bio={previewBio}
-              hobbies={previewHobbies}
-            />
-
-            <TouchableOpacity
-              style={styles.previewContinueButton}
-              onPress={handlePreviewContinue}
-            >
-              <Text style={styles.saveButtonText}>Continue</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>Add Your Profile Photos</Text>
+          <Text style={styles.title}>Your profile card</Text>
           <Text style={styles.subtitle}>
-            Add 3-5 photos, then preview how your card looks to others
+            Add 3–5 photos. This preview updates as you go — same card others see on your profile.
           </Text>
 
-          {/* Photos Section */}
+          <PublicProfileCard
+            imageUrls={cardImageUrls}
+            name={previewName}
+            age={previewAge}
+            location={previewLocation}
+            bio={previewBio}
+            hobbies={previewHobbies}
+          />
+
           <View style={styles.section}>
-            <Text style={styles.label}>Profile Photos (3-5 photos)</Text>
-            
-            {/* Photo grid */}
+            <Text style={styles.label}>Profile photos ({MIN_PROFILE_PHOTOS}–{MAX_PROFILE_PHOTOS})</Text>
+
             <View style={styles.photoGrid}>
-              {profilePhotos.map((uri, index) => (
-                <View key={index} style={styles.photoContainer}>
+              {stagingUris.map((uri, index) => (
+                <View key={`s-${index}`} style={styles.photoContainer}>
                   <Image source={{ uri }} style={styles.photo} />
                   <TouchableOpacity
                     style={styles.removePhotoButton}
-                    onPress={() => handleRemovePhoto(index)}
+                    onPress={() => handleRemoveStaging(index)}
                   >
                     <Text style={styles.removePhotoText}>×</Text>
                   </TouchableOpacity>
                 </View>
               ))}
-              
-              {/* Add photo button */}
-              {profilePhotos.length < 5 && (
+
+              {stagingUris.length + savedPathCount < MAX_PROFILE_PHOTOS ? (
                 <TouchableOpacity
                   style={styles.addPhotoButton}
                   onPress={handleAddPhoto}
-                  disabled={uploadingPhotos}
                 >
                   <Text style={styles.addPhotoText}>+</Text>
                   <Text style={styles.addPhotoLabel}>Add Photo</Text>
                 </TouchableOpacity>
-              )}
+              ) : null}
             </View>
 
-            {profilePhotos.length < 3 && (
+            {totalSlots < MIN_PROFILE_PHOTOS ? (
               <Text style={styles.errorText}>
-                Please add at least 3 photos ({profilePhotos.length}/3)
+                Add at least {MIN_PROFILE_PHOTOS} photos ({totalSlots}/{MIN_PROFILE_PHOTOS})
               </Text>
-            )}
-
-            {uploadingPhotos && (
-              <View style={styles.uploadingContainer}>
-                <ActivityIndicator size="small" color="#189AA2" />
-                <Text style={styles.uploadingText}>Uploading photos...</Text>
-              </View>
-            )}
+            ) : null}
 
             <Text style={styles.hint}>
-              These photos will be visible on your profile card
+              First photo is your cover; order is saved top-to-bottom, left-to-right.
             </Text>
           </View>
 
-          {/* Action Buttons */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[styles.button, styles.skipButton]}
               onPress={handleSkip}
-              disabled={loading || uploadingPhotos}
+              disabled={loading}
             >
               <Text style={styles.skipButtonText}>Skip for Now</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, styles.saveButton]}
               onPress={handleSave}
-              disabled={loading || uploadingPhotos || profilePhotos.length < 3}
+              disabled={loading || savedPathCount + stagingUris.length < MIN_PROFILE_PHOTOS}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
@@ -341,14 +236,14 @@ export default function ProfileCardScreen({ onComplete }: ProfileCardScreenProps
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+    backgroundColor: '#D9E1E6',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 24,
-    paddingTop: 60,
+    paddingTop: 56,
   },
   content: {
     maxWidth: 600,
@@ -356,45 +251,47 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#0C5389', // Deep Blue
+    color: '#0C5389',
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#0C5389', // Deep Blue
-    marginBottom: 32,
+    fontSize: 15,
+    color: '#0C5389',
+    marginBottom: 20,
     textAlign: 'center',
+    lineHeight: 22,
   },
   section: {
-    marginBottom: 32,
+    marginTop: 8,
+    marginBottom: 24,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0C5389', // Deep Blue
+    color: '#0C5389',
     marginBottom: 12,
   },
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
     justifyContent: 'center',
+    marginBottom: 16,
   },
   photoContainer: {
     width: '30%',
     aspectRatio: 1,
     position: 'relative',
     marginBottom: 12,
+    marginHorizontal: '1.5%',
   },
   photo: {
     width: '100%',
     height: '100%',
     borderRadius: 8,
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+    backgroundColor: '#D9E1E6',
   },
   removePhotoButton: {
     position: 'absolute',
@@ -403,14 +300,14 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#FF6B6B', // Red
+    backgroundColor: '#FF6B6B',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#FDFDFD', // Pure White
+    borderColor: '#FDFDFD',
   },
   removePhotoText: {
-    color: '#FDFDFD', // Pure White
+    color: '#FDFDFD',
     fontSize: 20,
     fontWeight: 'bold',
     lineHeight: 20,
@@ -420,51 +317,39 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#D9E1E6', // Light Cool Gray
+    borderColor: '#D9E1E6',
     borderStyle: 'dashed',
-    backgroundColor: '#FDFDFD', // Pure White
+    backgroundColor: '#FDFDFD',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    marginHorizontal: '1.5%',
   },
   addPhotoText: {
     fontSize: 32,
-    color: '#189AA2', // Teal / Blue-Green
+    color: '#189AA2',
     fontWeight: '300',
     marginBottom: 4,
   },
   addPhotoLabel: {
     fontSize: 12,
-    color: '#0C5389', // Deep Blue
+    color: '#0C5389',
     fontWeight: '500',
-  },
-  uploadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  uploadingText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#189AA2', // Teal / Blue-Green
   },
   errorText: {
     fontSize: 14,
-    color: '#FF6B6B', // Red for errors
+    color: '#FF6B6B',
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 8,
   },
   hint: {
     fontSize: 14,
-    color: '#189AA2', // Teal / Blue-Green
+    color: '#189AA2',
+    lineHeight: 20,
   },
   buttonContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
     marginBottom: 40,
   },
   button: {
@@ -472,30 +357,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
+    marginHorizontal: 6,
   },
   skipButton: {
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+    backgroundColor: '#D9E1E6',
   },
   skipButtonText: {
-    color: '#0C5389', // Deep Blue
+    color: '#0C5389',
     fontSize: 16,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#46BD7F', // Primary Green
+    backgroundColor: '#46BD7F',
   },
   saveButtonText: {
-    color: '#FDFDFD', // Pure White
+    color: '#FDFDFD',
     fontSize: 16,
     fontWeight: '600',
-  },
-  previewContinueButton: {
-    marginTop: 28,
-    marginBottom: 40,
-    width: '100%',
-    borderRadius: 8,
-    padding: 15,
-    alignItems: 'center',
-    backgroundColor: '#46BD7F',
   },
 });

@@ -7,22 +7,18 @@ import {
   Image,
   ScrollView,
   Modal,
-  TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback } from 'react';
-import {
-  pickImage,
-  uploadProfileImage,
-  getProfileImageUrls,
-  deleteProfileImage,
-} from '../lib/storage';
+import { getProfileImageUrls, pickImage } from '../lib/storage';
 import { getPreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
+import { appendProfilePhoto, removeProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
 import PublicProfileCard from '../components/PublicProfileCard';
+import ProfileDetailsForm from '../components/ProfileDetailsForm';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
@@ -143,8 +139,8 @@ export default function ProfileScreen() {
 
   const handleAddPhoto = async () => {
     if (!user) return;
-    if (photoPaths.length >= 5) {
-      Alert.alert('Photos', 'You can have up to 5 photos.');
+    if (photoPaths.length >= MAX_PROFILE_PHOTOS) {
+      Alert.alert('Photos', `You can have up to ${MAX_PROFILE_PHOTOS} photos.`);
       return;
     }
     const uri = await pickImage();
@@ -152,19 +148,9 @@ export default function ProfileScreen() {
 
     setSavingPhotos(true);
     try {
-      const { path, error } = await uploadProfileImage(user.id, uri);
-      if (error || !path) {
-        Alert.alert('Upload failed', error ?? 'Unknown error');
-        return;
-      }
-      const next = [...photoPaths, path].slice(0, 5);
-      const { error: upErr } = await supabase
-        .from('profiles')
-        .update({ profile_photo_url: JSON.stringify(next) })
-        .eq('id', user.id);
-
-      if (upErr) {
-        Alert.alert('Error', upErr.message);
+      const result = await appendProfilePhoto(user.id, uri);
+      if (!result.ok) {
+        Alert.alert('Upload failed', result.error ?? 'Unknown error');
         return;
       }
       await loadProfile(user.id);
@@ -175,12 +161,6 @@ export default function ProfileScreen() {
 
   const handleRemovePhoto = (index: number) => {
     if (!user) return;
-    const next = photoPaths.filter((_, i) => i !== index);
-    if (next.length < 3) {
-      Alert.alert('Photos', 'Keep at least 3 photos on your profile card.');
-      return;
-    }
-    const removed = photoPaths[index];
 
     Alert.alert('Remove photo', 'Remove this photo from your profile?', [
       { text: 'Cancel', style: 'cancel' },
@@ -190,13 +170,9 @@ export default function ProfileScreen() {
         onPress: async () => {
           setSavingPhotos(true);
           try {
-            await deleteProfileImage(user.id, removed);
-            const { error } = await supabase
-              .from('profiles')
-              .update({ profile_photo_url: JSON.stringify(next) })
-              .eq('id', user.id);
-            if (error) {
-              Alert.alert('Error', error.message);
+            const result = await removeProfilePhotoAt(user.id, index);
+            if (!result.ok) {
+              Alert.alert('Cannot remove', result.error ?? 'Error');
               return;
             }
             await loadProfile(user.id);
@@ -308,64 +284,22 @@ export default function ProfileScreen() {
             contentContainerStyle={styles.modalScrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.fieldLabel}>Name</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Your name"
-              placeholderTextColor="#189AA280"
+            <ProfileDetailsForm
+              variant="modal"
+              showName
+              name={editName}
+              onChangeName={setEditName}
+              bio={editBio}
+              onChangeBio={setEditBio}
+              occupation={editOccupation}
+              onChangeOccupation={setEditOccupation}
+              hobbies={editHobbies}
+              hobbyDraft={editHobbyDraft}
+              onChangeHobbyDraft={setEditHobbyDraft}
+              onAddHobby={handleAddEditHobby}
+              onRemoveHobby={handleRemoveEditHobby}
+              footerHint="Location comes from your housing preferences (onboarding)."
             />
-
-            <Text style={styles.fieldLabel}>Bio</Text>
-            <TextInput
-              style={[styles.fieldInput, styles.bioInput]}
-              value={editBio}
-              onChangeText={setEditBio}
-              placeholder="Tell people about yourself"
-              placeholderTextColor="#189AA280"
-              multiline
-              textAlignVertical="top"
-              maxLength={500}
-            />
-
-            <Text style={styles.fieldLabel}>Occupation</Text>
-            <TextInput
-              style={styles.fieldInput}
-              value={editOccupation}
-              onChangeText={setEditOccupation}
-              placeholder="What do you do?"
-              placeholderTextColor="#189AA280"
-            />
-
-            <Text style={styles.fieldLabel}>Hobbies</Text>
-            <View style={styles.hobbyRow}>
-              <TextInput
-                style={[styles.fieldInput, styles.hobbyInput]}
-                value={editHobbyDraft}
-                onChangeText={setEditHobbyDraft}
-                placeholder="Add a hobby"
-                placeholderTextColor="#189AA280"
-                onSubmitEditing={handleAddEditHobby}
-                returnKeyType="done"
-              />
-              <TouchableOpacity style={styles.hobbyAddBtn} onPress={handleAddEditHobby}>
-                <Text style={styles.hobbyAddBtnText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.hobbyTags}>
-              {editHobbies.map((h) => (
-                <TouchableOpacity
-                  key={h}
-                  style={styles.hobbyTag}
-                  onPress={() => handleRemoveEditHobby(h)}
-                >
-                  <Text style={styles.hobbyTagText}>{h}</Text>
-                  <Text style={styles.hobbyTagX}> ×</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.hint}>Location is set from your housing preferences during onboarding.</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -412,13 +346,15 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={[
                 styles.addPhotoBtn,
-                photoPaths.length >= 5 && styles.addPhotoBtnDisabled,
+                photoPaths.length >= MAX_PROFILE_PHOTOS && styles.addPhotoBtnDisabled,
               ]}
               onPress={handleAddPhoto}
-              disabled={savingPhotos || photoPaths.length >= 5}
+              disabled={savingPhotos || photoPaths.length >= MAX_PROFILE_PHOTOS}
             >
               <Text style={styles.addPhotoBtnText}>
-                {photoPaths.length >= 5 ? 'Maximum 5 photos' : '+ Add photo'}
+                {photoPaths.length >= MAX_PROFILE_PHOTOS
+                  ? `Maximum ${MAX_PROFILE_PHOTOS} photos`
+                  : '+ Add photo'}
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -558,76 +494,6 @@ const styles = StyleSheet.create({
   modalScrollContent: {
     padding: 20,
     paddingBottom: 40,
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0C5389',
-    marginBottom: 8,
-  },
-  fieldInput: {
-    backgroundColor: '#F5F8FA',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#0C5389',
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: '#D9E1E6',
-  },
-  bioInput: {
-    minHeight: 100,
-  },
-  hobbyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  hobbyInput: {
-    flex: 1,
-    marginBottom: 0,
-    marginRight: 8,
-  },
-  hobbyAddBtn: {
-    backgroundColor: '#189AA2',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  hobbyAddBtnText: {
-    color: '#FDFDFD',
-    fontWeight: '600',
-  },
-  hobbyTags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 18,
-  },
-  hobbyTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#189AA2',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  hobbyTagText: {
-    color: '#FDFDFD',
-    fontSize: 14,
-  },
-  hobbyTagX: {
-    color: '#FDFDFD',
-    fontSize: 14,
-    opacity: 0.9,
-  },
-  hint: {
-    fontSize: 13,
-    color: '#189AA2',
-    opacity: 0.85,
-    lineHeight: 18,
   },
   photosModalContent: {
     padding: 20,
