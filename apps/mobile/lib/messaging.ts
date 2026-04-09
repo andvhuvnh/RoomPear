@@ -7,6 +7,7 @@ export type ConversationSummary = {
   conversationCreatedAt: string;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
+  unreadCount: number;
   otherUserId: string;
   otherDisplayName: string;
   /** First profile photo URL (same as PublicProfileCard cover / index 0). */
@@ -81,6 +82,22 @@ export async function fetchConversationSummaries(): Promise<{
     return { data: [], error: new Error(apErr.message) };
   }
 
+  const unreadByConvId = new Map<string, number>();
+  {
+    const { data: unreadRows, error: uErr } = await supabase.rpc('get_unread_counts', {
+      p_conversation_ids: activeConvIds,
+    });
+    if (uErr) {
+      console.warn('get_unread_counts', uErr.message);
+    } else {
+      for (const row of (unreadRows ?? []) as any[]) {
+        if (row?.conversation_id) {
+          unreadByConvId.set(row.conversation_id, Number(row.unread_count ?? 0));
+        }
+      }
+    }
+  }
+
   const otherIdsByConv = new Map<string, string>();
   for (const row of allParts ?? []) {
     if (row.user_id === user.id) continue;
@@ -111,6 +128,7 @@ export async function fetchConversationSummaries(): Promise<{
       conversationCreatedAt: c.created_at,
       lastMessageAt: c.last_message_at,
       lastMessagePreview: c.last_message_preview,
+      unreadCount: unreadByConvId.get(c.id) ?? 0,
       otherUserId: otherId,
       otherDisplayName: namesById.get(otherId) ?? (otherId ? `User ${otherId.slice(0, 6)}` : 'Chat'),
       otherAvatarUrl: otherId ? avatarUrlById.get(otherId) ?? null : null,
@@ -124,6 +142,28 @@ export async function fetchConversationSummaries(): Promise<{
   summaries.sort((a, b) => activityMs(b) - activityMs(a));
 
   return { data: summaries, error: null };
+}
+
+export async function markConversationRead(
+  conversationId: string
+): Promise<{ error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: new Error('Not signed in') };
+  }
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ last_read_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
 }
 
 export async function fetchMessages(

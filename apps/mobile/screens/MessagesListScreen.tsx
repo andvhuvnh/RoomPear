@@ -127,9 +127,18 @@ export default function MessagesListScreen({ navigation }: Props) {
                   {formatTime(item.lastMessageAt ?? item.conversationCreatedAt)}
                 </Text>
               </View>
-              <Text style={styles.preview} numberOfLines={2}>
-                {item.lastMessagePreview ?? 'No messages yet'}
-              </Text>
+              <View style={styles.previewRow}>
+                <Text style={styles.preview} numberOfLines={1}>
+                  {item.lastMessagePreview ?? 'No messages yet'}
+                </Text>
+                {item.unreadCount > 0 ? (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>
+                      {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
           </TouchableOpacity>
         )}
@@ -207,8 +216,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#189AA2',
   },
-  preview: {
+  previewRow: {
     marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: '#0C5389',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeText: {
+    color: '#FDFDFD',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  preview: {
+    flex: 1,
     fontSize: 15,
     color: '#556',
     lineHeight: 20,
