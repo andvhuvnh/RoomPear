@@ -1,11 +1,12 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import DiscoverScreen from '../screens/DiscoverScreen';
+import MatchesScreen from '../screens/MatchesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import MessagesStack from './MessagesStack';
-import { DiscoverSwipePlaceholder, MatchesPlaceholder } from '../screens/TabPlaceholderScreens';
 
 export type MainTabParamList = {
-  Home: undefined;
+  Discover: undefined;
   Matches: undefined;
   Messages: undefined;
   Profile: undefined;
@@ -14,14 +15,14 @@ export type MainTabParamList = {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICON: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Home: 'home-outline',
+  Discover: 'home-outline',
   Matches: 'heart-outline',
   Messages: 'chatbubble-outline',
   Profile: 'person-outline',
 };
 
 const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Home: 'home',
+  Discover: 'home',
   Matches: 'heart',
   Messages: 'chatbubble',
   Profile: 'person',
@@ -33,8 +34,12 @@ export default function MainTabNavigator() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: '#111',
+        tabBarActiveTintColor: '#0C5389',
         tabBarInactiveTintColor: '#888',
+        tabBarStyle: {
+          borderTopColor: '#D9E1E6',
+          backgroundColor: '#FDFDFD',
+        },
         tabBarIcon: ({ color, size, focused }) => {
           const name = route.name as keyof MainTabParamList;
           return (
@@ -47,12 +52,8 @@ export default function MainTabNavigator() {
         },
       })}
     >
-      <Tab.Screen
-        name="Home"
-        component={DiscoverSwipePlaceholder}
-        options={{ title: 'Home' }}
-      />
-      <Tab.Screen name="Matches" component={MatchesPlaceholder} />
+      <Tab.Screen name="Discover" component={DiscoverScreen} />
+      <Tab.Screen name="Matches" component={MatchesScreen} />
       <Tab.Screen name="Messages" component={MessagesStack} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
