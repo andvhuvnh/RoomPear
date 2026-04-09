@@ -4,11 +4,12 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
 import { profilePhotoPathsFromRow } from './lib/profileDisplay';
+import { NavigationContainer } from '@react-navigation/native';
 import AuthScreen from './screens/AuthScreen';
-import ProfileScreen from './screens/HomeScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import ProfileCompletionScreen from './screens/ProfileCompletionScreen';
 import ProfileCardScreen from './screens/ProfileCardScreen';
+import MainTabNavigator from './navigation/MainTabNavigator';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'profile-completion' | 'profile-card' | 'home';
 
@@ -125,7 +126,11 @@ export default function App() {
       {appState === 'profile-card' && (
         <ProfileCardScreen onComplete={handleProfileCardComplete} />
       )}
-      {appState === 'home' && <ProfileScreen />}
+      {appState === 'home' && (
+        <NavigationContainer>
+          <MainTabNavigator />
+        </NavigationContainer>
+      )}
     </>
   );
 }
