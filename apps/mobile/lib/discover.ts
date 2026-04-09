@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getProfileImageUrls } from './storage';
+import { ensureMatchConversation } from './messaging';
 
 export type DiscoverProfile = {
   id: string;
@@ -86,5 +87,13 @@ export async function recordSwipe(
     .eq('direction', 'like')
     .maybeSingle();
 
-  return { isMatch: !!data };
+  const isMatch = !!data;
+  if (isMatch) {
+    const { error } = await ensureMatchConversation(swipedId);
+    if (error) {
+      console.warn('ensureMatchConversation', error.message);
+    }
+  }
+
+  return { isMatch };
 }

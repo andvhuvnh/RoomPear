@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -36,9 +38,11 @@ export default function MessagesListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOnce = useRef(false);
 
   const load = useCallback(async () => {
     setError(null);
+    if (!hasLoadedOnce.current) setLoading(true);
     const { data, error } = await fetchConversationSummaries();
     if (error) {
       setError(error.message);
@@ -46,13 +50,16 @@ export default function MessagesListScreen({ navigation }: Props) {
     } else {
       setItems(data);
     }
+    hasLoadedOnce.current = true;
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -99,16 +106,26 @@ export default function MessagesListScreen({ navigation }: Props) {
             activeOpacity={0.7}
           >
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {item.otherDisplayName.slice(0, 1).toUpperCase()}
-              </Text>
+              {item.otherAvatarUrl ? (
+                <Image
+                  source={{ uri: item.otherAvatarUrl }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {item.otherDisplayName.slice(0, 1).toUpperCase()}
+                </Text>
+              )}
             </View>
             <View style={styles.rowBody}>
               <View style={styles.rowTop}>
                 <Text style={styles.name} numberOfLines={1}>
                   {item.otherDisplayName}
                 </Text>
-                <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
+                <Text style={styles.time}>
+                  {formatTime(item.lastMessageAt ?? item.conversationCreatedAt)}
+                </Text>
               </View>
               <Text style={styles.preview} numberOfLines={2}>
                 {item.lastMessagePreview ?? 'No messages yet'}
@@ -158,6 +175,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   avatarText: {
     color: '#FDFDFD',
