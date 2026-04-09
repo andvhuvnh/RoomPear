@@ -29,6 +29,7 @@ function displayNameFromProfile(name: string | null | undefined, fallbackId: str
 
 /**
  * Conversations the current user is in, newest activity first.
+ * Only threads with at least one message (last_message_at set) appear in the list.
  */
 export async function fetchConversationSummaries(): Promise<{
   data: ConversationSummary[];
@@ -59,16 +60,22 @@ export async function fetchConversationSummaries(): Promise<{
     .from('conversations')
     .select('id, created_at, last_message_at, last_message_preview')
     .in('id', convIds)
+    .not('last_message_at', 'is', null)
     .order('last_message_at', { ascending: false, nullsFirst: false });
 
   if (cErr) {
     return { data: [], error: new Error(cErr.message) };
   }
 
+  const activeConvIds = (convos ?? []).map((c) => c.id);
+  if (activeConvIds.length === 0) {
+    return { data: [], error: null };
+  }
+
   const { data: allParts, error: apErr } = await supabase
     .from('conversation_participants')
     .select('conversation_id, user_id')
-    .in('conversation_id', convIds);
+    .in('conversation_id', activeConvIds);
 
   if (apErr) {
     return { data: [], error: new Error(apErr.message) };
