@@ -29,7 +29,3 @@ export function DiscoverSwipePlaceholder() {
 export function MatchesPlaceholder() {
   return <TabPlaceholder title="Matches" />;
 }
-
-export function MessagesPlaceholder() {
-  return <TabPlaceholder title="Messages" />;
-}
