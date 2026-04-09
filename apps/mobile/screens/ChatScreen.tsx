@@ -15,6 +15,7 @@ import type { MessagesStackParamList } from '../navigation/MessagesStack';
 import { supabase } from '../lib/supabase';
 import {
   fetchMessages,
+  markConversationRead,
   sendMessage,
   type ChatMessageRow,
 } from '../lib/messaging';
@@ -57,6 +58,10 @@ export default function ChatScreen({ navigation, route }: Props) {
       } else {
         setMessages(data);
       }
+      // Mark read when the thread is opened.
+      markConversationRead(conversationId).then(({ error: rErr }) => {
+        if (rErr) console.warn('markConversationRead', rErr.message);
+      });
       setLoading(false);
     })();
 
@@ -74,6 +79,12 @@ export default function ChatScreen({ navigation, route }: Props) {
           const row = payload.new as ChatMessageRow;
           if (row?.conversation_id === conversationId) {
             appendUnique(row);
+            // If we receive a message while the chat is open, treat it as read.
+            if (myUserId && row.sender_id && row.sender_id !== myUserId) {
+              markConversationRead(conversationId).then(({ error: rErr }) => {
+                if (rErr) console.warn('markConversationRead', rErr.message);
+              });
+            }
           }
         }
       )
@@ -83,7 +94,7 @@ export default function ChatScreen({ navigation, route }: Props) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [conversationId, appendUnique]);
+  }, [conversationId, appendUnique, myUserId]);
 
   const onSend = async () => {
     if (!draft.trim() || sending) return;
