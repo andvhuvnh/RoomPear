@@ -2,6 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import DiscoverScreen from '../screens/DiscoverScreen';
+import MatchesScreen from '../screens/MatchesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 
 export type MainTabParamList = {
@@ -60,7 +61,7 @@ export default function MainTabNavigator() {
       })}
     >
       <Tab.Screen name="Discover" component={DiscoverScreen} />
-      <Tab.Screen name="Matches" component={() => <Placeholder title="Matches" />} />
+      <Tab.Screen name="Matches" component={MatchesScreen} />
       <Tab.Screen name="Messages" component={() => <Placeholder title="Messages" />} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
