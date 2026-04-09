@@ -4,9 +4,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Keyboard,
   Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
@@ -140,17 +142,18 @@ export default function AuthScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.blobTop} />
-      <View style={styles.blobBottom} />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.container}>
+        <View style={styles.blobTop} />
+        <View style={styles.blobBottom} />
 
-      <View style={styles.content}>
-        <View style={styles.brandHeader}>
-          <Text style={styles.title}>RoomPear</Text>
-          <Text style={styles.tagline}>Swipe to find your next roommate</Text>
-        </View>
+        <View style={styles.content}>
+          <View style={styles.brandHeader}>
+            <Text style={styles.title}>RoomPear</Text>
+            <Text style={styles.tagline}>Swipe to find your next roommate</Text>
+          </View>
 
-        <View style={styles.card}>
+          <View style={styles.card}>
           <Text style={styles.subtitle}>
             {mode === 'signin' ? 'Welcome back' : 'Create your account'}
           </Text>
@@ -307,9 +310,10 @@ export default function AuthScreen() {
               By continuing, you agree to RoomPear’s Terms and Privacy Policy.
             </Text>
           </View>
+          </View>
         </View>
       </View>
-    </View>
+    </TouchableWithoutFeedback>
   );
 }
 

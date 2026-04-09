@@ -10,10 +10,12 @@ import {
   Modal,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   Alert,
   ActivityIndicator,
   ScrollView,
+  Keyboard,
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -315,7 +317,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     switch (currentStep) {
       case 'about-you':
         return (
-          <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.stepContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={styles.stepDescription}>
               Help us get to know you better
             </Text>
@@ -541,7 +547,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
       case 'lifestyle':
         return (
-          <ScrollView style={styles.stepContent}>
+          <ScrollView style={styles.stepContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.stepDescription}>
               A few questions about your lifestyle
             </Text>
@@ -689,63 +695,65 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         transparent={true}
         onRequestClose={() => {}}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Progress indicator */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
-                  ]}
-                />
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              {/* Progress indicator */}
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  Step {getStepNumber()} of {getTotalSteps()}
+                </Text>
               </View>
-              <Text style={styles.progressText}>
-                Step {getStepNumber()} of {getTotalSteps()}
-              </Text>
-            </View>
 
-            {/* Step title */}
-            <Text style={styles.stepTitle}>{getStepTitle()}</Text>
+              {/* Step title */}
+              <Text style={styles.stepTitle}>{getStepTitle()}</Text>
 
-            {/* Step content */}
-            {renderStepContent()}
+              {/* Step content */}
+              {renderStepContent()}
 
-            {/* Action buttons */}
-            <View style={styles.buttonContainer}>
-              {currentStep !== 'about-you' && (
+              {/* Action buttons */}
+              <View style={styles.buttonContainer}>
+                {currentStep !== 'about-you' && (
+                  <TouchableOpacity
+                    style={[styles.button, styles.previousButton]}
+                    onPress={handlePrevious}
+                    disabled={loading}
+                  >
+                    <Text style={styles.previousButtonText}>Previous</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
-                  style={[styles.button, styles.previousButton]}
-                  onPress={handlePrevious}
+                  style={[styles.button, styles.skipButton]}
+                  onPress={handleSkip}
                   disabled={loading}
                 >
-                  <Text style={styles.previousButtonText}>Previous</Text>
+                  <Text style={styles.skipButtonText}>Skip</Text>
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[styles.button, styles.skipButton]}
-                onPress={handleSkip}
-                disabled={loading}
-              >
-                <Text style={styles.skipButtonText}>Skip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.nextButton]}
-                onPress={handleNext}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.nextButtonText}>
-                    {currentStep === 'must-haves' ? 'Complete' : 'Next'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.nextButton]}
+                  onPress={handleNext}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.nextButtonText}>
+                      {currentStep === 'must-haves' ? 'Complete' : 'Next'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   );

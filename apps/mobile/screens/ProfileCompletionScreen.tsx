@@ -8,10 +8,12 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   ScrollView,
   Alert,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
@@ -121,13 +123,15 @@ export default function ProfileCompletionScreen({ onComplete }: ProfileCompletio
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.content}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
           <Text style={styles.title}>Complete Your Profile</Text>
           <Text style={styles.subtitle}>
             Add some details to help others get to know you better
@@ -166,9 +170,10 @@ export default function ProfileCompletionScreen({ onComplete }: ProfileCompletio
               )}
             </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
-    </View>
+          </View>
+        </ScrollView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
