@@ -1,11 +1,8 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import UserProfileScreen from '../screens/UserProfileScreen';
-import {
-  DiscoverSwipePlaceholder,
-  MatchesPlaceholder,
-  MessagesPlaceholder,
-} from '../screens/TabPlaceholderScreens';
+import MessagesStack from './MessagesStack';
+import { DiscoverSwipePlaceholder, MatchesPlaceholder } from '../screens/TabPlaceholderScreens';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -56,7 +53,7 @@ export default function MainTabNavigator() {
         options={{ title: 'Home' }}
       />
       <Tab.Screen name="Matches" component={MatchesPlaceholder} />
-      <Tab.Screen name="Messages" component={MessagesPlaceholder} />
+      <Tab.Screen name="Messages" component={MessagesStack} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
   );
