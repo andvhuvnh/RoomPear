@@ -11,28 +11,23 @@ export type Match = {
 };
 
 export async function fetchMatches(userId: string): Promise<Match[]> {
-  // Get everyone the current user liked
-  const { data: myLikes } = await supabase
-    .from('swipes')
-    .select('swiped_id, created_at')
-    .eq('swiper_id', userId)
-    .eq('direction', 'like');
+  // Mutual matches where no DM row exists yet. Opening chat creates the DM (both disappear
+  // from Matches). Messages tab lists a thread only after at least one message.
+  const { data: peerRows, error: rpcErr } = await supabase.rpc('match_peers_without_messages');
+  if (rpcErr) {
+    console.warn('fetchMatches: match_peers_without_messages', rpcErr.message);
+    return [];
+  }
 
-  if (!myLikes || myLikes.length === 0) return [];
+  const matchedUserIds = (peerRows ?? []) as string[];
+  if (matchedUserIds.length === 0) return [];
 
-  const likedIds = myLikes.map((r: any) => r.swiped_id);
-
-  // Of those, find who also liked the current user back
   const { data: mutualLikes } = await supabase
     .from('swipes')
     .select('swiper_id, created_at')
     .eq('swiped_id', userId)
     .eq('direction', 'like')
-    .in('swiper_id', likedIds);
-
-  if (!mutualLikes || mutualLikes.length === 0) return [];
-
-  const matchedUserIds = mutualLikes.map((r: any) => r.swiper_id);
+    .in('swiper_id', matchedUserIds);
 
   // Fetch their profiles
   const { data: profiles } = await supabase
@@ -57,7 +52,7 @@ export async function fetchMatches(userId: string): Promise<Match[]> {
     const location = city && state ? `${city}, ${state}` : city || state;
 
     const matchedAt =
-      mutualLikes.find((r: any) => r.swiper_id === profile.id)?.created_at ?? '';
+      (mutualLikes ?? []).find((r: any) => r.swiper_id === profile.id)?.created_at ?? '';
 
     result.push({
       id: profile.id,

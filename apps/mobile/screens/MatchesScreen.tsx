@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -32,19 +33,26 @@ export default function MatchesScreen() {
   const [loading, setLoading] = useState(true);
   const [openingChatFor, setOpeningChatFor] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const uid = data.session?.user.id;
-      if (uid) load(uid);
-    });
-  }, []);
-
-  async function load(uid: string) {
+  const load = useCallback(async (uid: string) => {
     setLoading(true);
     const data = await fetchMatches(uid);
     setMatches(data);
     setLoading(false);
-  }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      supabase.auth.getSession().then(({ data }) => {
+        const uid = data.session?.user.id;
+        if (!uid || cancelled) return;
+        load(uid);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [load])
+  );
 
   function formatDate(iso: string) {
     if (!iso) return '';

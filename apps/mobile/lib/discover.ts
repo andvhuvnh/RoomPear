@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { getProfileImageUrls } from './storage';
-import { ensureMatchConversation } from './messaging';
 
 export type DiscoverProfile = {
   id: string;
@@ -88,12 +87,8 @@ export async function recordSwipe(
     .maybeSingle();
 
   const isMatch = !!data;
-  if (isMatch) {
-    const { error } = await ensureMatchConversation(swipedId);
-    if (error) {
-      console.warn('ensureMatchConversation', error.message);
-    }
-  }
+  // Do not create a DM here — Matches stays visible until someone opens chat from Matches
+  // (ensureMatchConversation). Messages list only shows threads after at least one message.
 
   return { isMatch };
 }
