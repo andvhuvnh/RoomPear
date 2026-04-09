@@ -1,14 +1,15 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import MatchesScreen from '../screens/MatchesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
-import MessagesStack from './MessagesStack';
+import MessagesStack, { type MessagesStackParamList } from './MessagesStack';
 
 export type MainTabParamList = {
   Discover: undefined;
   Matches: undefined;
-  Messages: undefined;
+  Messages: NavigatorScreenParams<MessagesStackParamList>;
   Profile: undefined;
 };
 

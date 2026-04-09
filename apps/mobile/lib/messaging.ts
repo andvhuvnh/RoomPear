@@ -1,11 +1,16 @@
 import { supabase } from './supabase';
+import { getProfileImageUrls } from './storage';
 
 export type ConversationSummary = {
   conversationId: string;
+  /** When the thread was created (used for sort / time when there are no messages yet). */
+  conversationCreatedAt: string;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   otherUserId: string;
   otherDisplayName: string;
+  /** First profile photo URL (same as PublicProfileCard cover / index 0). */
+  otherAvatarUrl: string | null;
 };
 
 export type ChatMessageRow = {
@@ -52,7 +57,7 @@ export async function fetchConversationSummaries(): Promise<{
 
   const { data: convos, error: cErr } = await supabase
     .from('conversations')
-    .select('id, last_message_at, last_message_preview')
+    .select('id, created_at, last_message_at, last_message_preview')
     .in('id', convIds)
     .order('last_message_at', { ascending: false, nullsFirst: false });
 
@@ -76,33 +81,40 @@ export async function fetchConversationSummaries(): Promise<{
   }
 
   const otherIds = [...new Set(otherIdsByConv.values())];
-  let namesById = new Map<string, string>();
+  const namesById = new Map<string, string>();
+  const avatarUrlById = new Map<string, string | null>();
   if (otherIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, name')
+      .select('id, name, profile_photo_url')
       .in('id', otherIds);
-    namesById = new Map(
-      (profiles ?? []).map((p) => [p.id, displayNameFromProfile(p.name, p.id)])
-    );
+    for (const p of profiles ?? []) {
+      namesById.set(p.id, displayNameFromProfile(p.name, p.id));
+      const urls = p.profile_photo_url
+        ? (await getProfileImageUrls(p.profile_photo_url)) ?? []
+        : [];
+      avatarUrlById.set(p.id, urls[0] ?? null);
+    }
   }
 
   const summaries: ConversationSummary[] = (convos ?? []).map((c) => {
     const otherId = otherIdsByConv.get(c.id) ?? '';
     return {
       conversationId: c.id,
+      conversationCreatedAt: c.created_at,
       lastMessageAt: c.last_message_at,
       lastMessagePreview: c.last_message_preview,
       otherUserId: otherId,
       otherDisplayName: namesById.get(otherId) ?? (otherId ? `User ${otherId.slice(0, 6)}` : 'Chat'),
+      otherAvatarUrl: otherId ? avatarUrlById.get(otherId) ?? null : null,
     };
   });
 
-  summaries.sort((a, b) => {
-    const ta = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
-    const tb = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
-    return tb - ta;
-  });
+  const activityMs = (s: ConversationSummary) => {
+    if (s.lastMessageAt) return Date.parse(s.lastMessageAt);
+    return Date.parse(s.conversationCreatedAt);
+  };
+  summaries.sort((a, b) => activityMs(b) - activityMs(a));
 
   return { data: summaries, error: null };
 }
@@ -152,4 +164,26 @@ export async function sendMessage(
     return { data: null, error: new Error(error.message) };
   }
   return { data: data as ChatMessageRow, error: null };
+}
+
+/**
+ * Ensures a DM exists between the current user and a mutually matched peer.
+ * Safe to call repeatedly (idempotent). Requires matching `swipes` rows (both `like`).
+ */
+export async function ensureMatchConversation(
+  otherUserId: string
+): Promise<{ data: string | null; error: Error | null }> {
+  const { data, error } = await supabase.rpc('get_or_create_match_conversation', {
+    p_other_user_id: otherUserId,
+  });
+
+  if (error) {
+    return { data: null, error: new Error(error.message) };
+  }
+
+  const id = typeof data === 'string' ? data : data != null ? String(data) : '';
+  if (!id) {
+    return { data: null, error: new Error('No conversation id returned') };
+  }
+  return { data: id, error: null };
 }
