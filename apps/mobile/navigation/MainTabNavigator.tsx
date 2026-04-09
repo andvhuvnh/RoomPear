@@ -1,14 +1,11 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
+import DiscoverScreen from '../screens/DiscoverScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
-import {
-  DiscoverSwipePlaceholder,
-  MatchesPlaceholder,
-  MessagesPlaceholder,
-} from '../screens/TabPlaceholderScreens';
 
 export type MainTabParamList = {
-  Home: undefined;
+  Discover: undefined;
   Matches: undefined;
   Messages: undefined;
   Profile: undefined;
@@ -17,18 +14,26 @@ export type MainTabParamList = {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICON: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Home: 'home-outline',
+  Discover: 'home-outline',
   Matches: 'heart-outline',
   Messages: 'chatbubble-outline',
   Profile: 'person-outline',
 };
 
 const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Home: 'home',
+  Discover: 'home',
   Matches: 'heart',
   Messages: 'chatbubble',
   Profile: 'person',
 };
+
+function Placeholder({ title }: { title: string }) {
+  return (
+    <View style={styles.placeholder}>
+      <Text style={styles.placeholderText}>{title}</Text>
+    </View>
+  );
+}
 
 export default function MainTabNavigator() {
   return (
@@ -36,8 +41,12 @@ export default function MainTabNavigator() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: '#111',
+        tabBarActiveTintColor: '#0C5389',
         tabBarInactiveTintColor: '#888',
+        tabBarStyle: {
+          borderTopColor: '#D9E1E6',
+          backgroundColor: '#FDFDFD',
+        },
         tabBarIcon: ({ color, size, focused }) => {
           const name = route.name as keyof MainTabParamList;
           return (
@@ -50,14 +59,23 @@ export default function MainTabNavigator() {
         },
       })}
     >
-      <Tab.Screen
-        name="Home"
-        component={DiscoverSwipePlaceholder}
-        options={{ title: 'Home' }}
-      />
-      <Tab.Screen name="Matches" component={MatchesPlaceholder} />
-      <Tab.Screen name="Messages" component={MessagesPlaceholder} />
+      <Tab.Screen name="Discover" component={DiscoverScreen} />
+      <Tab.Screen name="Matches" component={() => <Placeholder title="Matches" />} />
+      <Tab.Screen name="Messages" component={() => <Placeholder title="Messages" />} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  placeholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FDFDFD',
+  },
+  placeholderText: {
+    fontSize: 18,
+    color: '#2B3A4A',
+  },
+});
