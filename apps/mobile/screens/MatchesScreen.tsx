@@ -8,14 +8,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TextInput,
 } from 'react-native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { CommonActions, useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { fetchMatches, type Match } from '../lib/matches';
-import { ensureMatchConversation } from '../lib/messaging';
-import type { MainTabParamList } from '../navigation/MainTabNavigator';
+import {
+  ensureMatchConversation,
+  sendMessage,
+  type ChatMessageRow,
+} from '../lib/messaging';
 
 const COLORS = {
   blue: '#0C5389',
@@ -27,11 +30,19 @@ const COLORS = {
   placeholder: '#D9E1E6',
 };
 
+type ActiveChat = {
+  match: Match;
+  conversationId: string | null;
+  messages: ChatMessageRow[];
+};
+
 export default function MatchesScreen() {
-  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const [userId, setUserId] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openingChatFor, setOpeningChatFor] = useState<string | null>(null);
+  const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
 
   const load = useCallback(async (uid: string) => {
     setLoading(true);
@@ -46,13 +57,52 @@ export default function MatchesScreen() {
       supabase.auth.getSession().then(({ data }) => {
         const uid = data.session?.user.id;
         if (!uid || cancelled) return;
+        setUserId(uid);
         load(uid);
       });
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }, [load])
   );
+
+  async function openChat(match: Match) {
+    setActiveChat({ match, conversationId: null, messages: [] });
+  }
+
+  function closeChat() {
+    setActiveChat(null);
+    setDraft('');
+    if (userId) load(userId);
+  }
+
+  async function handleSend() {
+    if (!draft.trim() || sending || !activeChat || !userId) return;
+    setSending(true);
+
+    let convId = activeChat.conversationId;
+
+    // Create conversation on first message
+    if (!convId) {
+      const { data: newId, error } = await ensureMatchConversation(activeChat.match.id);
+      if (error || !newId) {
+        setSending(false);
+        return;
+      }
+      convId = newId;
+      setActiveChat((prev) => prev ? { ...prev, conversationId: convId } : prev);
+    }
+
+    const { data, error } = await sendMessage(convId!, draft);
+    setSending(false);
+    if (error || !data) return;
+
+    setDraft('');
+    setActiveChat((prev) =>
+      prev ? { ...prev, messages: [...prev.messages, data] } : prev
+    );
+
+    // Move match to Messages — reload matches list in background
+    load(userId);
+  }
 
   function formatDate(iso: string) {
     if (!iso) return '';
@@ -60,31 +110,69 @@ export default function MatchesScreen() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
-  async function openChatWithMatch(match: Match) {
-    if (openingChatFor) return;
-    setOpeningChatFor(match.id);
-    const { data: conversationId, error } = await ensureMatchConversation(match.id);
-    setOpeningChatFor(null);
-    if (error || !conversationId) {
-      console.warn('ensureMatchConversation', error?.message);
-      Alert.alert(
-        'Could not open chat',
-        error?.message ??
-          'Make sure messaging migrations are applied and you are still matched with this person.'
-      );
-      return;
-    }
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: 'Messages',
-        params: {
-          screen: 'Chat',
-          params: {
-            conversationId,
-            title: match.name,
-          },
-        },
-      })
+  // Inline chat view
+  if (activeChat) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.chatContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* Chat header */}
+        <View style={styles.chatHeader}>
+          <TouchableOpacity onPress={closeChat} style={styles.backButton}>
+            <Text style={styles.backText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.chatHeaderName}>{activeChat.match.name}</Text>
+        </View>
+
+        {/* Messages */}
+        <FlatList
+          data={activeChat.messages}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messageList}
+          ListEmptyComponent={
+            <View style={styles.emptyChat}>
+              <Text style={styles.emptyChatText}>
+                Say hi to {activeChat.match.name}!
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const mine = item.sender_id === userId;
+            return (
+              <View style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
+                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                  <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
+                    {item.body}
+                  </Text>
+                </View>
+              </View>
+            );
+          }}
+        />
+
+        {/* Input */}
+        <View style={styles.composer}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Message…"
+            placeholderTextColor="#999"
+            multiline
+            maxLength={500}
+            editable={!sending}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+            onPress={handleSend}
+            disabled={!draft.trim() || sending}
+          >
+            <Text style={styles.sendBtnText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -120,8 +208,7 @@ export default function MatchesScreen() {
           <TouchableOpacity
             style={styles.matchRow}
             activeOpacity={0.7}
-            onPress={() => openChatWithMatch(item)}
-            disabled={openingChatFor === item.id}
+            onPress={() => openChat(item)}
           >
             {item.photoUrls.length > 0 ? (
               <Image source={{ uri: item.photoUrls[0] }} style={styles.avatar} />
@@ -130,8 +217,7 @@ export default function MatchesScreen() {
             )}
             <View style={styles.info}>
               <Text style={styles.name}>
-                {item.name}
-                {item.age ? `, ${item.age}` : ''}
+                {item.name}{item.age ? `, ${item.age}` : ''}
               </Text>
               {item.location ? (
                 <Text style={styles.location}>{item.location}</Text>
@@ -139,11 +225,7 @@ export default function MatchesScreen() {
               <Text style={styles.matchedAt}>Matched {formatDate(item.matchedAt)}</Text>
             </View>
             <View style={styles.messageButton}>
-              {openingChatFor === item.id ? (
-                <ActivityIndicator color={COLORS.blue} size="small" />
-              ) : (
-                <Text style={styles.messageIcon}>💬</Text>
-              )}
+              <Text style={styles.messageIcon}>💬</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -187,9 +269,7 @@ const styles = StyleSheet.create({
   avatarPlaceholder: {
     backgroundColor: COLORS.placeholder,
   },
-  info: {
-    flex: 1,
-  },
+  info: { flex: 1 },
   name: {
     fontSize: 17,
     fontWeight: '700',
@@ -214,9 +294,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  messageIcon: {
-    fontSize: 20,
-  },
+  messageIcon: { fontSize: 20 },
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -224,10 +302,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     backgroundColor: COLORS.white,
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '800',
@@ -239,5 +314,97 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  // Chat styles
+  chatContainer: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  backButton: { marginRight: 12, padding: 4 },
+  backText: { fontSize: 24, color: COLORS.blue },
+  chatHeaderName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  messageList: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  emptyChat: {
+    flex: 1,
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyChatText: {
+    fontSize: 15,
+    color: COLORS.text,
+    opacity: 0.5,
+  },
+  bubbleRow: {
+    marginBottom: 10,
+    flexDirection: 'row',
+  },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleRowTheirs: { justifyContent: 'flex-start' },
+  bubble: {
+    maxWidth: '75%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  bubbleMine: {
+    backgroundColor: COLORS.blue,
+    borderBottomRightRadius: 4,
+  },
+  bubbleTheirs: {
+    backgroundColor: '#F0F4F8',
+    borderBottomLeftRadius: 4,
+  },
+  bubbleText: {
+    fontSize: 15,
+    color: COLORS.ink,
+    lineHeight: 21,
+  },
+  bubbleTextMine: { color: '#fff' },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    padding: 12,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: 8,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#F0F4F8',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: COLORS.ink,
+    maxHeight: 100,
+  },
+  sendBtn: {
+    backgroundColor: COLORS.blue,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  sendBtnDisabled: { backgroundColor: COLORS.border },
+  sendBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
