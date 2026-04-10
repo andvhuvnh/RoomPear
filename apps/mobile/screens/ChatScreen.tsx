@@ -17,16 +17,18 @@ import {
   fetchMessages,
   markConversationRead,
   sendMessage,
+  ensureMatchConversation,
   type ChatMessageRow,
 } from '../lib/messaging';
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'Chat'>;
 
 export default function ChatScreen({ navigation, route }: Props) {
-  const { conversationId, title } = route.params;
+  const { conversationId: initialConversationId, otherUserId, title } = route.params;
+  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!!initialConversationId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
@@ -99,7 +101,26 @@ export default function ChatScreen({ navigation, route }: Props) {
   const onSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
-    const { data, error } = await sendMessage(conversationId, draft);
+
+    // If no conversation yet, create it now (first message)
+    let convId = conversationId;
+    if (!convId && otherUserId) {
+      const { data: newConvId, error: convErr } = await ensureMatchConversation(otherUserId);
+      if (convErr || !newConvId) {
+        console.warn('ensureMatchConversation', convErr?.message);
+        setSending(false);
+        return;
+      }
+      convId = newConvId;
+      setConversationId(convId);
+    }
+
+    if (!convId) {
+      setSending(false);
+      return;
+    }
+
+    const { data, error } = await sendMessage(convId, draft);
     setSending(false);
     if (error) {
       console.warn('sendMessage', error.message);
