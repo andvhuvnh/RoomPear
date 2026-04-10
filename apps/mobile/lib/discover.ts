@@ -86,5 +86,9 @@ export async function recordSwipe(
     .eq('direction', 'like')
     .maybeSingle();
 
-  return { isMatch: !!data };
+  const isMatch = !!data;
+  // Do not create a DM here — Matches stays visible until someone opens chat from Matches
+  // (ensureMatchConversation). Messages list only shows threads after at least one message.
+
+  return { isMatch };
 }

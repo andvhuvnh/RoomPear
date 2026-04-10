@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -7,14 +8,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { fetchMatches, type Match } from '../lib/matches';
+import { ensureMatchConversation } from '../lib/messaging';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const COLORS = {
   blue: '#0C5389',
   teal: '#189AA2',
-  green: '#46BD7F',
   white: '#FDFDFD',
   ink: '#0B1B2B',
   border: '#D9E1E6',
@@ -23,27 +28,64 @@ const COLORS = {
 };
 
 export default function MatchesScreen() {
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingChatFor, setOpeningChatFor] = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const uid = data.session?.user.id;
-      if (uid) load(uid);
-    });
-  }, []);
-
-  async function load(uid: string) {
+  const load = useCallback(async (uid: string) => {
     setLoading(true);
     const data = await fetchMatches(uid);
     setMatches(data);
     setLoading(false);
-  }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      supabase.auth.getSession().then(({ data }) => {
+        const uid = data.session?.user.id;
+        if (!uid || cancelled) return;
+        load(uid);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [load])
+  );
 
   function formatDate(iso: string) {
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  async function openChatWithMatch(match: Match) {
+    if (openingChatFor) return;
+    setOpeningChatFor(match.id);
+    const { data: conversationId, error } = await ensureMatchConversation(match.id);
+    setOpeningChatFor(null);
+    if (error || !conversationId) {
+      console.warn('ensureMatchConversation', error?.message);
+      Alert.alert(
+        'Could not open chat',
+        error?.message ??
+          'Make sure messaging migrations are applied and you are still matched with this person.'
+      );
+      return;
+    }
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'Messages',
+        params: {
+          screen: 'Chat',
+          params: {
+            conversationId,
+            title: match.name,
+          },
+        },
+      })
+    );
   }
 
   if (loading) {
@@ -75,7 +117,12 @@ export default function MatchesScreen() {
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.matchRow} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.matchRow}
+            activeOpacity={0.7}
+            onPress={() => openChatWithMatch(item)}
+            disabled={openingChatFor === item.id}
+          >
             {item.photoUrls.length > 0 ? (
               <Image source={{ uri: item.photoUrls[0] }} style={styles.avatar} />
             ) : (
@@ -83,7 +130,8 @@ export default function MatchesScreen() {
             )}
             <View style={styles.info}>
               <Text style={styles.name}>
-                {item.name}{item.age ? `, ${item.age}` : ''}
+                {item.name}
+                {item.age ? `, ${item.age}` : ''}
               </Text>
               {item.location ? (
                 <Text style={styles.location}>{item.location}</Text>
@@ -91,7 +139,11 @@ export default function MatchesScreen() {
               <Text style={styles.matchedAt}>Matched {formatDate(item.matchedAt)}</Text>
             </View>
             <View style={styles.messageButton}>
-              <Text style={styles.messageIcon}>💬</Text>
+              {openingChatFor === item.id ? (
+                <ActivityIndicator color={COLORS.blue} size="small" />
+              ) : (
+                <Text style={styles.messageIcon}>💬</Text>
+              )}
             </View>
           </TouchableOpacity>
         )}

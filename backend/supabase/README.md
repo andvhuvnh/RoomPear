@@ -54,8 +54,9 @@ backend/supabase/
 - **preferences** - User housing preferences
 - **listings** - Housing listings (to be created)
 - **listing_photos** - Photos for listings (to be created)
-- **messages** - Chat messages (to be created)
-- **conversations** - Chat conversations (to be created)
+- **conversations** — DM threads (`last_message_at`, `last_message_preview`)
+- **conversation_participants** — who is in each thread (two users per DM)
+- **messages** — individual messages (body, `sender_id`, `created_at`)
 
 #### Authentication
 
@@ -97,11 +98,39 @@ Migrations are numbered with timestamps and applied in order:
    supabase db pull
    ```
 
+### Messaging (manual test data)
+
+Apply the migration, then in the **SQL Editor** (runs with privileges that bypass RLS), create a conversation between two real users and add messages. Replace the UUIDs with values from **Authentication → Users** (and ensure both have rows in `public.profiles`).
+
+```sql
+-- 1) Create a conversation
+INSERT INTO public.conversations (id)
+VALUES (gen_random_uuid())
+RETURNING id;
+
+-- Copy the returned id into :conv below, and set :you and :them to two user UUIDs.
+
+-- 2) Add both participants (example — run after substituting UUIDs)
+INSERT INTO public.conversation_participants (conversation_id, user_id) VALUES
+  ('CONVERSATION_UUID'::uuid, 'YOUR_USER_UUID'::uuid),
+  ('CONVERSATION_UUID'::uuid, 'OTHER_USER_UUID'::uuid);
+
+-- 3) Insert a message (sender must be one of the participants)
+INSERT INTO public.messages (conversation_id, sender_id, body)
+VALUES ('CONVERSATION_UUID'::uuid, 'YOUR_USER_UUID'::uuid, 'Hello from SQL — you should see this in the app.');
+
+-- The trigger updates conversations.last_message_at and last_message_preview.
+```
+
+In the mobile app, open **Messages**: threads sort by `last_message_at` (newest first). Open a thread to read and send (RLS allows participants to `SELECT`/`INSERT` messages).
+
+**Realtime (optional):** In the Supabase dashboard, enable **Replication** for `public.messages` if you want live inserts while a chat is open.
+
 ## Next Steps
 
 - [ ] Create listings table migration
 - [ ] Create listing_photos table migration
-- [ ] Create messages and conversations tables
+- [x] Create messages and conversations tables (`20260408100000_create_messaging.sql`)
 - [ ] Set up storage buckets for images
 - [ ] Create Edge Functions for serverless logic
 
