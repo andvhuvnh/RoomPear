@@ -1,14 +1,15 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, StyleSheet } from 'react-native';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import MatchesScreen from '../screens/MatchesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import MessagesStack, { type MessagesStackParamList } from './MessagesStack';
 
 export type MainTabParamList = {
   Discover: undefined;
   Matches: undefined;
-  Messages: undefined;
+  Messages: NavigatorScreenParams<MessagesStackParamList>;
   Profile: undefined;
 };
 
@@ -27,14 +28,6 @@ const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.gly
   Messages: 'chatbubble',
   Profile: 'person',
 };
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderText}>{title}</Text>
-    </View>
-  );
-}
 
 export default function MainTabNavigator() {
   return (
@@ -62,21 +55,8 @@ export default function MainTabNavigator() {
     >
       <Tab.Screen name="Discover" component={DiscoverScreen} />
       <Tab.Screen name="Matches" component={MatchesScreen} />
-      <Tab.Screen name="Messages" component={() => <Placeholder title="Messages" />} />
+      <Tab.Screen name="Messages" component={MessagesStack} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  placeholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FDFDFD',
-  },
-  placeholderText: {
-    fontSize: 18,
-    color: '#2B3A4A',
-  },
-});
