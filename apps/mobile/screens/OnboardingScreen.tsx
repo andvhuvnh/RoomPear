@@ -1,685 +1,950 @@
 /**
- * Onboarding screen with step-by-step modal popups
- * Each preference is collected one at a time in a seamless flow
+ * OnboardingScreen — unified 10-step full-screen onboarding flow.
+ *
+ * Steps:
+ *  0  About You       (name, age, gender, ethnicity → profiles)
+ *  1  Location        (city, state, zip → preferences)
+ *  2  Budget          (min/max → preferences)
+ *  3  Room + Move-in  (room_type, move_in_date → preferences)
+ *  4  Lifestyle       (cleanliness, schedule, social, pets, smoking → preferences)
+ *  5  Dealbreakers    (hard/soft/none per item → preferences.dealbreakers)
+ *  6  Interests       (category chips → preferences.interests)
+ *  7  Prompts         (pick 2–3, answer them → profiles.prompts)
+ *  8  Photos          (upload photos → profiles.profile_photo_url)
+ *  9  Listing         (optional → listings + profiles.has_listing)
  */
 
 import { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  Modal,
+  StyleSheet,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  StyleSheet,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   ActivityIndicator,
-  ScrollView,
-  Keyboard,
-  Platform,
+  Image,
+  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
-import { savePreferences, Preferences } from '../lib/preferences';
+import { savePreferences } from '../lib/preferences';
+import { uploadStagedPhotosAndMerge } from '../lib/profilePhotos';
+import { uploadProfileImage } from '../lib/storage';
+import PublicProfileCard from '../components/PublicProfileCard';
 
-interface OnboardingScreenProps {
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TOTAL_STEPS = 10;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PHOTO_THUMB = (SCREEN_WIDTH - 40 - 10) / 2; // 2-col grid, 20px padding each side, 10px gap
+
+const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Other', 'Prefer not to say'];
+
+const ETHNICITY_OPTIONS = [
+  'Asian',
+  'Black / African American',
+  'Hispanic / Latino',
+  'Middle Eastern',
+  'Native American',
+  'Pacific Islander',
+  'White / Caucasian',
+  'Multiracial',
+  'Prefer not to say',
+];
+
+const DEALBREAKER_ITEMS = [
+  { key: 'smoking',    label: 'Smoking indoors' },
+  { key: 'pets',       label: 'Pets in the unit' },
+  { key: 'parties',    label: 'Frequent parties' },
+  { key: 'early_bird', label: 'Noise before 8 am' },
+  { key: 'night_owl',  label: 'Noise after 11 pm' },
+  { key: 'guests',     label: 'Overnight guests' },
+  { key: 'messy',      label: 'Messy common areas' },
+];
+
+const INTEREST_CATEGORIES = [
+  {
+    key: 'fitness',
+    label: '🏃 Fitness',
+    options: ['Running', 'Yoga', 'Gym', 'Hiking', 'Swimming', 'Cycling', 'Rock Climbing'],
+  },
+  {
+    key: 'food',
+    label: '🍕 Food & Drink',
+    options: ['Cooking', 'Baking', 'Coffee', 'Wine & Cocktails', 'Foodie Adventures', 'Meal Prep'],
+  },
+  {
+    key: 'arts',
+    label: '🎨 Arts & Culture',
+    options: ['Movies', 'Music', 'Reading', 'Photography', 'Art Galleries', 'Theater'],
+  },
+  {
+    key: 'outdoors',
+    label: '🌿 Outdoors',
+    options: ['Camping', 'Travel', 'Beach', 'Gardening', 'Road Trips', 'Surfing'],
+  },
+  {
+    key: 'tech',
+    label: '🎮 Tech & Gaming',
+    options: ['Gaming', 'Coding', 'Podcasts', 'Anime', 'Board Games', 'VR / AR'],
+  },
+];
+
+const PROMPTS = [
+  'My ideal Saturday morning looks like…',
+  "I'm looking for a roommate who…",
+  "Don't room with me if you hate…",
+  'My morning routine is…',
+  "On weeknights you'll find me…",
+  'Weekends are for…',
+  'I clean the apartment…',
+  'My noise level is…',
+  'Overnight guests are…',
+  'My kitchen rule is…',
+  'My sleep schedule is…',
+  "I've lived with roommates before and learned…",
+  'A quirk about living with me…',
+  'My ideal apartment vibe…',
+  'After work I usually…',
+  'The best thing about me as a roommate…',
+  'My work-from-home setup is…',
+  'Two truths and a lie about my living habits…',
+  'I stay up until…',
+  'I wake up at…',
+  'My relationship with mess is…',
+  'The soundtrack of my home is…',
+  'My go-to snack situation…',
+  'I unwind by…',
+];
+
+const STEP_TITLES = [
+  'Tell us about you',
+  'Where are you looking?',
+  "What's your budget?",
+  'What kind of room?',
+  'Your lifestyle',
+  'Any dealbreakers?',
+  'Your interests',
+  'In your own words',
+  'Add your photos',
+  'Do you have a place?',
+];
+
+const STEP_SUBTITLES = [
+  'This helps us find compatible roommates.',
+  "We'll show you people in your area.",
+  "We'll match you within your range.",
+  'Pick what works for you.',
+  'Helps us find someone compatible.',
+  'Hard = never · Soft = prefer not · None = fine.',
+  'Select up to 5 per category.',
+  'Pick 2–3 prompts to answer.',
+  'Your first impression — make it count.',
+  'Optional — skip if you are not listing a place.',
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDateYMD(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// ─── Chip component ───────────────────────────────────────────────────────────
+
+function Chip({
+  label,
+  selected,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.75}
+    >
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type PromptEntry = { question: string; answer: string };
+type DealbreakerLevel = 'hard' | 'soft' | 'none';
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+interface Props {
   onComplete: () => void;
 }
 
-type OnboardingStep =
-  | 'about-you'
-  | 'location'
-  | 'budget'
-  | 'room-type'
-  | 'move-in-date'
-  | 'lifestyle'
-  | 'must-haves'
-  | 'complete';
+export default function OnboardingScreen({ onComplete }: Props) {
+  // Core
+  const [step, setStep] = useState(0);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
-  const [currentStep, setCurrentStep] = useState<OnboardingStep>('about-you');
-  const [loading, setLoading] = useState(false);
-  const [preferences, setPreferences] = useState<Partial<Preferences>>({});
-
-  // Profile state (age, gender, ethnicity)
+  // Step 0: About You
+  const [name, setName] = useState('');
   const [age, setAge] = useState('');
-  const [gender, setGender] = useState<string>('');
-  const [ethnicity, setEthnicity] = useState<string>('');
+  const [gender, setGender] = useState('');
+  const [ethnicity, setEthnicity] = useState('');
 
-  // Form state
+  // Step 1: Location
   const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  const [locationState, setLocationState] = useState('');
   const [zipCode, setZipCode] = useState('');
+
+  // Step 2: Budget
   const [minBudget, setMinBudget] = useState('');
   const [maxBudget, setMaxBudget] = useState('');
-  const [budgetError, setBudgetError] = useState('');
-  const [roomType, setRoomType] = useState<'private' | 'shared' | 'either Private or Shared' | ''>('');
+
+  // Step 3: Room + Move-in
+  const [roomType, setRoomType] = useState('');
   const [moveInDate, setMoveInDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Step 4: Lifestyle
+  const [cleanliness, setCleanliness] = useState<number | null>(null);
+  const [workSchedule, setWorkSchedule] = useState('');
+  const [socialPref, setSocialPref] = useState('');
   const [petsAllowed, setPetsAllowed] = useState<boolean | null>(null);
   const [smokingAllowed, setSmokingAllowed] = useState<boolean | null>(null);
-  const [cleanlinessLevel, setCleanlinessLevel] = useState<number | null>(null);
-  const [socialPreference, setSocialPreference] = useState<'social' | 'quiet' | 'balanced' | ''>('');
 
-  const [userId, setUserId] = useState<string | null>(null);
+  // Step 5: Dealbreakers
+  const [dealbreakers, setDealbreakers] = useState<Record<string, DealbreakerLevel>>(
+    Object.fromEntries(DEALBREAKER_ITEMS.map((d) => [d.key, 'none' as DealbreakerLevel]))
+  );
+
+  // Step 6: Interests
+  const [interests, setInterests] = useState<Record<string, string[]>>(
+    Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, [] as string[]]))
+  );
+  const [expandedCategory, setExpandedCategory] = useState<string | null>('fitness');
+  const [customInputs, setCustomInputs] = useState<Record<string, string>>(
+    Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, '']))
+  );
+
+  // Step 7: Prompts
+  const [promptAnswers, setPromptAnswers] = useState<PromptEntry[]>([]);
+
+  // Step 8: Photos
+  const [stagingUris, setStagingUris] = useState<string[]>([]);
+
+  // Step 9: Listing
+  const [hasListing, setHasListing] = useState(false);
+  const [listingRent, setListingRent] = useState('');
+  const [listingRoomType, setListingRoomType] = useState('');
+  const [listingAddress, setListingAddress] = useState('');
+  const [listingCity, setListingCity] = useState('');
+  const [listingStateVal, setListingStateVal] = useState('');
+  const [listingZip, setListingZip] = useState('');
+  const [listingPhotos, setListingPhotos] = useState<string[]>([]);
 
   useEffect(() => {
-    // Get current user
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setUserId(user.id);
-      }
+      if (user) setUserId(user.id);
     });
   }, []);
 
-  const ensureProfileExists = async () => {
+  // ── Save helpers ───────────────────────────────────────────────────────────
+
+  const ensureProfile = async (uid: string): Promise<boolean> => {
+    const { data } = await supabase.from('profiles').select('id').eq('id', uid).single();
+    if (data) return true;
+    const { data: authData } = await supabase.auth.getUser();
+    const user = authData?.user;
+    if (!user) return false;
+    const { error } = await supabase.from('profiles').insert({
+      id: uid,
+      email: user.email ?? '',
+      name: user.user_metadata?.name ?? user.email ?? 'User',
+      phone: user.user_metadata?.phone ?? '000-000-0000',
+    });
+    return !error;
+  };
+
+  const saveAboutYou = async (): Promise<boolean> => {
     if (!userId) return false;
+    if (!(await ensureProfile(userId))) return false;
+    const updates: Record<string, unknown> = {};
+    if (name.trim()) updates.name = name.trim();
+    if (age.trim()) updates.age = parseInt(age, 10);
+    if (gender) updates.gender = gender;
+    if (ethnicity) updates.ethnicity = ethnicity;
+    if (Object.keys(updates).length === 0) return true;
+    const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
+    if (error) console.warn('saveAboutYou', error.message);
+    return !error;
+  };
 
-    try {
-      // Check if profile exists
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', userId)
-        .single();
+  const savePrompts = async (): Promise<void> => {
+    if (!userId) return;
+    const filtered = promptAnswers.filter((p) => p.answer.trim());
+    if (filtered.length === 0) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ prompts: filtered })
+      .eq('id', userId);
+    if (error) console.warn('savePrompts', error.message);
+  };
 
-      // If profile doesn't exist, create it
-      if (!existingProfile) {
-        // Get user email from auth
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return false;
-
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            id: userId,
-            email: user.email || '',
-            name: user.user_metadata?.name || user.email || 'User',
-            phone: user.user_metadata?.phone || '000-000-0000',
-          });
-
-        if (insertError) {
-          console.error('Error creating profile:', insertError);
-          return false;
-        }
-      }
-      return true;
-    } catch (error) {
-      console.error('Error ensuring profile exists:', error);
+  const uploadPhotos = async (): Promise<boolean> => {
+    if (!userId || stagingUris.length === 0) return true;
+    const { ok, error } = await uploadStagedPhotosAndMerge(userId, stagingUris);
+    if (!ok) {
+      Alert.alert('Upload failed', error ?? 'Could not upload photos. Please try again.');
       return false;
     }
-  };
-
-  const saveProfileInfo = async () => {
-    if (!userId) return;
-
-    try {
-      // Ensure profile exists first
-      const profileExists = await ensureProfileExists();
-      if (!profileExists) {
-        console.error('Failed to ensure profile exists');
-        return;
-      }
-
-      const updates: any = {};
-      if (age) updates.age = parseInt(age);
-      if (gender) updates.gender = gender;
-      if (ethnicity) updates.ethnicity = ethnicity;
-
-      if (Object.keys(updates).length > 0) {
-        const { error } = await supabase
-          .from('profiles')
-          .update(updates)
-          .eq('id', userId);
-
-        if (error) {
-          console.error('Error updating profile:', error);
-        }
-      }
-    } catch (error) {
-      console.error('Error saving profile info:', error);
-    }
-  };
-
-  const handleNext = async () => {
-    // Save current step data
-    switch (currentStep) {
-      case 'about-you':
-        await saveProfileInfo();
-        setCurrentStep('location');
-        break;
-      case 'location':
-        setPreferences({
-          ...preferences,
-          city: city.trim() || undefined,
-          state: state.trim() || undefined,
-          zip_code: zipCode.trim() || undefined,
-        });
-        setBudgetError(''); // Clear any previous budget error
-        setCurrentStep('budget');
-        break;
-      case 'budget':
-        // Validate budget before proceeding
-        if (minBudget && maxBudget && parseFloat(minBudget) > parseFloat(maxBudget)) {
-          Alert.alert('Invalid Budget', 'Min budget cannot be higher than max budget');
-          return;
-        }
-        setPreferences({
-          ...preferences,
-          min_budget: minBudget ? parseFloat(minBudget) : undefined,
-          max_budget: maxBudget ? parseFloat(maxBudget) : undefined,
-        });
-        setCurrentStep('room-type');
-        break;
-      case 'room-type':
-        // Map 'either Private or Shared' to 'flexible' for database
-        const mappedRoomType = roomType === 'either Private or Shared' ? 'flexible' : roomType;
-        setPreferences({
-          ...preferences,
-          room_type: mappedRoomType || undefined,
-        });
-        setCurrentStep('move-in-date');
-        break;
-      case 'move-in-date':
-        setPreferences({
-          ...preferences,
-          move_in_date: moveInDate ? moveInDate.toISOString().split('T')[0] : undefined,
-        });
-        setCurrentStep('lifestyle');
-        break;
-      case 'lifestyle':
-        setPreferences({
-          ...preferences,
-          pets_allowed: petsAllowed ?? undefined,
-          smoking_allowed: smokingAllowed ?? undefined,
-          cleanliness_level: cleanlinessLevel ?? undefined,
-          social_preference: socialPreference || undefined,
-        });
-        setCurrentStep('must-haves');
-        break;
-      case 'must-haves':
-        // Skip must-haves for now (can add later)
-        handleComplete();
-        break;
-    }
-  };
-
-  const handlePrevious = () => {
-    // Clear budget error when leaving budget step
-    if (currentStep === 'budget') {
-      setBudgetError('');
-    }
-    // Navigate to previous step
-    switch (currentStep) {
-      case 'location':
-        setCurrentStep('about-you');
-        break;
-      case 'budget':
-        setCurrentStep('location');
-        break;
-      case 'room-type':
-        setCurrentStep('budget');
-        break;
-      case 'move-in-date':
-        setCurrentStep('room-type');
-        break;
-      case 'lifestyle':
-        setCurrentStep('move-in-date');
-        break;
-      case 'must-haves':
-        setCurrentStep('lifestyle');
-        break;
-      default:
-        break;
-    }
-  };
-
-  const handleSkip = () => {
-    // Allow skipping optional steps
-    if (currentStep === 'about-you') {
-      setCurrentStep('location');
-    } else if (currentStep === 'location') {
-      setCurrentStep('budget');
-    } else if (currentStep === 'budget') {
-      setCurrentStep('room-type');
-    } else if (currentStep === 'room-type') {
-      setCurrentStep('move-in-date');
-    } else if (currentStep === 'move-in-date') {
-      setCurrentStep('lifestyle');
-    } else if (currentStep === 'lifestyle') {
-      setCurrentStep('must-haves');
-    } else {
-      handleComplete();
-    }
+    return true;
   };
 
   const handleComplete = async () => {
     if (!userId) {
-      Alert.alert('Error', 'User not found');
+      Alert.alert('Error', 'Not signed in. Please restart the app.');
+      setSaving(false);
       return;
     }
-
-    setLoading(true);
     try {
-      // Ensure profile exists before saving preferences
-      const profileExists = await ensureProfileExists();
-      if (!profileExists) {
-        Alert.alert('Error', 'Failed to create user profile. Please try again.');
-        setLoading(false);
+      // Save listing if opted in
+      if (hasListing) {
+        const photoPaths: string[] = [];
+        for (const uri of listingPhotos) {
+          const { path, error } = await uploadProfileImage(userId, uri);
+          if (error || !path) {
+            Alert.alert('Upload failed', 'Could not upload a listing photo. Please try again.');
+            setSaving(false);
+            return;
+          }
+          photoPaths.push(path);
+        }
+        const { error: listErr } = await supabase.from('listings').insert({
+          user_id: userId,
+          rent: listingRent ? parseFloat(listingRent) : null,
+          room_type: listingRoomType || null,
+          address: listingAddress || null,
+          city: listingCity || null,
+          state: listingStateVal || null,
+          zip_code: listingZip || null,
+          listing_photos: photoPaths,
+        });
+        if (listErr) console.warn('saveListing', listErr.message);
+        await supabase.from('profiles').update({ has_listing: true }).eq('id', userId);
+      }
+
+      // Map social preference label to DB value
+      const socialPrefMapped =
+        socialPref === 'Social Butterfly' ? 'social'
+        : socialPref === 'Homebody' ? 'quiet'
+        : socialPref === 'Balanced' ? 'balanced'
+        : undefined;
+
+      const result = await savePreferences(userId, {
+        city: city.trim() || undefined,
+        state: locationState.trim() || undefined,
+        zip_code: zipCode.trim() || undefined,
+        min_budget: minBudget ? parseFloat(minBudget) : undefined,
+        max_budget: maxBudget ? parseFloat(maxBudget) : undefined,
+        room_type: (['private', 'shared', 'flexible', 'entire'] as const).includes(roomType as any)
+          ? (roomType as 'private' | 'shared' | 'flexible' | 'entire')
+          : undefined,
+        move_in_date: moveInDate ? formatDateYMD(moveInDate) : undefined,
+        pets_allowed: petsAllowed ?? undefined,
+        smoking_allowed: smokingAllowed ?? undefined,
+        cleanliness_level: cleanliness ?? undefined,
+        work_schedule: workSchedule || undefined,
+        social_preference: socialPrefMapped as any,
+        interests: Object.values(interests).some((v) => v.length > 0) ? interests : undefined,
+        dealbreakers,
+      });
+
+      if (!result.success) {
+        Alert.alert('Error', result.error ?? 'Could not save preferences.');
+        setSaving(false);
         return;
       }
 
-      console.log('📤 [OnboardingScreen] About to save preferences:', JSON.stringify(preferences, null, 2));
-      console.log('📤 [OnboardingScreen] room_type value:', preferences.room_type);
-      
-      const result = await savePreferences(userId, preferences);
-      if (result.success) {
-        onComplete();
-      } else {
-        Alert.alert('Error', result.error || 'Failed to save preferences');
+      onComplete();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      Alert.alert('Error', msg);
+      setSaving(false);
+    }
+  };
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  const advance = () => setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1));
+
+  const handleBack = () => {
+    if (saving) return;
+    setStep((s) => Math.max(s - 1, 0));
+  };
+
+  const handleSkip = () => {
+    if (saving) return;
+    if (step === TOTAL_STEPS - 1) {
+      setSaving(true);
+      handleComplete();
+    } else {
+      advance();
+    }
+  };
+
+  const handleNext = async () => {
+    if (saving) return;
+
+    if (step === TOTAL_STEPS - 1) {
+      setSaving(true);
+      await handleComplete();
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (step === 0) {
+        const ok = await saveAboutYou();
+        if (!ok) {
+          Alert.alert('Error', 'Could not save your info. Please try again.');
+          return;
+        }
+      } else if (step === 7) {
+        await savePrompts();
+      } else if (step === 8) {
+        const ok = await uploadPhotos();
+        if (!ok) return;
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save preferences');
+      advance();
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const getStepTitle = () => {
-    switch (currentStep) {
-      case 'about-you':
-        return 'Tell us about yourself';
-      case 'location':
-        return 'Where are you looking?';
-      case 'budget':
-        return 'What\'s your budget?';
-      case 'room-type':
-        return 'What type of room?';
-      case 'move-in-date':
-        return 'When do you want to move in?';
-      case 'lifestyle':
-        return 'Tell us about your lifestyle';
-      case 'must-haves':
-        return 'Any must-haves?';
-      default:
-        return 'Welcome!';
+  // ── Validation ─────────────────────────────────────────────────────────────
+
+  const canAdvance = (): boolean => {
+    if (step === 0) return name.trim().length > 0;
+    if (step === 2 && minBudget && maxBudget) {
+      return parseFloat(minBudget) <= parseFloat(maxBudget);
+    }
+    return true;
+  };
+
+  // ── Photo pickers ──────────────────────────────────────────────────────────
+
+  const pickProfilePhoto = async () => {
+    if (stagingUris.length >= 4) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo library access.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      quality: 0.85,
+      allowsEditing: true,
+      aspect: [4, 5],
+    });
+    if (!result.canceled && result.assets[0]) {
+      setStagingUris((prev) => [...prev, result.assets[0].uri].slice(0, 4));
     }
   };
 
-  const getStepNumber = () => {
-    const steps: OnboardingStep[] = ['about-you', 'location', 'budget', 'room-type', 'move-in-date', 'lifestyle', 'must-haves'];
-    return steps.indexOf(currentStep) + 1;
+  const pickListingPhoto = async () => {
+    if (listingPhotos.length >= 6) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo library access.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setListingPhotos((prev) => [...prev, result.assets[0].uri].slice(0, 6));
+    }
   };
 
-  const getTotalSteps = () => 7;
+  // ── Prompt helpers ─────────────────────────────────────────────────────────
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 'about-you':
+  const isPromptSelected = (q: string) => promptAnswers.some((p) => p.question === q);
+
+  const togglePrompt = (q: string) => {
+    if (isPromptSelected(q)) {
+      setPromptAnswers((prev) => prev.filter((p) => p.question !== q));
+    } else if (promptAnswers.length < 3) {
+      setPromptAnswers((prev) => [...prev, { question: q, answer: '' }]);
+    }
+  };
+
+  const setPromptAnswer = (q: string, answer: string) => {
+    setPromptAnswers((prev) =>
+      prev.map((p) => (p.question === q ? { ...p, answer } : p))
+    );
+  };
+
+  // ── Step renders ───────────────────────────────────────────────────────────
+
+  const renderStep = () => {
+    switch (step) {
+      case 0:
         return (
-          <ScrollView
-            style={styles.stepContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.stepDescription}>
-              Help us get to know you better
-            </Text>
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <TextInput
               style={styles.input}
-              placeholder="Age"
+              placeholder="Your name"
+              placeholderTextColor="#9AA"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Age (optional)"
+              placeholderTextColor="#9AA"
               value={age}
               onChangeText={setAge}
               keyboardType="numeric"
+              maxLength={3}
             />
-            <Text style={styles.questionLabel}>Gender</Text>
-            {['Male', 'Female', 'Non-binary', 'Prefer not to say', 'Other'].map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[
-                  styles.optionButton,
-                  gender === option && styles.optionButtonSelected,
-                ]}
-                onPress={() => setGender(option)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    gender === option && styles.optionTextSelected,
-                  ]}
-                >
-                  {option}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <Text style={styles.questionLabel}>Ethnicity (optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ethnicity"
-              value={ethnicity}
-              onChangeText={setEthnicity}
-            />
-            <Text style={styles.hint}>
-              This helps us create better matches
-            </Text>
+            <Text style={styles.sectionLabel}>Gender</Text>
+            <View style={styles.chipRow}>
+              {GENDER_OPTIONS.map((g) => (
+                <Chip
+                  key={g}
+                  label={g}
+                  selected={gender === g}
+                  onPress={() => setGender(gender === g ? '' : g)}
+                />
+              ))}
+            </View>
+            <Text style={styles.sectionLabel}>Ethnicity (optional)</Text>
+            <View style={styles.chipRow}>
+              {ETHNICITY_OPTIONS.map((e) => (
+                <Chip
+                  key={e}
+                  label={e}
+                  selected={ethnicity === e}
+                  onPress={() => setEthnicity(ethnicity === e ? '' : e)}
+                />
+              ))}
+            </View>
           </ScrollView>
         );
 
-      case 'location':
+      case 1:
         return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepDescription}>
-              Help us find the perfect place for you
-            </Text>
+          <View style={styles.stepBody}>
             <TextInput
               style={styles.input}
               placeholder="City"
+              placeholderTextColor="#9AA"
               value={city}
               onChangeText={setCity}
             />
             <TextInput
               style={styles.input}
-              placeholder="State"
-              value={state}
-              onChangeText={setState}
+              placeholder="State (e.g. CA)"
+              placeholderTextColor="#9AA"
+              value={locationState}
+              onChangeText={setLocationState}
+              autoCapitalize="characters"
+              maxLength={2}
             />
             <TextInput
               style={styles.input}
-              placeholder="ZIP Code (optional)"
+              placeholder="ZIP code (optional)"
+              placeholderTextColor="#9AA"
               value={zipCode}
               onChangeText={setZipCode}
               keyboardType="numeric"
+              maxLength={5}
             />
           </View>
         );
 
-      case 'budget':
+      case 2: {
+        const budgetError =
+          minBudget && maxBudget && parseFloat(minBudget) > parseFloat(maxBudget)
+            ? 'Min budget cannot exceed max budget'
+            : '';
         return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepDescription}>
-              What's your monthly rent budget?
-            </Text>
+          <View style={styles.stepBody}>
             <TextInput
               style={styles.input}
-              placeholder="Min budget ($)"
+              placeholder="Min / month ($)"
+              placeholderTextColor="#9AA"
               value={minBudget}
-              onChangeText={(text) => {
-                setMinBudget(text);
-                if (text && maxBudget && parseFloat(text) > parseFloat(maxBudget)) {
-                  setBudgetError('Min budget cannot be higher than max budget');
-                } else {
-                  setBudgetError('');
-                }
-              }}
+              onChangeText={setMinBudget}
               keyboardType="numeric"
             />
             <TextInput
               style={styles.input}
-              placeholder="Max budget ($)"
+              placeholder="Max / month ($)"
+              placeholderTextColor="#9AA"
               value={maxBudget}
-              onChangeText={(text) => {
-                setMaxBudget(text);
-                if (text && minBudget && parseFloat(minBudget) > parseFloat(text)) {
-                  setBudgetError('Min budget cannot be higher than max budget');
-                } else {
-                  setBudgetError('');
-                }
-              }}
+              onChangeText={setMaxBudget}
               keyboardType="numeric"
             />
-            {budgetError ? (
-              <Text style={styles.errorText}>{budgetError}</Text>
-            ) : null}
+            {!!budgetError && <Text style={styles.errorText}>{budgetError}</Text>}
           </View>
         );
+      }
 
-      case 'room-type':
+      case 3: {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
         return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepDescription}>
-              What type of room are you looking for?
-            </Text>
-            {['private', 'shared', 'either Private or Shared'].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[
-                  styles.optionButton,
-                  roomType === type && styles.optionButtonSelected,
-                ]}
-                onPress={() => setRoomType(type as any)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    roomType === type && styles.optionTextSelected,
-                  ]}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)} Room
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        );
-
-      case 'move-in-date':
-        const formatDate = (date: Date | null): string => {
-          if (!date) return '';
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
-
-        // Get tomorrow's date (minimum selectable date)
-        const getTomorrow = () => {
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          tomorrow.setHours(0, 0, 0, 0); // Set to start of day
-          return tomorrow;
-        };
-
-        const displayDate = moveInDate ? formatDate(moveInDate) : '';
-        const tomorrow = getTomorrow();
-
-        return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepDescription}>
-              When would you like to move in?
-            </Text>
-            <TouchableOpacity
-              style={styles.datePickerButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={[styles.datePickerText, !moveInDate && styles.datePickerPlaceholder]}>
-                {displayDate || 'Select a date'}
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.sectionLabel}>Room type</Text>
+            <View style={styles.chipRow}>
+              {[
+                { val: 'private',  label: 'Private Room' },
+                { val: 'shared',   label: 'Shared Room' },
+                { val: 'flexible', label: 'Either' },
+                { val: 'entire',   label: 'Entire Place' },
+              ].map(({ val, label }) => (
+                <Chip
+                  key={val}
+                  label={label}
+                  selected={roomType === val}
+                  onPress={() => setRoomType(roomType === val ? '' : val)}
+                />
+              ))}
+            </View>
+            <Text style={styles.sectionLabel}>Move-in date (optional)</Text>
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+              <Text style={[styles.dateBtnText, !moveInDate && styles.dateBtnPlaceholder]}>
+                {moveInDate ? formatDateYMD(moveInDate) : 'Select a date'}
               </Text>
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
-                value={moveInDate || tomorrow}
+                value={moveInDate ?? tomorrow}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(event, selectedDate) => {
+                minimumDate={tomorrow}
+                onChange={(event, date) => {
                   if (Platform.OS === 'android') {
                     setShowDatePicker(false);
-                    if (event.type === 'set' && selectedDate) {
-                      // Ensure selected date is after today
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const selected = new Date(selectedDate);
-                      selected.setHours(0, 0, 0, 0);
-                      if (selected > today) {
-                        setMoveInDate(selectedDate);
-                      }
+                    if (event.type === 'set' && date) {
+                      const d = new Date(date);
+                      d.setHours(0, 0, 0, 0);
+                      if (d > new Date()) setMoveInDate(date);
                     }
-                  } else {
-                    // iOS - keep picker open, user will tap Done
-                    if (selectedDate) {
-                      // Ensure selected date is after today
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const selected = new Date(selectedDate);
-                      selected.setHours(0, 0, 0, 0);
-                      if (selected > today) {
-                        setMoveInDate(selectedDate);
-                      }
-                    }
+                  } else if (date) {
+                    setMoveInDate(date);
                   }
                 }}
-                minimumDate={tomorrow}
               />
             )}
             {Platform.OS === 'ios' && showDatePicker && (
-              <View style={styles.iosDatePickerActions}>
-                <TouchableOpacity
-                  style={styles.datePickerActionButton}
-                  onPress={() => setShowDatePicker(false)}
-                >
-                  <Text style={styles.datePickerActionText}>Done</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.dateDoneBtn} onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.dateDoneBtnText}>Done</Text>
+              </TouchableOpacity>
             )}
-            <Text style={styles.hint}>
-              You can update this later
-            </Text>
-          </View>
+          </ScrollView>
         );
+      }
 
-      case 'lifestyle':
+      case 4:
         return (
-          <ScrollView style={styles.stepContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.stepDescription}>
-              A few questions about your lifestyle
-            </Text>
-
-            <Text style={styles.questionLabel}>Do you have pets or allow pets?</Text>
-            <View style={styles.booleanOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  petsAllowed === true && styles.optionButtonSelected,
-                ]}
-                onPress={() => setPetsAllowed(true)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    petsAllowed === true && styles.optionTextSelected,
-                  ]}
-                >
-                  Yes
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  petsAllowed === false && styles.optionButtonSelected,
-                ]}
-                onPress={() => setPetsAllowed(false)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    petsAllowed === false && styles.optionTextSelected,
-                  ]}
-                >
-                  No
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.questionLabel}>Do you smoke or allow smoking?</Text>
-            <View style={styles.booleanOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  smokingAllowed === true && styles.optionButtonSelected,
-                ]}
-                onPress={() => setSmokingAllowed(true)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    smokingAllowed === true && styles.optionTextSelected,
-                  ]}
-                >
-                  Yes
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  smokingAllowed === false && styles.optionButtonSelected,
-                ]}
-                onPress={() => setSmokingAllowed(false)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    smokingAllowed === false && styles.optionTextSelected,
-                  ]}
-                >
-                  No
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.questionLabel}>Cleanliness level (1-5)</Text>
-            <View style={styles.cleanlinessOptions}>
-              {[1, 2, 3, 4, 5].map((level) => (
-                <TouchableOpacity
-                  key={level}
-                  style={[
-                    styles.cleanlinessButton,
-                    cleanlinessLevel === level && styles.optionButtonSelected,
-                  ]}
-                  onPress={() => setCleanlinessLevel(level)}
-                >
-                  <Text
-                    style={[
-                      styles.cleanlinessText,
-                      cleanlinessLevel === level && styles.optionTextSelected,
-                    ]}
-                  >
-                    {level}
-                  </Text>
-                </TouchableOpacity>
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionLabel}>Cleanliness (1 = relaxed · 5 = spotless)</Text>
+            <View style={styles.chipRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Chip
+                  key={n}
+                  label={String(n)}
+                  selected={cleanliness === n}
+                  onPress={() => setCleanliness(cleanliness === n ? null : n)}
+                />
               ))}
             </View>
+            <Text style={styles.sectionLabel}>Work schedule</Text>
+            <View style={styles.chipRow}>
+              {['9-to-5', 'Remote', 'Night Shift', 'Flexible'].map((s) => (
+                <Chip
+                  key={s}
+                  label={s}
+                  selected={workSchedule === s}
+                  onPress={() => setWorkSchedule(workSchedule === s ? '' : s)}
+                />
+              ))}
+            </View>
+            <Text style={styles.sectionLabel}>Social vibe</Text>
+            <View style={styles.chipRow}>
+              {['Social Butterfly', 'Balanced', 'Homebody'].map((s) => (
+                <Chip
+                  key={s}
+                  label={s}
+                  selected={socialPref === s}
+                  onPress={() => setSocialPref(socialPref === s ? '' : s)}
+                />
+              ))}
+            </View>
+            <Text style={styles.sectionLabel}>Pets</Text>
+            <View style={styles.chipRow}>
+              <Chip label="Yes" selected={petsAllowed === true} onPress={() => setPetsAllowed(petsAllowed === true ? null : true)} />
+              <Chip label="No"  selected={petsAllowed === false} onPress={() => setPetsAllowed(petsAllowed === false ? null : false)} />
+            </View>
+            <Text style={styles.sectionLabel}>Smoking</Text>
+            <View style={styles.chipRow}>
+              <Chip label="Yes" selected={smokingAllowed === true} onPress={() => setSmokingAllowed(smokingAllowed === true ? null : true)} />
+              <Chip label="No"  selected={smokingAllowed === false} onPress={() => setSmokingAllowed(smokingAllowed === false ? null : false)} />
+            </View>
+          </ScrollView>
+        );
 
-            <Text style={styles.questionLabel}>Social preference</Text>
-            {['social', 'quiet', 'balanced'].map((pref) => (
-              <TouchableOpacity
-                key={pref}
-                style={[
-                  styles.optionButton,
-                  socialPreference === pref && styles.optionButtonSelected,
-                ]}
-                onPress={() => setSocialPreference(pref as any)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    socialPreference === pref && styles.optionTextSelected,
-                  ]}
-                >
-                  {pref.charAt(0).toUpperCase() + pref.slice(1)}
-                </Text>
-              </TouchableOpacity>
+      case 5:
+        return (
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.hint}>Tap each row to set your preference.</Text>
+            {DEALBREAKER_ITEMS.map(({ key, label }) => (
+              <View key={key} style={styles.dbRow}>
+                <Text style={styles.dbLabel}>{label}</Text>
+                <View style={styles.dbChips}>
+                  {(['hard', 'soft', 'none'] as DealbreakerLevel[]).map((level) => {
+                    const selected = dealbreakers[key] === level;
+                    return (
+                      <TouchableOpacity
+                        key={level}
+                        style={[
+                          styles.dbChip,
+                          selected && level === 'hard' && styles.dbChipHard,
+                          selected && level === 'soft' && styles.dbChipSoft,
+                          selected && level === 'none' && styles.dbChipNone,
+                        ]}
+                        onPress={() => setDealbreakers((prev) => ({ ...prev, [key]: level }))}
+                      >
+                        <Text style={[styles.dbChipText, selected && styles.dbChipTextSelected]}>
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
             ))}
           </ScrollView>
         );
 
-      case 'must-haves':
+      case 6:
         return (
-          <View style={styles.stepContent}>
-            <Text style={styles.stepDescription}>
-              Any must-have features?
-            </Text>
-            <Text style={styles.hint}>
-              (This can be added later - you can skip for now)
-            </Text>
-          </View>
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {INTEREST_CATEGORIES.map(({ key, label, options }) => {
+              const isOpen = expandedCategory === key;
+              const selected = interests[key] ?? [];
+              return (
+                <View key={key} style={styles.catBlock}>
+                  <TouchableOpacity
+                    style={styles.catHeader}
+                    onPress={() => setExpandedCategory(isOpen ? null : key)}
+                  >
+                    <Text style={styles.catLabel}>
+                      {label}{selected.length > 0 ? `  (${selected.length})` : ''}
+                    </Text>
+                    <Text style={styles.catChevron}>{isOpen ? '▲' : '▼'}</Text>
+                  </TouchableOpacity>
+                  {isOpen && (
+                    <View style={styles.catContent}>
+                      <View style={styles.chipRow}>
+                        {options.map((opt) => (
+                          <Chip
+                            key={opt}
+                            label={opt}
+                            selected={selected.includes(opt)}
+                            disabled={!selected.includes(opt) && selected.length >= 5}
+                            onPress={() => {
+                              setInterests((prev) => {
+                                const cur = prev[key] ?? [];
+                                if (cur.includes(opt)) return { ...prev, [key]: cur.filter((i) => i !== opt) };
+                                if (cur.length >= 5) return prev;
+                                return { ...prev, [key]: [...cur, opt] };
+                              });
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={styles.customInputRow}>
+                        <TextInput
+                          style={styles.customInput}
+                          placeholder="+ Add custom"
+                          placeholderTextColor="#9AA"
+                          value={customInputs[key]}
+                          onChangeText={(t) => setCustomInputs((prev) => ({ ...prev, [key]: t }))}
+                          returnKeyType="done"
+                          onSubmitEditing={() => {
+                            const val = customInputs[key].trim();
+                            if (!val) return;
+                            setInterests((prev) => {
+                              const cur = prev[key] ?? [];
+                              if (cur.includes(val) || cur.length >= 5) return prev;
+                              return { ...prev, [key]: [...cur, val] };
+                            });
+                            setCustomInputs((prev) => ({ ...prev, [key]: '' }));
+                          }}
+                        />
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        );
+
+      case 7:
+        return (
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.hint}>Tap a prompt to select it, then write your answer.</Text>
+            <Text style={styles.promptCount}>{promptAnswers.length} / 3 selected</Text>
+            {PROMPTS.map((q) => {
+              const selected = isPromptSelected(q);
+              const entry = promptAnswers.find((p) => p.question === q);
+              const maxReached = !selected && promptAnswers.length >= 3;
+              return (
+                <View key={q} style={styles.promptBlock}>
+                  <TouchableOpacity
+                    style={[styles.promptRow, selected && styles.promptRowSelected, maxReached && styles.promptRowDimmed]}
+                    onPress={() => !maxReached && togglePrompt(q)}
+                    activeOpacity={maxReached ? 1 : 0.7}
+                  >
+                    <Text style={[styles.promptText, selected && styles.promptTextSelected]}>{q}</Text>
+                    {selected && <Text style={styles.promptCheck}>✓</Text>}
+                  </TouchableOpacity>
+                  {selected && (
+                    <TextInput
+                      style={styles.promptInput}
+                      placeholder="Your answer…"
+                      placeholderTextColor="#9AA"
+                      value={entry?.answer ?? ''}
+                      onChangeText={(t) => setPromptAnswer(q, t)}
+                      multiline
+                      maxLength={300}
+                    />
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        );
+
+      case 8:
+        return (
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false}>
+            <PublicProfileCard
+              imageUrls={stagingUris}
+              name={name.trim() || 'Your name'}
+              age={age ? parseInt(age, 10) : null}
+              location={[city.trim(), locationState.trim()].filter(Boolean).join(', ')}
+            />
+            <Text style={[styles.hint, { marginTop: 16 }]}>Add up to 4 photos. Tap + to add more.</Text>
+            <View style={styles.photoGrid}>
+              {stagingUris.map((uri, i) => (
+                <View key={i} style={[styles.photoThumb, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}>
+                  <Image source={{ uri }} style={styles.photoImg} />
+                  <TouchableOpacity style={styles.photoRemove} onPress={() => setStagingUris((p) => p.filter((_, idx) => idx !== i))}>
+                    <Text style={styles.photoRemoveText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {stagingUris.length < 4 && (
+                <TouchableOpacity
+                  style={[styles.photoAdd, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}
+                  onPress={pickProfilePhoto}
+                >
+                  <Text style={styles.photoAddIcon}>+</Text>
+                  <Text style={styles.photoAddLabel}>Add photo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={styles.photoCount}>{stagingUris.length} / 4 photos</Text>
+          </ScrollView>
+        );
+
+      case 9:
+        return (
+          <ScrollView style={styles.stepBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.hint}>Only fill this in if you have a room or place to offer.</Text>
+            <View style={styles.chipRow}>
+              <Chip
+                label="I have a place to list"
+                selected={hasListing}
+                onPress={() => setHasListing(!hasListing)}
+              />
+            </View>
+            {hasListing && (
+              <View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Monthly rent ($)"
+                  placeholderTextColor="#9AA"
+                  value={listingRent}
+                  onChangeText={setListingRent}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.sectionLabel}>Room type</Text>
+                <View style={styles.chipRow}>
+                  {[
+                    { val: 'private', label: 'Private Room' },
+                    { val: 'shared',  label: 'Shared Room' },
+                    { val: 'entire',  label: 'Entire Place' },
+                  ].map(({ val, label }) => (
+                    <Chip
+                      key={val}
+                      label={label}
+                      selected={listingRoomType === val}
+                      onPress={() => setListingRoomType(listingRoomType === val ? '' : val)}
+                    />
+                  ))}
+                </View>
+                <TextInput style={styles.input} placeholder="Address" placeholderTextColor="#9AA" value={listingAddress} onChangeText={setListingAddress} />
+                <TextInput style={styles.input} placeholder="City" placeholderTextColor="#9AA" value={listingCity} onChangeText={setListingCity} />
+                <TextInput style={styles.input} placeholder="State (e.g. CA)" placeholderTextColor="#9AA" value={listingStateVal} onChangeText={setListingStateVal} autoCapitalize="characters" maxLength={2} />
+                <TextInput style={styles.input} placeholder="ZIP code" placeholderTextColor="#9AA" value={listingZip} onChangeText={setListingZip} keyboardType="numeric" maxLength={5} />
+                <Text style={styles.sectionLabel}>Photos (up to 6)</Text>
+                <View style={styles.photoGrid}>
+                  {listingPhotos.map((uri, i) => (
+                    <View key={i} style={[styles.photoThumb, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}>
+                      <Image source={{ uri }} style={styles.photoImg} />
+                      <TouchableOpacity style={styles.photoRemove} onPress={() => setListingPhotos((p) => p.filter((_, idx) => idx !== i))}>
+                        <Text style={styles.photoRemoveText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {listingPhotos.length < 6 && (
+                    <TouchableOpacity
+                      style={[styles.photoAdd, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}
+                      onPress={pickListingPhoto}
+                    >
+                      <Text style={styles.photoAddIcon}>+</Text>
+                      <Text style={styles.photoAddLabel}>Add photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+          </ScrollView>
         );
 
       default:
@@ -687,282 +952,469 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     }
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const isLastStep = step === TOTAL_STEPS - 1;
+  const progress = (step + 1) / TOTAL_STEPS;
+
   return (
-    <View style={styles.container}>
-      <Modal
-        visible={true}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {}}
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              {/* Progress indicator */}
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      { width: `${(getStepNumber() / getTotalSteps()) * 100}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.progressText}>
-                  Step {getStepNumber()} of {getTotalSteps()}
-                </Text>
-              </View>
-
-              {/* Step title */}
-              <Text style={styles.stepTitle}>{getStepTitle()}</Text>
-
-              {/* Step content */}
-              {renderStepContent()}
-
-              {/* Action buttons */}
-              <View style={styles.buttonContainer}>
-                {currentStep !== 'about-you' && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.previousButton]}
-                    onPress={handlePrevious}
-                    disabled={loading}
-                  >
-                    <Text style={styles.previousButtonText}>Previous</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.button, styles.skipButton]}
-                  onPress={handleSkip}
-                  disabled={loading}
-                >
-                  <Text style={styles.skipButtonText}>Skip</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.button, styles.nextButton]}
-                  onPress={handleNext}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.nextButtonText}>
-                      {currentStep === 'must-haves' ? 'Complete' : 'Next'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+        {/* Header: back arrow + progress bar */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
+            disabled={step === 0 || saving}
+          >
+            {step > 0 && <Text style={styles.backBtnText}>←</Text>}
+          </TouchableOpacity>
+          <View style={styles.progressWrap}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
             </View>
+            <Text style={styles.progressLabel}>{step + 1} of {TOTAL_STEPS}</Text>
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-    </View>
+          <View style={styles.backBtn} />
+        </View>
+
+        {/* Step title + subtitle */}
+        <View style={styles.titleBlock}>
+          <Text style={styles.stepTitle}>{STEP_TITLES[step]}</Text>
+          <Text style={styles.stepSubtitle}>{STEP_SUBTITLES[step]}</Text>
+        </View>
+
+        {/* Step content */}
+        {renderStep()}
+
+        {/* Footer buttons */}
+        <View style={styles.footer}>
+          <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} disabled={saving}>
+            <Text style={styles.skipBtnText}>{isLastStep ? 'Finish' : 'Skip'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.nextBtn, (!canAdvance() || saving) && styles.nextBtnDisabled]}
+            onPress={handleNext}
+            disabled={!canAdvance() || saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FDFDFD" />
+            ) : (
+              <Text style={styles.nextBtnText}>{isLastStep ? 'Done' : 'Next'}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+    backgroundColor: '#E8EEF2',
   },
-  modalOverlay: {
+  flex: {
     flex: 1,
-    backgroundColor: 'rgba(12, 83, 137, 0.5)', // Deep Blue with transparency
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
+  },
+  backBtnText: {
+    fontSize: 24,
+    color: '#0C5389',
+  },
+  progressWrap: {
+    flex: 1,
     alignItems: 'center',
   },
-  modalContent: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
-    shadowColor: '#0C5389', // Deep Blue
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  progressContainer: {
-    marginBottom: 20,
-  },
-  progressBar: {
+  progressTrack: {
     height: 4,
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+    width: '100%',
+    backgroundColor: '#D9E1E6',
     borderRadius: 2,
     overflow: 'hidden',
-    marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#189AA2', // Teal / Blue-Green
+    backgroundColor: '#189AA2',
     borderRadius: 2,
   },
-  progressText: {
-    fontSize: 12,
-    color: '#0C5389', // Deep Blue
-    textAlign: 'center',
+  progressLabel: {
+    fontSize: 11,
+    color: '#0C5389',
+    marginTop: 4,
+  },
+
+  // Title block
+  titleBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   stepTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#0C5389', // Deep Blue
-    marginBottom: 12,
-    textAlign: 'center',
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#0C5389',
+    marginBottom: 4,
   },
-  stepDescription: {
-    fontSize: 16,
-    color: '#0C5389', // Deep Blue
-    marginBottom: 20,
-    textAlign: 'center',
+  stepSubtitle: {
+    fontSize: 14,
+    color: '#7A8FA0',
+    lineHeight: 20,
   },
-  stepContent: {
-    minHeight: 200,
-    maxHeight: 400,
+
+  // Step body
+  stepBody: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
+
+  // Inputs
   input: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-    fontSize: 16,
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#D9E1E6', // Light Cool Gray
-    color: '#0C5389', // Deep Blue
-  },
-  optionButton: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#D9E1E6', // Light Cool Gray
-  },
-  optionButtonSelected: {
-    backgroundColor: '#189AA2', // Teal / Blue-Green
-    borderColor: '#189AA2', // Teal / Blue-Green
-  },
-  optionText: {
+    borderColor: '#D9E1E6',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
     fontSize: 16,
-    color: '#0C5389', // Deep Blue
-    textAlign: 'center',
-  },
-  optionTextSelected: {
-    color: '#FDFDFD', // Pure White
-    fontWeight: '600',
-  },
-  booleanOptions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  cleanlinessOptions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-    justifyContent: 'center',
-  },
-  cleanlinessButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#FDFDFD', // Pure White
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#D9E1E6', // Light Cool Gray
-  },
-  cleanlinessText: {
-    fontSize: 18,
-    color: '#0C5389', // Deep Blue
-    fontWeight: '600',
-  },
-  questionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0C5389', // Deep Blue
-    marginTop: 20,
+    color: '#0C5389',
     marginBottom: 12,
+  },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C5389',
+    marginTop: 16,
+    marginBottom: 8,
   },
   hint: {
-    fontSize: 14,
-    color: '#189AA2', // Teal / Blue-Green
-    textAlign: 'center',
-    marginTop: 10,
+    fontSize: 13,
+    color: '#7A8FA0',
+    lineHeight: 18,
+    marginBottom: 12,
+    marginTop: 4,
   },
   errorText: {
+    fontSize: 13,
+    color: '#E53E3E',
+    marginBottom: 8,
+  },
+
+  // Chips
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 4,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#D9E1E6',
+    backgroundColor: '#FDFDFD',
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipSelected: {
+    backgroundColor: '#189AA2',
+    borderColor: '#189AA2',
+  },
+  chipDisabled: {
+    opacity: 0.4,
+  },
+  chipText: {
     fontSize: 14,
-    color: '#FF6B6B', // Red for errors
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 10,
+    color: '#0C5389',
   },
-  datePickerButton: {
-    backgroundColor: '#FDFDFD', // Pure White
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
+  chipTextSelected: {
+    color: '#FDFDFD',
+    fontWeight: '600',
+  },
+
+  // Date picker
+  dateBtn: {
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#D9E1E6', // Light Cool Gray
+    borderColor: '#D9E1E6',
+    padding: 14,
+    marginBottom: 12,
     alignItems: 'center',
   },
-  datePickerText: {
+  dateBtnText: {
     fontSize: 16,
-    color: '#0C5389', // Deep Blue
+    color: '#0C5389',
   },
-  datePickerPlaceholder: {
-    color: '#999', // Gray for placeholder
+  dateBtnPlaceholder: {
+    color: '#9AA',
   },
-  iosDatePickerActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  datePickerActionButton: {
-    padding: 10,
+  dateDoneBtn: {
+    alignSelf: 'flex-end',
     paddingHorizontal: 20,
-    backgroundColor: '#46BD7F', // Primary Green
+    paddingVertical: 8,
+    backgroundColor: '#189AA2',
     borderRadius: 8,
+    marginTop: 8,
+    marginBottom: 8,
   },
-  datePickerActionText: {
-    color: '#FDFDFD', // Pure White
-    fontSize: 16,
+  dateDoneBtnText: {
+    color: '#FDFDFD',
+    fontSize: 14,
     fontWeight: '600',
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
+
+  // Dealbreakers
+  dbRow: {
+    marginBottom: 14,
   },
-  button: {
+  dbLabel: {
+    fontSize: 15,
+    color: '#0C5389',
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  dbChips: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dbChip: {
     flex: 1,
+    paddingVertical: 8,
     borderRadius: 8,
-    padding: 15,
+    borderWidth: 1.5,
+    borderColor: '#D9E1E6',
+    backgroundColor: '#FDFDFD',
     alignItems: 'center',
   },
-  previousButton: {
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+  dbChipHard: {
+    backgroundColor: '#E53E3E',
+    borderColor: '#E53E3E',
   },
-  previousButtonText: {
-    color: '#0C5389', // Deep Blue
-    fontSize: 16,
+  dbChipSoft: {
+    backgroundColor: '#F6AD55',
+    borderColor: '#F6AD55',
+  },
+  dbChipNone: {
+    backgroundColor: '#189AA2',
+    borderColor: '#189AA2',
+  },
+  dbChipText: {
+    fontSize: 13,
+    color: '#0C5389',
+    fontWeight: '500',
+  },
+  dbChipTextSelected: {
+    color: '#FDFDFD',
     fontWeight: '600',
   },
-  skipButton: {
-    backgroundColor: '#D9E1E6', // Light Cool Gray
+
+  // Interests accordion
+  catBlock: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#D9E1E6',
+    marginBottom: 0,
   },
-  skipButtonText: {
-    color: '#0C5389', // Deep Blue
+  catHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  catLabel: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#0C5389',
   },
-  nextButton: {
-    backgroundColor: '#46BD7F', // Primary Green
+  catChevron: {
+    fontSize: 12,
+    color: '#189AA2',
   },
-  nextButtonText: {
-    color: '#FDFDFD', // Pure White
+  catContent: {
+    paddingBottom: 8,
+  },
+  customInputRow: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  customInput: {
+    backgroundColor: '#FDFDFD',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#0C5389',
+  },
+
+  // Prompts
+  promptCount: {
+    fontSize: 13,
+    color: '#189AA2',
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  promptBlock: {
+    marginBottom: 8,
+  },
+  promptRow: {
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D9E1E6',
+    backgroundColor: '#FDFDFD',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  promptRowSelected: {
+    borderColor: '#189AA2',
+    backgroundColor: '#EDF8F9',
+  },
+  promptRowDimmed: {
+    opacity: 0.45,
+  },
+  promptText: {
+    fontSize: 14,
+    color: '#0C5389',
+    flex: 1,
+    lineHeight: 20,
+  },
+  promptTextSelected: {
+    fontWeight: '500',
+  },
+  promptCheck: {
+    fontSize: 16,
+    color: '#189AA2',
+    marginLeft: 8,
+    fontWeight: '700',
+  },
+  promptInput: {
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#0C5389',
+    marginTop: 4,
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+
+  // Photos
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  photoThumb: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photoImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoRemoveText: {
+    color: '#FDFDFD',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  photoAdd: {
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D9E1E6',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FDFDFD',
+  },
+  photoAddIcon: {
+    fontSize: 32,
+    color: '#D9E1E6',
+  },
+  photoAddLabel: {
+    fontSize: 12,
+    color: '#7A8FA0',
+    marginTop: 4,
+  },
+  photoCount: {
+    fontSize: 13,
+    color: '#7A8FA0',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  // Footer
+  footer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    paddingTop: 12,
+    gap: 12,
+    backgroundColor: '#E8EEF2',
+  },
+  skipBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#D9E1E6',
+  },
+  skipBtnText: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#0C5389',
+  },
+  nextBtn: {
+    flex: 2,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#0C5389',
+  },
+  nextBtnDisabled: {
+    opacity: 0.4,
+  },
+  nextBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FDFDFD',
   },
 });
