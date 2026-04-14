@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { MessagesStackParamList } from '../navigation/MessagesStack';
+import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import { supabase } from '../lib/supabase';
 import {
   fetchMessages,
@@ -21,7 +21,7 @@ import {
   type ChatMessageRow,
 } from '../lib/messaging';
 
-type Props = NativeStackScreenProps<MessagesStackParamList, 'Chat'>;
+type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
 
 export default function ChatScreen({ navigation, route }: Props) {
   const { conversationId: initialConversationId, otherUserId, title } = route.params;
@@ -50,6 +50,8 @@ export default function ChatScreen({ navigation, route }: Props) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!cancelled && user) setMyUserId(user.id);
     });
+
+    if (!conversationId) return;
 
     (async () => {
       const { data, error } = await fetchMessages(conversationId);
