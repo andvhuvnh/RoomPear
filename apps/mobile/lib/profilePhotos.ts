@@ -64,6 +64,30 @@ export async function appendProfilePhoto(
   return { ok: true };
 }
 
+/** Replace photo at index with a new image; no count change. */
+export async function replaceProfilePhotoAt(
+  userId: string,
+  index: number,
+  imageUri: string
+): Promise<{ ok: boolean; error?: string }> {
+  const paths = await getPhotoPathsForUser(userId);
+  if (index < 0 || index >= paths.length) {
+    return { ok: false, error: 'Invalid photo' };
+  }
+  const { path, error } = await uploadProfileImage(userId, imageUri);
+  if (error || !path) return { ok: false, error: error ?? 'Upload failed' };
+  const removed = paths[index];
+  const next = paths.map((p, i) => (i === index ? path : p));
+  const { error: upErr } = await supabase
+    .from('profiles')
+    .update({ profile_photo_url: JSON.stringify(next) })
+    .eq('id', userId);
+  if (upErr) return { ok: false, error: upErr.message };
+  // Delete old file after DB is updated so we never lose the reference
+  await deleteProfileImage(userId, removed);
+  return { ok: true };
+}
+
 /** Remove photo by index; enforces MIN_PROFILE_PHOTOS. */
 export async function removeProfilePhotoAt(
   userId: string,

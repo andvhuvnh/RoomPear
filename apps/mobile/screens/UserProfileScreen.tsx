@@ -10,18 +10,67 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback } from 'react';
 import { getProfileImageUrls, pickImage } from '../lib/storage';
-import { getPreferences, type Preferences } from '../lib/preferences';
+import { getPreferences, savePreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
-import { appendProfilePhoto, removeProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
+import { appendProfilePhoto, removeProfilePhotoAt, replaceProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
 import PublicProfileCard from '../components/PublicProfileCard';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
 
-export default function UserProfileScreen() {
+// ─── Shared constants ────────────────────────────────────────────────────────
+
+const DEALBREAKER_ITEMS = [
+  { key: 'smoking',    label: 'Smoking indoors' },
+  { key: 'pets',       label: 'Pets in the unit' },
+  { key: 'parties',    label: 'Frequent parties' },
+  { key: 'early_bird', label: 'Noise before 8 am' },
+  { key: 'night_owl',  label: 'Noise after 11 pm' },
+  { key: 'guests',     label: 'Overnight guests' },
+  { key: 'messy',      label: 'Messy common areas' },
+];
+
+const INTEREST_CATEGORIES = [
+  { key: 'fitness', label: '🏃 Fitness', options: ['Running', 'Yoga', 'Gym', 'Hiking', 'Swimming', 'Cycling', 'Rock Climbing'] },
+  { key: 'food',    label: '🍕 Food & Drink', options: ['Cooking', 'Baking', 'Coffee', 'Wine & Cocktails', 'Foodie Adventures', 'Meal Prep'] },
+  { key: 'arts',    label: '🎨 Arts & Culture', options: ['Movies', 'Music', 'Reading', 'Photography', 'Art Galleries', 'Theater'] },
+  { key: 'outdoors', label: '🌿 Outdoors', options: ['Camping', 'Travel', 'Beach', 'Gardening', 'Road Trips', 'Surfing'] },
+  { key: 'tech',    label: '🎮 Tech & Gaming', options: ['Gaming', 'Coding', 'Podcasts', 'Anime', 'Board Games', 'VR / AR'] },
+];
+
+const PROMPTS = [
+  'My ideal Saturday morning looks like…',
+  "I'm looking for a roommate who…",
+  "Don't room with me if you hate…",
+  'My morning routine is…',
+  "On weeknights you'll find me…",
+  'Weekends are for…',
+  'I clean the apartment…',
+  'My noise level is…',
+  'Overnight guests are…',
+  'My kitchen rule is…',
+  'My sleep schedule is…',
+  "I've lived with roommates before and learned…",
+  'A quirk about living with me…',
+  'My ideal apartment vibe…',
+  'After work I usually…',
+  'The best thing about me as a roommate…',
+];
+
+type DealbreakerLevel = 'hard' | 'soft' | 'none';
+type PromptEntry = { question: string; answer: string };
+
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
+
+type Props = BottomTabScreenProps<MainTabParamList, 'Profile'>;
+
+export default function UserProfileScreen({ route }: Props) {
+  const onDevShowOnboarding = route.params?.onDevShowOnboarding;
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
@@ -31,8 +80,21 @@ export default function UserProfileScreen() {
 
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [editPhotosOpen, setEditPhotosOpen] = useState(false);
+  const [editPrefsOpen, setEditPrefsOpen] = useState(false);
+  const [editPromptsOpen, setEditPromptsOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPhotos, setSavingPhotos] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [savingPrompts, setSavingPrompts] = useState(false);
+
+  // Edit preferences state
+  const [editInterests, setEditInterests] = useState<Record<string, string[]>>({});
+  const [editDealbreakers, setEditDealbreakers] = useState<Record<string, DealbreakerLevel>>({});
+  const [expandedPrefCat, setExpandedPrefCat] = useState<string | null>('fitness');
+
+  // Edit prompts state
+  const [editPrompts, setEditPrompts] = useState<PromptEntry[]>([]);
+  const [promptPickerIndex, setPromptPickerIndex] = useState<number | null>(null);
 
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
@@ -161,11 +223,32 @@ export default function UserProfileScreen() {
     }
   };
 
+  const handleReplacePhoto = async (index: number) => {
+    if (!user) return;
+    const uri = await pickImage();
+    if (!uri) return;
+    setSavingPhotos(true);
+    try {
+      const result = await replaceProfilePhotoAt(user.id, index, uri);
+      if (!result.ok) {
+        Alert.alert('Replace failed', result.error ?? 'Error');
+        return;
+      }
+      await loadProfile(user.id);
+    } finally {
+      setSavingPhotos(false);
+    }
+  };
+
   const handleRemovePhoto = (index: number) => {
     if (!user) return;
 
-    Alert.alert('Remove photo', 'Remove this photo from your profile?', [
+    Alert.alert('Edit photo', 'What would you like to do?', [
       { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Replace',
+        onPress: () => handleReplacePhoto(index),
+      },
       {
         text: 'Remove',
         style: 'destructive',
@@ -184,6 +267,47 @@ export default function UserProfileScreen() {
         },
       },
     ]);
+  };
+
+  const openEditPrefs = () => {
+    const defaultDB = Object.fromEntries(DEALBREAKER_ITEMS.map((d) => [d.key, 'none' as DealbreakerLevel]));
+    setEditInterests(prefs?.interests ?? {});
+    setEditDealbreakers({ ...defaultDB, ...(prefs?.dealbreakers ?? {}) });
+    setExpandedPrefCat('fitness');
+    setEditPrefsOpen(true);
+  };
+
+  const handleSavePrefs = async () => {
+    if (!user) return;
+    setSavingPrefs(true);
+    try {
+      await savePreferences(user.id, { interests: editInterests, dealbreakers: editDealbreakers });
+      setEditPrefsOpen(false);
+      const p = await getPreferences(user.id);
+      setPrefs(p);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  const openEditPrompts = () => {
+    const current: PromptEntry[] = Array.isArray(profile?.prompts) ? [...profile.prompts] : [];
+    setEditPrompts(current.length > 0 ? current : [{ question: '', answer: '' }]);
+    setPromptPickerIndex(null);
+    setEditPromptsOpen(true);
+  };
+
+  const handleSavePrompts = async () => {
+    if (!user) return;
+    setSavingPrompts(true);
+    try {
+      const filtered = editPrompts.filter((p) => p.question && p.answer.trim());
+      await supabase.from('profiles').update({ prompts: filtered }).eq('id', user.id);
+      setEditPromptsOpen(false);
+      await loadProfile(user.id);
+    } finally {
+      setSavingPrompts(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -228,11 +352,14 @@ export default function UserProfileScreen() {
               <TouchableOpacity style={styles.primaryButton} onPress={openEditProfile}>
                 <Text style={styles.primaryButtonText}>Edit profile</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => setEditPhotosOpen(true)}
-              >
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditPhotosOpen(true)}>
                 <Text style={styles.secondaryButtonText}>Edit photos</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={openEditPrefs}>
+                <Text style={styles.secondaryButtonText}>Edit interests & dealbreakers</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={openEditPrompts}>
+                <Text style={styles.secondaryButtonText}>Edit prompts</Text>
               </TouchableOpacity>
             </View>
 
@@ -259,6 +386,11 @@ export default function UserProfileScreen() {
               <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
                 <Text style={styles.signOutButtonText}>Sign out</Text>
               </TouchableOpacity>
+              {__DEV__ && onDevShowOnboarding && (
+                <TouchableOpacity style={styles.devButton} onPress={onDevShowOnboarding}>
+                  <Text style={styles.devButtonText}>DEV: Preview Onboarding</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </>
         )}
@@ -308,6 +440,168 @@ export default function UserProfileScreen() {
               onRemoveHobby={handleRemoveEditHobby}
               footerHint="Location comes from your housing preferences (onboarding)."
             />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Edit preferences modal (interests + dealbreakers) ── */}
+      <Modal
+        visible={editPrefsOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditPrefsOpen(false)}
+      >
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditPrefsOpen(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Interests & Dealbreakers</Text>
+            <TouchableOpacity onPress={handleSavePrefs} disabled={savingPrefs}>
+              {savingPrefs ? <ActivityIndicator color="#189AA2" /> : <Text style={styles.modalSave}>Save</Text>}
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+            {/* Interests */}
+            <Text style={styles.prefSectionTitle}>Interests</Text>
+            <Text style={styles.prefSectionSub}>Select up to 5 per category</Text>
+            {INTEREST_CATEGORIES.map((cat) => {
+              const selected = editInterests[cat.key] ?? [];
+              const isExpanded = expandedPrefCat === cat.key;
+              return (
+                <View key={cat.key} style={styles.catBlock}>
+                  <TouchableOpacity style={styles.catHeader} onPress={() => setExpandedPrefCat(isExpanded ? null : cat.key)}>
+                    <Text style={styles.catLabel}>{cat.label} {selected.length > 0 ? `(${selected.length})` : ''}</Text>
+                    <Text style={styles.catChevron}>{isExpanded ? '▲' : '▼'}</Text>
+                  </TouchableOpacity>
+                  {isExpanded && (
+                    <View style={styles.chipsWrap}>
+                      {cat.options.map((opt) => {
+                        const on = selected.includes(opt);
+                        const disabled = !on && selected.length >= 5;
+                        return (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[styles.chip, on && styles.chipOn, disabled && styles.chipDim]}
+                            disabled={disabled}
+                            onPress={() => {
+                              setEditInterests((prev) => {
+                                const cur = prev[cat.key] ?? [];
+                                return { ...prev, [cat.key]: on ? cur.filter((x) => x !== opt) : [...cur, opt] };
+                              });
+                            }}
+                          >
+                            <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+
+            {/* Dealbreakers */}
+            <Text style={[styles.prefSectionTitle, { marginTop: 24 }]}>Dealbreakers</Text>
+            <Text style={styles.prefSectionSub}>Hard = never · Soft = prefer not · None = fine</Text>
+            {DEALBREAKER_ITEMS.map((item) => {
+              const val = editDealbreakers[item.key] ?? 'none';
+              return (
+                <View key={item.key} style={styles.dbRow}>
+                  <Text style={styles.dbLabel}>{item.label}</Text>
+                  <View style={styles.dbBtns}>
+                    {(['hard', 'soft', 'none'] as DealbreakerLevel[]).map((lvl) => (
+                      <TouchableOpacity
+                        key={lvl}
+                        style={[styles.dbBtn, val === lvl && (lvl === 'hard' ? styles.dbBtnHard : lvl === 'soft' ? styles.dbBtnSoft : styles.dbBtnNone)]}
+                        onPress={() => setEditDealbreakers((prev) => ({ ...prev, [item.key]: lvl }))}
+                      >
+                        <Text style={[styles.dbBtnText, val === lvl && styles.dbBtnTextActive]}>
+                          {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Edit prompts modal ── */}
+      <Modal
+        visible={editPromptsOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditPromptsOpen(false)}
+      >
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditPromptsOpen(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Prompts</Text>
+            <TouchableOpacity onPress={handleSavePrompts} disabled={savingPrompts}>
+              {savingPrompts ? <ActivityIndicator color="#189AA2" /> : <Text style={styles.modalSave}>Save</Text>}
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.prefSectionSub}>Pick up to 3 prompts and answer them.</Text>
+
+            {editPrompts.map((entry, idx) => (
+              <View key={idx} style={styles.promptBlock}>
+                {/* Prompt picker */}
+                {promptPickerIndex === idx ? (
+                  <View style={styles.promptPickerList}>
+                    {PROMPTS.filter((p) => !editPrompts.some((e, i) => i !== idx && e.question === p)).map((p) => (
+                      <TouchableOpacity
+                        key={p}
+                        style={styles.promptPickerItem}
+                        onPress={() => {
+                          setEditPrompts((prev) => prev.map((e, i) => i === idx ? { ...e, question: p } : e));
+                          setPromptPickerIndex(null);
+                        }}
+                      >
+                        <Text style={styles.promptPickerText}>{p}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.promptQuestion} onPress={() => setPromptPickerIndex(idx)}>
+                    <Text style={[styles.promptQuestionText, !entry.question && styles.promptQuestionPlaceholder]}>
+                      {entry.question || 'Tap to choose a prompt…'}
+                    </Text>
+                    <Text style={styles.promptQuestionEdit}>✎</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Answer input */}
+                <TextInput
+                  style={styles.promptAnswerInput}
+                  value={entry.answer}
+                  onChangeText={(t) => setEditPrompts((prev) => prev.map((e, i) => i === idx ? { ...e, answer: t } : e))}
+                  placeholder="Your answer…"
+                  placeholderTextColor="#9AA"
+                  multiline
+                  maxLength={300}
+                />
+
+                {/* Remove */}
+                <TouchableOpacity onPress={() => setEditPrompts((prev) => prev.filter((_, i) => i !== idx))}>
+                  <Text style={styles.promptRemove}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {editPrompts.length < 3 && (
+              <TouchableOpacity
+                style={styles.addPromptBtn}
+                onPress={() => setEditPrompts((prev) => [...prev, { question: '', answer: '' }])}
+              >
+                <Text style={styles.addPromptBtnText}>+ Add prompt</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -416,6 +710,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#189AA2',
+    marginTop: 12,
   },
   secondaryButtonText: {
     color: '#0C5389',
@@ -560,5 +855,209 @@ const styles = StyleSheet.create({
     color: '#FDFDFD',
     fontSize: 16,
     fontWeight: '600',
+  },
+  devButton: {
+    marginTop: 12,
+    backgroundColor: '#FF6B00',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  devButtonText: {
+    color: '#FDFDFD',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // ── Interests & dealbreakers modal ──────────────────────────────────────────
+  prefSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0C5389',
+    marginBottom: 4,
+  },
+  prefSectionSub: {
+    fontSize: 13,
+    color: '#4A6070',
+    marginBottom: 16,
+  },
+  catBlock: {
+    marginBottom: 8,
+    backgroundColor: '#F4F7F9',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  catHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  catLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C5389',
+  },
+  catChevron: {
+    fontSize: 12,
+    color: '#189AA2',
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FDFDFD',
+    borderWidth: 1.5,
+    borderColor: '#D9E1E6',
+  },
+  chipOn: {
+    backgroundColor: '#189AA2',
+    borderColor: '#189AA2',
+  },
+  chipDim: {
+    opacity: 0.4,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4A6070',
+  },
+  chipTextOn: {
+    color: '#FDFDFD',
+  },
+  dbRow: {
+    marginBottom: 14,
+  },
+  dbLabel: {
+    fontSize: 15,
+    color: '#0C5389',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  dbBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dbBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: '#F4F7F9',
+    borderWidth: 1.5,
+    borderColor: '#D9E1E6',
+  },
+  dbBtnHard: {
+    backgroundColor: '#FFF0EE',
+    borderColor: '#E53935',
+  },
+  dbBtnSoft: {
+    backgroundColor: '#FFF8E1',
+    borderColor: '#F59E0B',
+  },
+  dbBtnNone: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#46BD7F',
+  },
+  dbBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4A6070',
+  },
+  dbBtnTextActive: {
+    color: '#0C5389',
+  },
+
+  // ── Prompts modal ────────────────────────────────────────────────────────────
+  promptBlock: {
+    backgroundColor: '#F4F7F9',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  promptPickerList: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: '#FDFDFD',
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  promptPickerItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#D9E1E6',
+  },
+  promptPickerText: {
+    fontSize: 14,
+    color: '#0C5389',
+  },
+  promptQuestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#D9E1E6',
+  },
+  promptQuestionText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0C5389',
+    lineHeight: 20,
+  },
+  promptQuestionPlaceholder: {
+    color: '#9AA',
+    fontWeight: '400',
+  },
+  promptQuestionEdit: {
+    fontSize: 16,
+    color: '#189AA2',
+    marginLeft: 8,
+  },
+  promptAnswerInput: {
+    fontSize: 15,
+    color: '#0C5389',
+    minHeight: 60,
+    maxHeight: 120,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    textAlignVertical: 'top',
+    marginBottom: 10,
+  },
+  promptRemove: {
+    fontSize: 13,
+    color: '#E85D4C',
+    fontWeight: '600',
+    alignSelf: 'flex-end',
+  },
+  addPromptBtn: {
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#189AA2',
+    borderStyle: 'dashed',
+  },
+  addPromptBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#189AA2',
   },
 });

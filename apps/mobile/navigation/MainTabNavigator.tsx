@@ -10,7 +10,7 @@ export type MainTabParamList = {
   Discover: undefined;
   Likes: undefined;
   Chats: NavigatorScreenParams<ChatsStackParamList>;
-  Profile: undefined;
+  Profile: { onDevShowOnboarding?: () => void } | undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -29,7 +29,11 @@ const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.gly
   Profile: 'person',
 };
 
-export default function MainTabNavigator() {
+interface Props {
+  onDevShowOnboarding?: () => void;
+}
+
+export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -56,7 +60,11 @@ export default function MainTabNavigator() {
       <Tab.Screen name="Discover" component={DiscoverScreen} />
       <Tab.Screen name="Likes" component={LikesScreen} />
       <Tab.Screen name="Chats" component={ChatsStack} />
-      <Tab.Screen name="Profile" component={UserProfileScreen} />
+      <Tab.Screen
+        name="Profile"
+        component={UserProfileScreen}
+        initialParams={{ onDevShowOnboarding }}
+      />
     </Tab.Navigator>
   );
 }
