@@ -66,7 +66,7 @@ export default function App() {
       )}
       {appState === 'home' && (
         <NavigationContainer>
-          <MainTabNavigator />
+          <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
         </NavigationContainer>
       )}
     </SafeAreaProvider>
