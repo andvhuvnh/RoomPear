@@ -14,7 +14,7 @@
  *  9  Listing         (optional → listings + profiles.has_listing)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -158,6 +158,15 @@ function formatDateYMD(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Human-readable label after picking a date (API still uses YMD). */
+function formatDateDisplay(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 // ─── Chip component ───────────────────────────────────────────────────────────
 
 function Chip({
@@ -214,6 +223,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
   // Step 2: Budget
   const [minBudget, setMinBudget] = useState('');
   const [maxBudget, setMaxBudget] = useState('');
+  const maxBudgetInputRef = useRef<TextInput>(null);
 
   // Step 3: Room + Move-in
   const [roomType, setRoomType] = useState('');
@@ -586,26 +596,37 @@ export default function OnboardingScreen({ onComplete }: Props) {
           minBudget && maxBudget && parseFloat(minBudget) > parseFloat(maxBudget)
             ? 'Min budget cannot exceed max budget'
             : '';
+        const budgetKeyboardType = Platform.OS === 'ios' ? 'number-pad' : 'numeric';
         return (
-          <View style={styles.stepBody}>
+          <ScrollView
+            style={styles.stepBody}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            keyboardDismissMode="on-drag"
+          >
             <TextInput
               style={styles.input}
               placeholder="Min / month ($)"
               placeholderTextColor="#9AA"
               value={minBudget}
               onChangeText={setMinBudget}
-              keyboardType="numeric"
+              keyboardType={budgetKeyboardType}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => maxBudgetInputRef.current?.focus()}
             />
             <TextInput
+              ref={maxBudgetInputRef}
               style={styles.input}
               placeholder="Max / month ($)"
               placeholderTextColor="#9AA"
               value={maxBudget}
               onChangeText={setMaxBudget}
-              keyboardType="numeric"
+              keyboardType={budgetKeyboardType}
+              returnKeyType="done"
             />
             {!!budgetError && <Text style={styles.errorText}>{budgetError}</Text>}
-          </View>
+          </ScrollView>
         );
       }
 
@@ -634,7 +655,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             <Text style={styles.sectionLabel}>Move-in date (optional)</Text>
             <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
               <Text style={[styles.dateBtnText, !moveInDate && styles.dateBtnPlaceholder]}>
-                {moveInDate ? formatDateYMD(moveInDate) : 'Select a date'}
+                {moveInDate ? formatDateDisplay(moveInDate) : 'Select a date'}
               </Text>
             </TouchableOpacity>
             {showDatePicker && (
