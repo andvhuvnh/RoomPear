@@ -21,6 +21,8 @@ export interface Preferences {
   social_preference?: 'social' | 'quiet' | 'balanced';
   work_schedule?: string;
   must_haves?: string[];
+  interests?: Record<string, string[]>;
+  dealbreakers?: Record<string, 'hard' | 'soft' | 'none'>;
   created_at?: string;
   updated_at?: string;
 }
