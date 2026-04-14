@@ -21,9 +21,13 @@ export default function ChatsStack() {
       <Stack.Screen
         name="ChatsHome"
         component={ChatsScreen}
-        options={{ headerShown: false }}
+        options={{ headerShown: false, title: 'Chats' }}
       />
-      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ headerBackTitle: 'Chats' }}
+      />
     </Stack.Navigator>
   );
 }
