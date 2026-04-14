@@ -10,33 +10,28 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
-import PublicProfileCard from '../components/PublicProfileCard';
+import SwipeCard from '../components/SwipeCard';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const COLORS = {
-  blue: '#0C5389',
-  teal: '#189AA2',
-  green: '#46BD7F',
-  white: '#FDFDFD',
-  ink: '#0B1B2B',
-  border: '#D9E1E6',
-  text: '#2B3A4A',
-};
+type Action = 'like' | 'pass' | 'top_pick';
 
 export default function DiscoverScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<DiscoverProfile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [actionDisabled, setActionDisabled] = useState(false);
   const [matchName, setMatchName] = useState<string | null>(null);
   const [expandedProfile, setExpandedProfile] = useState<DiscoverProfile | null>(null);
-  const [actionDisabled, setActionDisabled] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  // Animation values for the front card
+  const translateX = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const cardOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -51,144 +46,214 @@ export default function DiscoverScreen() {
     const data = await fetchDiscoverProfiles(uid);
     setProfiles(data);
     setCurrentIndex(0);
+    translateX.setValue(0);
+    translateY.setValue(0);
+    cardOpacity.setValue(1);
     setLoading(false);
   }
 
-  async function handleAction(direction: 'like' | 'pass') {
+  // Animate the card flying off in the given direction, then advance to next
+  function animateOut(direction: Action, onDone: () => void) {
+    const toX =
+      direction === 'like' ? SCREEN_WIDTH * 1.5
+      : direction === 'pass' ? -SCREEN_WIDTH * 1.5
+      : 0;
+    const toY = direction === 'top_pick' ? -SCREEN_HEIGHT : 0;
+
+    Animated.parallel([
+      Animated.timing(translateX, {
+        toValue: toX,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: toY,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Reset values before content changes so new card appears at origin
+      translateX.setValue(0);
+      translateY.setValue(0);
+      cardOpacity.setValue(1);
+      onDone();
+    });
+  }
+
+  async function handleAction(direction: Action) {
     if (actionDisabled) return;
     setActionDisabled(true);
 
-    // Fade out current card
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(async () => {
-      const current = profiles[currentIndex];
+    const current = profiles[currentIndex];
+
+    animateOut(direction, async () => {
       if (current && userId) {
         const { isMatch } = await recordSwipe(userId, current.id, direction);
         if (isMatch) setMatchName(current.name);
       }
-
       setCurrentIndex((prev) => prev + 1);
-
-      // Fade in next card
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => setActionDisabled(false));
+      setActionDisabled(false);
     });
   }
 
+  function handleUndo() {
+    if (actionDisabled || currentIndex === 0) return;
+    setActionDisabled(true);
+    cardOpacity.setValue(0);
+    setCurrentIndex((prev) => prev - 1);
+    Animated.timing(cardOpacity, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setActionDisabled(false));
+  }
+
   const currentProfile = profiles[currentIndex];
-  const hasMore = currentIndex < profiles.length;
+  const nextProfile = profiles[currentIndex + 1];
+  const remaining = profiles.length - currentIndex;
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.emptyText}>Finding roommates...</Text>
+        <Text style={styles.emptyText}>Finding roommates…</Text>
       </View>
     );
   }
 
-  if (!hasMore) {
+  if (!currentProfile) {
     return (
       <View style={styles.centered}>
         <Text style={styles.emptyTitle}>You're all caught up</Text>
         <Text style={styles.emptyText}>No more profiles right now.{'\n'}Check back later!</Text>
         <TouchableOpacity
-          style={styles.refreshButton}
+          style={styles.refreshBtn}
           onPress={() => userId && loadProfiles(userId)}
         >
-          <Text style={styles.refreshButtonText}>Refresh</Text>
+          <Text style={styles.refreshBtnText}>Refresh</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Discover</Text>
+    <SafeAreaView style={styles.root} edges={['top']}>
+      {/* ── Header ── */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Discover</Text>
+        <Text style={styles.headerCount}>
+          {remaining} {remaining === 1 ? 'person' : 'people'} nearby
+        </Text>
+      </View>
 
+      {/* ── Card stack ── */}
       <View style={styles.cardArea}>
-        <Animated.View style={{ opacity: fadeAnim, width: '100%' }}>
-          <TouchableOpacity
-            activeOpacity={0.95}
+        {/* Back card — static, slightly smaller */}
+        {nextProfile && (
+          <View style={styles.backCardWrap} pointerEvents="none">
+            <SwipeCard profile={nextProfile} onPress={() => {}} />
+          </View>
+        )}
+
+        {/* Front card — animated */}
+        <Animated.View
+          style={[
+            styles.frontCardWrap,
+            {
+              transform: [{ translateX }, { translateY }],
+              opacity: cardOpacity,
+            },
+          ]}
+        >
+          <SwipeCard
+            profile={currentProfile}
             onPress={() => setExpandedProfile(currentProfile)}
-          >
-            <PublicProfileCard
-              imageUrls={currentProfile.photoUrls}
-              name={currentProfile.name}
-              age={currentProfile.age}
-              location={currentProfile.location}
-              bio={currentProfile.bio}
-              hobbies={currentProfile.hobbies}
-            />
-          </TouchableOpacity>
-          <Text style={styles.tapHint}>Tap card to view full profile</Text>
+          />
         </Animated.View>
       </View>
 
-      {/* Action buttons */}
+      {/* ── Action buttons ── */}
       <View style={styles.actions}>
+        {/* Undo */}
         <TouchableOpacity
-          style={[styles.passButton, actionDisabled && styles.buttonDisabled]}
+          style={[styles.btn, styles.btnUndo, (actionDisabled || currentIndex === 0) && styles.btnDisabled]}
+          onPress={handleUndo}
+          disabled={actionDisabled || currentIndex === 0}
+        >
+          <Text style={[styles.btnIcon, styles.btnIconUndo]}>↩</Text>
+        </TouchableOpacity>
+
+        {/* Pass */}
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPass, actionDisabled && styles.btnDisabled]}
           onPress={() => handleAction('pass')}
           disabled={actionDisabled}
         >
-          <Text style={styles.passIcon}>✕</Text>
+          <Text style={[styles.btnIcon, styles.btnIconPass]}>✕</Text>
         </TouchableOpacity>
+
+        {/* Top Pick */}
         <TouchableOpacity
-          style={[styles.likeButton, actionDisabled && styles.buttonDisabled]}
+          style={[styles.btn, styles.btnTop, actionDisabled && styles.btnDisabled]}
+          onPress={() => handleAction('top_pick')}
+          disabled={actionDisabled}
+        >
+          <Text style={[styles.btnIcon, styles.btnIconTop]}>★</Text>
+        </TouchableOpacity>
+
+        {/* Like */}
+        <TouchableOpacity
+          style={[styles.btn, styles.btnLike, actionDisabled && styles.btnDisabled]}
           onPress={() => handleAction('like')}
           disabled={actionDisabled}
         >
-          <Text style={styles.likeIcon}>♥</Text>
+          <Text style={[styles.btnIcon, styles.btnIconLike]}>♥</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Full profile modal */}
+      {/* ── Full profile modal ── */}
       <Modal visible={!!expandedProfile} animationType="slide" statusBarTranslucent>
         {expandedProfile && (
           <View style={styles.profileModal}>
             <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-              {/* Photo gallery */}
               <ScrollView
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
-                style={styles.photoScroll}
+                style={{ height: SCREEN_HEIGHT * 0.55 }}
               >
                 {expandedProfile.photoUrls.map((url, i) => (
                   <Image
                     key={i}
                     source={{ uri: url }}
-                    style={[styles.fullPhoto, { width: SCREEN_WIDTH }]}
+                    style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.55 }}
                     resizeMode="cover"
                   />
                 ))}
               </ScrollView>
 
-              {/* Info */}
               <View style={styles.profileInfo}>
                 <Text style={styles.profileName}>
                   {expandedProfile.name}
                   {expandedProfile.age ? `, ${expandedProfile.age}` : ''}
                 </Text>
                 {expandedProfile.location ? (
-                  <Text style={styles.profileLocation}>{expandedProfile.location}</Text>
+                  <Text style={styles.profileLocation}>📍 {expandedProfile.location}</Text>
                 ) : null}
                 {expandedProfile.bio ? (
                   <Text style={styles.profileBio}>{expandedProfile.bio}</Text>
                 ) : null}
                 {expandedProfile.hobbies && expandedProfile.hobbies.length > 0 && (
                   <>
-                    <Text style={styles.hobbiesLabel}>Interests</Text>
-                    <View style={styles.hobbiesRow}>
+                    <Text style={styles.profileSectionLabel}>Interests</Text>
+                    <View style={styles.profileChips}>
                       {expandedProfile.hobbies.map((h, i) => (
-                        <View key={i} style={styles.hobbyChip}>
-                          <Text style={styles.hobbyChipText}>{h}</Text>
+                        <View key={i} style={styles.profileChip}>
+                          <Text style={styles.profileChipText}>{h}</Text>
                         </View>
                       ))}
                     </View>
@@ -197,180 +262,162 @@ export default function DiscoverScreen() {
               </View>
             </ScrollView>
 
-            {/* Bottom actions */}
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.passButton}
-                onPress={() => {
-                  setExpandedProfile(null);
-                  handleAction('pass');
-                }}
+                style={[styles.btn, styles.btnPass]}
+                onPress={() => { setExpandedProfile(null); handleAction('pass'); }}
               >
-                <Text style={styles.passIcon}>✕</Text>
+                <Text style={[styles.btnIcon, styles.btnIconPass]}>✕</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.likeButton}
-                onPress={() => {
-                  setExpandedProfile(null);
-                  handleAction('like');
-                }}
+                style={[styles.btn, styles.btnTop]}
+                onPress={() => { setExpandedProfile(null); handleAction('top_pick'); }}
               >
-                <Text style={styles.likeIcon}>♥</Text>
+                <Text style={[styles.btnIcon, styles.btnIconTop]}>★</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnLike]}
+                onPress={() => { setExpandedProfile(null); handleAction('like'); }}
+              >
+                <Text style={[styles.btnIcon, styles.btnIconLike]}>♥</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Close */}
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setExpandedProfile(null)}
-            >
-              <Text style={styles.closeButtonText}>✕</Text>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setExpandedProfile(null)}>
+              <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
         )}
       </Modal>
 
-      {/* Match modal */}
+      {/* ── Match modal ── */}
       <Modal visible={!!matchName} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <View style={styles.matchOverlay}>
           <View style={styles.matchCard}>
             <Text style={styles.matchEmoji}>🎉</Text>
             <Text style={styles.matchTitle}>It's a Match!</Text>
-            <Text style={styles.matchSub}>You and {matchName} both liked each other.</Text>
-            <TouchableOpacity style={styles.matchButton} onPress={() => setMatchName(null)}>
-              <Text style={styles.matchButtonText}>Keep Going</Text>
+            <Text style={styles.matchSub}>
+              You and {matchName} both liked each other.
+            </Text>
+            <TouchableOpacity style={styles.matchBtn} onPress={() => setMatchName(null)}>
+              <Text style={styles.matchBtnText}>Keep Going</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: COLORS.white,
-    paddingTop: 60,
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: COLORS.ink,
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  cardArea: {
-    flex: 1,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tapHint: {
-    textAlign: 'center',
-    marginTop: 10,
-    fontSize: 12,
-    color: COLORS.text,
-    opacity: 0.45,
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 40,
-    paddingVertical: 24,
-    paddingBottom: 36,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 40,
-    paddingVertical: 20,
-    paddingBottom: 36,
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  passButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: '#E53935',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  passIcon: {
-    fontSize: 26,
-    color: '#E53935',
-  },
-  likeButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.green,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  likeIcon: {
-    fontSize: 26,
-    color: COLORS.green,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
+    backgroundColor: '#F4F7F9',
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
-    backgroundColor: COLORS.white,
+    backgroundColor: '#F4F7F9',
   },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: COLORS.ink,
+    color: '#0C5389',
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 15,
-    color: COLORS.text,
+    color: '#4A6070',
     textAlign: 'center',
     lineHeight: 22,
   },
-  refreshButton: {
+  refreshBtn: {
     marginTop: 24,
-    backgroundColor: COLORS.blue,
+    backgroundColor: '#0C5389',
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 14,
   },
-  refreshButtonText: {
-    color: '#fff',
+  refreshBtnText: {
+    color: '#FDFDFD',
     fontWeight: '700',
     fontSize: 15,
   },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0C5389',
+  },
+  headerCount: {
+    fontSize: 13,
+    color: '#189AA2',
+    fontWeight: '600',
+  },
+
+  // Card area
+  cardArea: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  backCardWrap: {
+    position: 'absolute',
+    transform: [{ scale: 0.96 }, { translateY: 10 }],
+    opacity: 0.7,
+  },
+  frontCardWrap: {
+    position: 'absolute',
+  },
+
+  // Action buttons
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    paddingVertical: 20,
+    paddingBottom: 28,
+    backgroundColor: '#F4F7F9',
+  },
+  btn: {
+    borderRadius: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FDFDFD',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnDisabled: { opacity: 0.35 },
+  btnUndo: { width: 52, height: 52, borderWidth: 1.5, borderColor: '#C0CDD6' },
+  btnPass: { width: 64, height: 64, borderWidth: 2, borderColor: '#E53935' },
+  btnTop:  { width: 64, height: 64, borderWidth: 2, borderColor: '#F59E0B' },
+  btnLike: { width: 72, height: 72, borderWidth: 2, borderColor: '#189AA2' },
+  btnIcon: { fontSize: 24 },
+  btnIconUndo: { color: '#9AA', fontSize: 20 },
+  btnIconPass: { color: '#E53935' },
+  btnIconTop:  { color: '#F59E0B' },
+  btnIconLike: { color: '#189AA2', fontSize: 26 },
+
+  // Full profile modal
   profileModal: {
     flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  photoScroll: {
-    height: SCREEN_HEIGHT * 0.55,
-  },
-  fullPhoto: {
-    height: SCREEN_HEIGHT * 0.55,
+    backgroundColor: '#FDFDFD',
   },
   profileInfo: {
     padding: 24,
@@ -379,46 +426,57 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 28,
     fontWeight: '800',
-    color: COLORS.ink,
+    color: '#0C5389',
   },
   profileLocation: {
-    fontSize: 16,
-    color: COLORS.teal,
+    fontSize: 15,
+    color: '#189AA2',
     fontWeight: '500',
     marginTop: 4,
   },
   profileBio: {
     fontSize: 15,
-    color: COLORS.text,
+    color: '#4A6070',
     lineHeight: 22,
     marginTop: 16,
   },
-  hobbiesLabel: {
-    fontSize: 13,
+  profileSectionLabel: {
+    fontSize: 12,
     fontWeight: '700',
-    color: COLORS.text,
+    color: '#4A6070',
     marginTop: 20,
     marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  hobbiesRow: {
+  profileChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  hobbyChip: {
+  profileChip: {
     backgroundColor: 'rgba(24,154,162,0.12)',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 16,
   },
-  hobbyChipText: {
+  profileChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.teal,
+    color: '#189AA2',
   },
-  closeButton: {
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+    paddingVertical: 20,
+    paddingBottom: 36,
+    backgroundColor: '#FDFDFD',
+    borderTopWidth: 1,
+    borderTopColor: '#E8EEF2',
+  },
+  closeBtn: {
     position: 'absolute',
     top: 52,
     right: 16,
@@ -429,19 +487,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeButtonText: {
-    color: '#fff',
+  closeBtnText: {
+    color: '#FDFDFD',
     fontSize: 16,
     fontWeight: '700',
   },
-  modalOverlay: {
+
+  // Match modal
+  matchOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor: '#FDFDFD',
     borderRadius: 24,
     padding: 32,
     alignItems: 'center',
@@ -455,24 +515,24 @@ const styles = StyleSheet.create({
   matchTitle: {
     fontSize: 28,
     fontWeight: '900',
-    color: COLORS.ink,
+    color: '#0C5389',
     marginBottom: 8,
   },
   matchSub: {
     fontSize: 15,
-    color: COLORS.text,
+    color: '#4A6070',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
   },
-  matchButton: {
-    backgroundColor: COLORS.blue,
+  matchBtn: {
+    backgroundColor: '#0C5389',
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 14,
   },
-  matchButtonText: {
-    color: '#fff',
+  matchBtnText: {
+    color: '#FDFDFD',
     fontWeight: '700',
     fontSize: 15,
   },
