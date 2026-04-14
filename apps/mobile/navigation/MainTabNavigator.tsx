@@ -2,14 +2,14 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DiscoverScreen from '../screens/DiscoverScreen';
-import MatchesScreen from '../screens/MatchesScreen';
+import LikesScreen from '../screens/LikesScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
-import MessagesStack, { type MessagesStackParamList } from './MessagesStack';
+import ChatsStack, { type ChatsStackParamList } from './ChatsStack';
 
 export type MainTabParamList = {
   Discover: undefined;
-  Matches: undefined;
-  Messages: NavigatorScreenParams<MessagesStackParamList>;
+  Likes: undefined;
+  Chats: NavigatorScreenParams<ChatsStackParamList>;
   Profile: undefined;
 };
 
@@ -17,15 +17,15 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICON: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
   Discover: 'home-outline',
-  Matches: 'heart-outline',
-  Messages: 'chatbubble-outline',
+  Likes: 'heart-outline',
+  Chats: 'chatbubbles-outline',
   Profile: 'person-outline',
 };
 
 const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
   Discover: 'home',
-  Matches: 'heart',
-  Messages: 'chatbubble',
+  Likes: 'heart',
+  Chats: 'chatbubbles',
   Profile: 'person',
 };
 
@@ -54,8 +54,8 @@ export default function MainTabNavigator() {
       })}
     >
       <Tab.Screen name="Discover" component={DiscoverScreen} />
-      <Tab.Screen name="Matches" component={MatchesScreen} />
-      <Tab.Screen name="Messages" component={MessagesStack} />
+      <Tab.Screen name="Likes" component={LikesScreen} />
+      <Tab.Screen name="Chats" component={ChatsStack} />
       <Tab.Screen name="Profile" component={UserProfileScreen} />
     </Tab.Navigator>
   );

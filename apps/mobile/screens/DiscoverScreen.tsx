@@ -294,13 +294,16 @@ export default function DiscoverScreen() {
       <Modal visible={!!matchName} transparent animationType="fade">
         <View style={styles.matchOverlay}>
           <View style={styles.matchCard}>
-            <Text style={styles.matchEmoji}>🎉</Text>
+            <Text style={styles.matchEmoji}>🍐</Text>
             <Text style={styles.matchTitle}>It's a Match!</Text>
             <Text style={styles.matchSub}>
-              You and {matchName} both liked each other.
+              You and {matchName} both liked each other.{'\n'}Start the conversation!
             </Text>
-            <TouchableOpacity style={styles.matchBtn} onPress={() => setMatchName(null)}>
-              <Text style={styles.matchBtnText}>Keep Going</Text>
+            <TouchableOpacity
+              style={styles.matchBtn}
+              onPress={() => setMatchName(null)}
+            >
+              <Text style={styles.matchBtnText}>Keep Swiping</Text>
             </TouchableOpacity>
           </View>
         </View>
