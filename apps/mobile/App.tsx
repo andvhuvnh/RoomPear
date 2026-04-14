@@ -4,16 +4,13 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
-import { profilePhotoPathsFromRow } from './lib/profileDisplay';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
-import ProfileCompletionScreen from './screens/ProfileCompletionScreen';
-import ProfileCardScreen from './screens/ProfileCardScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 
-type AppState = 'loading' | 'auth' | 'onboarding' | 'profile-completion' | 'profile-card' | 'home';
+type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -45,54 +42,10 @@ export default function App() {
     }
 
     const hasPrefs = await hasPreferences(session.user.id);
-
-    if (!hasPrefs) {
-      setAppState('onboarding');
-      return;
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('bio, occupation, hobbies, profile_photo_url')
-      .eq('id', session.user.id)
-      .single();
-
-    if (profileError) {
-      console.error('checkUserState: profile fetch failed', profileError);
-    }
-
-    const photoPaths = profilePhotoPathsFromRow(profile?.profile_photo_url);
-    const hasProfileCardPhotos = photoPaths.length >= 3;
-
-    const hasProfileDetails = Boolean(
-      profile?.bio?.trim() ||
-        profile?.occupation?.trim() ||
-        (profile?.hobbies && profile.hobbies.length > 0)
-    );
-
-    if (hasProfileCardPhotos) {
-      setAppState('home');
-      return;
-    }
-
-    if (!hasProfileDetails) {
-      setAppState('profile-completion');
-    } else {
-      setAppState('profile-card');
-    }
+    setAppState(hasPrefs ? 'home' : 'onboarding');
   };
 
-  const handleOnboardingComplete = async () => {
-    if (session) setAppState('profile-completion');
-  };
-
-  const handleProfileComplete = async () => {
-    if (session) setAppState('profile-card');
-  };
-
-  const handleProfileCardComplete = async () => {
-    if (session) await checkUserState(session);
-  };
+  const handleOnboardingComplete = () => setAppState('home');
 
   if (loading || appState === 'loading') {
     return (
@@ -110,12 +63,6 @@ export default function App() {
       {appState === 'auth' && <AuthScreen />}
       {appState === 'onboarding' && (
         <OnboardingScreen onComplete={handleOnboardingComplete} />
-      )}
-      {appState === 'profile-completion' && (
-        <ProfileCompletionScreen onComplete={handleProfileComplete} />
-      )}
-      {appState === 'profile-card' && (
-        <ProfileCardScreen onComplete={handleProfileCardComplete} />
       )}
       {appState === 'home' && (
         <NavigationContainer>
