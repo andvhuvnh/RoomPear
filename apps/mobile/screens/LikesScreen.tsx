@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { fetchLikers, useDailyReveal, type Liker } from '../lib/likes';
 import { recordSwipe } from '../lib/discover';
+import { usePurchases } from '../context/PurchasesContext';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 type NavProp = BottomTabNavigationProp<MainTabParamList>;
@@ -29,6 +30,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 export default function LikesScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const { isRoomPearPlus, presentPaywall } = usePurchases();
   const [userId, setUserId] = useState<string | null>(null);
   const [likers, setLikers] = useState<Liker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,9 +90,12 @@ export default function LikesScreen() {
 
     if (revealUsed) {
       Alert.alert(
-        'No reveals left',
-        'You\'ve used your free reveal for today. Come back tomorrow, or go Premium for unlimited reveals.',
-        [{ text: 'OK' }]
+        'No reveals left today',
+        'Come back tomorrow for another free reveal, or upgrade to RoomPear+ to see every liker instantly.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'View RoomPear+', onPress: () => void presentPaywall() },
+        ]
       );
       return;
     }
@@ -103,45 +108,47 @@ export default function LikesScreen() {
       setRevealUsed(true);
     } else {
       Alert.alert(
-        'No reveals left',
-        'You\'ve used your free reveal for today. Come back tomorrow, or go Premium for unlimited reveals.',
-        [{ text: 'OK' }]
+        'No reveals left today',
+        'Come back tomorrow, or upgrade to RoomPear+ for unlimited access to your likers.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'View RoomPear+', onPress: () => void presentPaywall() },
+        ]
       );
     }
   }
 
   function renderItem({ item }: { item: Liker }) {
     const isRevealed = revealedIds.has(item.id);
+    const photoClear = isRoomPearPlus || isRevealed;
     const photo = item.photoUrls[0];
 
     return (
       <View style={styles.card}>
-        {/* Photo — blurred unless revealed */}
+        {/* Photo — blurred for free users until revealed; RoomPear+ sees all */}
         <View style={styles.photoWrap}>
           {photo ? (
             <Image
               source={{ uri: photo }}
               style={styles.photo}
               resizeMode="cover"
-              blurRadius={isRevealed ? 0 : 18}
+              blurRadius={photoClear ? 0 : 18}
             />
           ) : (
             <View style={[styles.photo, styles.photoPlaceholder]}>
               <Text style={styles.photoInitial}>
-                {isRevealed ? item.name.slice(0, 1) : '?'}
+                {photoClear ? item.name.slice(0, 1) : '?'}
               </Text>
             </View>
           )}
 
-          {/* Lock overlay on blurred photos */}
-          {!isRevealed && (
+          {!photoClear && (
             <View style={styles.lockOverlay} pointerEvents="none">
               <Text style={styles.lockIcon}>🔒</Text>
             </View>
           )}
         </View>
 
-        {/* Info — always visible */}
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>
             {item.name}{item.age ? `, ${item.age}` : ''}
@@ -150,7 +157,7 @@ export default function LikesScreen() {
             <Text style={styles.location} numberOfLines={1}>{item.location}</Text>
           )}
 
-          {isRevealed ? (
+          {photoClear ? (
             <TouchableOpacity
               style={[styles.revealBtn, likedBackIds.has(item.id) && styles.revealBtnDim]}
               onPress={() => handleLikeBack(item)}
@@ -164,11 +171,17 @@ export default function LikesScreen() {
           ) : (
             <TouchableOpacity
               style={[styles.revealBtn, revealUsed && styles.revealBtnDim]}
-              onPress={() => handleReveal(item)}
+              onPress={() => {
+                if (revealUsed) {
+                  void presentPaywall();
+                } else {
+                  void handleReveal(item);
+                }
+              }}
               activeOpacity={0.8}
             >
               <Text style={styles.revealBtnText}>
-                {revealUsed ? '🔒 Premium' : '✨ Reveal'}
+                {revealUsed ? '🔒 RoomPear+' : '✨ Reveal'}
               </Text>
             </TouchableOpacity>
           )}
@@ -191,11 +204,19 @@ export default function LikesScreen() {
 
       {/* Daily reveal banner */}
       {!loading && likers.length > 0 && (
-        <View style={[styles.banner, revealUsed && styles.bannerUsed]}>
-          <Text style={styles.bannerText}>
-            {revealUsed
-              ? '🔒 Free reveal used — come back tomorrow'
-              : '✨ You have 1 free reveal today'}
+        <View
+          style={[
+            styles.banner,
+            isRoomPearPlus && styles.bannerPremium,
+            revealUsed && !isRoomPearPlus && styles.bannerUsed,
+          ]}
+        >
+          <Text style={[styles.bannerText, isRoomPearPlus && styles.bannerTextPremium]}>
+            {isRoomPearPlus
+              ? 'RoomPear+ · All likers visible — unlimited reveals'
+              : revealUsed
+                ? '🔒 Free reveal used — come back tomorrow or upgrade'
+                : '✨ Free tier: 1 reveal per day (blur) · RoomPear+ sees everyone'}
           </Text>
         </View>
       )}
@@ -301,11 +322,17 @@ const styles = StyleSheet.create({
   bannerUsed: {
     backgroundColor: 'rgba(74,96,112,0.10)',
   },
+  bannerPremium: {
+    backgroundColor: 'rgba(70,189,127,0.15)',
+  },
   bannerText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#189AA2',
     textAlign: 'center',
+  },
+  bannerTextPremium: {
+    color: '#0C5389',
   },
 
   // Grid

@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
+import { PurchasesProvider } from './context/PurchasesContext';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -64,10 +65,12 @@ export default function App() {
       {appState === 'onboarding' && (
         <OnboardingScreen onComplete={handleOnboardingComplete} />
       )}
-      {appState === 'home' && (
-        <NavigationContainer>
-          <MainTabNavigator />
-        </NavigationContainer>
+      {appState === 'home' && session?.user && (
+        <PurchasesProvider userId={session.user.id}>
+          <NavigationContainer>
+            <MainTabNavigator />
+          </NavigationContainer>
+        </PurchasesProvider>
       )}
     </SafeAreaProvider>
   );

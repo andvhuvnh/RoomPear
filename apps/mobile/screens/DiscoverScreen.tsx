@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -10,9 +10,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
+import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsage';
+import { FREE_TIER_LIMITS } from '../lib/freeTierLimits';
+import { usePurchases } from '../context/PurchasesContext';
 import SwipeCard from '../components/SwipeCard';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -20,6 +24,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 type Action = 'like' | 'pass' | 'top_pick';
 
 export default function DiscoverScreen() {
+  const { isRoomPearPlus, presentPaywall } = usePurchases();
   const [userId, setUserId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<DiscoverProfile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -27,19 +32,34 @@ export default function DiscoverScreen() {
   const [matchName, setMatchName] = useState<string | null>(null);
   const [expandedProfile, setExpandedProfile] = useState<DiscoverProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
 
   // Animation values for the front card
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
 
+  const refreshDailyUsage = useCallback(async (uid: string) => {
+    const u = await getDiscoverUsage(uid);
+    setDailyUsage(u);
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const uid = data.session?.user.id ?? null;
       setUserId(uid);
-      if (uid) loadProfiles(uid);
+      if (uid) {
+        loadProfiles(uid);
+        refreshDailyUsage(uid);
+      }
     });
-  }, []);
+  }, [refreshDailyUsage]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) refreshDailyUsage(userId);
+    }, [userId, refreshDailyUsage])
+  );
 
   async function loadProfiles(uid: string) {
     setLoading(true);
@@ -87,6 +107,24 @@ export default function DiscoverScreen() {
 
   async function handleAction(direction: Action) {
     if (actionDisabled) return;
+    if (!userId) return;
+
+    if (!isRoomPearPlus) {
+      const usage = await getDiscoverUsage(userId);
+      if (direction === 'top_pick') {
+        if (
+          usage.swipes >= FREE_TIER_LIMITS.swipesPerDay ||
+          usage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay
+        ) {
+          await presentPaywall();
+          return;
+        }
+      } else if (usage.swipes >= FREE_TIER_LIMITS.swipesPerDay) {
+        await presentPaywall();
+        return;
+      }
+    }
+
     setActionDisabled(true);
 
     const current = profiles[currentIndex];
@@ -95,14 +133,20 @@ export default function DiscoverScreen() {
       if (current && userId) {
         const { isMatch } = await recordSwipe(userId, current.id, direction);
         if (isMatch) setMatchName(current.name);
+        await recordDiscoverAction(userId, direction);
+        await refreshDailyUsage(userId);
       }
       setCurrentIndex((prev) => prev + 1);
       setActionDisabled(false);
     });
   }
 
-  function handleUndo() {
+  async function handleUndo() {
     if (actionDisabled || currentIndex === 0) return;
+    if (!isRoomPearPlus) {
+      await presentPaywall();
+      return;
+    }
     setActionDisabled(true);
     cardOpacity.setValue(0);
     setCurrentIndex((prev) => prev - 1);
@@ -144,7 +188,18 @@ export default function DiscoverScreen() {
     <SafeAreaView style={styles.root} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Discover</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Discover</Text>
+          {isRoomPearPlus ? (
+            <Text style={styles.headerMetricsPremium}>RoomPear+ · Unlimited swipes & Top Picks</Text>
+          ) : (
+            <Text style={styles.headerMetrics}>
+              {Math.max(0, FREE_TIER_LIMITS.swipesPerDay - dailyUsage.swipes)}/
+              {FREE_TIER_LIMITS.swipesPerDay} swipes today ·{' '}
+              {dailyUsage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay ? 'Top Pick used' : 'Top Pick ready'}
+            </Text>
+          )}
+        </View>
         <Text style={styles.headerCount}>
           {remaining} {remaining === 1 ? 'person' : 'people'} nearby
         </Text>
@@ -180,8 +235,13 @@ export default function DiscoverScreen() {
       <View style={styles.actions}>
         {/* Undo */}
         <TouchableOpacity
-          style={[styles.btn, styles.btnUndo, (actionDisabled || currentIndex === 0) && styles.btnDisabled]}
-          onPress={handleUndo}
+          style={[
+            styles.btn,
+            styles.btnUndo,
+            (actionDisabled || currentIndex === 0) && styles.btnDisabled,
+            !isRoomPearPlus && styles.btnUndoLocked,
+          ]}
+          onPress={() => void handleUndo()}
           disabled={actionDisabled || currentIndex === 0}
         >
           <Text style={[styles.btnIcon, styles.btnIconUndo]}>↩</Text>
@@ -352,21 +412,42 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 12,
+  },
+  headerLeft: {
+    flex: 1,
+    marginRight: 12,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
     color: '#0C5389',
   },
+  headerMetrics: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#4A6070',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  headerMetricsPremium: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#189AA2',
+    fontWeight: '700',
+  },
   headerCount: {
     fontSize: 13,
     color: '#189AA2',
     fontWeight: '600',
+    marginTop: 4,
+  },
+  btnUndoLocked: {
+    opacity: 0.55,
   },
 
   // Card area
