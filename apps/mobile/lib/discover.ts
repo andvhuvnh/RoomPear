@@ -95,12 +95,16 @@ export async function fetchDiscoverProfiles(
     const state = prefs?.state?.trim() ?? '';
     const location = city && state ? `${city}, ${state}` : city || state;
 
+    // Prefer flattened preferences.interests over legacy profiles.hobbies
+    const interestChips = Object.values(prefs?.interests ?? {}).flat() as string[];
+    const hobbies = interestChips.length > 0 ? interestChips : (row.hobbies ?? null);
+
     result.push({
       id: row.id,
       name: row.name ?? 'Unknown',
       age: row.age ?? null,
       bio: row.bio ?? null,
-      hobbies: row.hobbies ?? null,
+      hobbies,
       photoUrls: urls,
       location,
     });
