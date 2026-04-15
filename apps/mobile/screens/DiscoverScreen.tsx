@@ -11,20 +11,36 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
+import { getProfileImageUrls } from '../lib/storage';
+import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import SwipeCard from '../components/SwipeCard';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type Action = 'like' | 'pass' | 'top_pick';
 
+type MatchData = {
+  name: string;
+  otherUserId: string;
+  theirPhotoUrl: string | null;
+  myPhotoUrl: string | null;
+  sharedInterests: string[];
+};
+
 export default function DiscoverScreen() {
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const [userId, setUserId] = useState<string | null>(null);
+  const [myPhotoUrl, setMyPhotoUrl] = useState<string | null>(null);
+  const [myHobbies, setMyHobbies] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<DiscoverProfile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [actionDisabled, setActionDisabled] = useState(false);
-  const [matchName, setMatchName] = useState<string | null>(null);
+  const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [expandedProfile, setExpandedProfile] = useState<DiscoverProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -34,10 +50,33 @@ export default function DiscoverScreen() {
   const cardOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const uid = data.session?.user.id ?? null;
       setUserId(uid);
-      if (uid) loadProfiles(uid);
+      if (uid) {
+        loadProfiles(uid);
+        // Fetch my own photo + interests for the match modal
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('profile_photo_url, hobbies')
+          .eq('id', uid)
+          .single();
+        if (me?.profile_photo_url) {
+          const paths = profilePhotoPathsFromRow(me.profile_photo_url);
+          if (paths[0]) {
+            const urls = await getProfileImageUrls(me.profile_photo_url);
+            setMyPhotoUrl(urls?.[0] ?? null);
+          }
+        }
+        // Use preferences.interests (flattened) if available, fall back to profiles.hobbies
+        const { data: myPrefs } = await supabase
+          .from('preferences')
+          .select('interests')
+          .eq('user_id', uid)
+          .single();
+        const interestChips = Object.values(myPrefs?.interests ?? {}).flat() as string[];
+        setMyHobbies(interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : []));
+      }
     });
   }, []);
 
@@ -94,7 +133,18 @@ export default function DiscoverScreen() {
     animateOut(direction, async () => {
       if (current && userId) {
         const { isMatch } = await recordSwipe(userId, current.id, direction);
-        if (isMatch) setMatchName(current.name);
+        if (isMatch) {
+          const sharedInterests = myHobbies.filter((h) =>
+            (current.hobbies ?? []).includes(h)
+          );
+          setMatchData({
+            name: current.name,
+            otherUserId: current.id,
+            theirPhotoUrl: current.photoUrls?.[0] ?? null,
+            myPhotoUrl,
+            sharedInterests,
+          });
+        }
       }
       setCurrentIndex((prev) => prev + 1);
       setActionDisabled(false);
@@ -291,19 +341,65 @@ export default function DiscoverScreen() {
       </Modal>
 
       {/* ── Match modal ── */}
-      <Modal visible={!!matchName} transparent animationType="fade">
+      <Modal visible={!!matchData} transparent animationType="fade">
         <View style={styles.matchOverlay}>
           <View style={styles.matchCard}>
             <Text style={styles.matchEmoji}>🍐</Text>
             <Text style={styles.matchTitle}>It's a Match!</Text>
+
+            {/* Avatars */}
+            <View style={styles.matchAvatars}>
+              <View style={styles.matchAvatarWrap}>
+                {matchData?.myPhotoUrl ? (
+                  <Image source={{ uri: matchData.myPhotoUrl }} style={styles.matchAvatar} />
+                ) : (
+                  <View style={[styles.matchAvatar, styles.matchAvatarPlaceholder]} />
+                )}
+              </View>
+              <View style={[styles.matchAvatarWrap, styles.matchAvatarRight]}>
+                {matchData?.theirPhotoUrl ? (
+                  <Image source={{ uri: matchData.theirPhotoUrl }} style={styles.matchAvatar} />
+                ) : (
+                  <View style={[styles.matchAvatar, styles.matchAvatarPlaceholder]} />
+                )}
+              </View>
+            </View>
+
             <Text style={styles.matchSub}>
-              You and {matchName} both liked each other.{'\n'}Start the conversation!
+              You and {matchData?.name} both want to be roommates!
             </Text>
+
+            {/* Shared interests */}
+            {matchData && matchData.sharedInterests.length > 0 && (
+              <View style={styles.matchInterestsWrap}>
+                <Text style={styles.matchInterestsLabel}>You both like</Text>
+                <View style={styles.matchChips}>
+                  {matchData.sharedInterests.slice(0, 3).map((interest) => (
+                    <View key={interest} style={styles.matchChip}>
+                      <Text style={styles.matchChipText}>{interest}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.matchBtn}
-              onPress={() => setMatchName(null)}
+              onPress={() => {
+                setMatchData(null);
+                navigation.navigate('Chats', {
+                  screen: 'Chat',
+                  params: { otherUserId: matchData!.otherUserId, title: matchData!.name },
+                } as any);
+              }}
             >
-              <Text style={styles.matchBtnText}>Keep Swiping</Text>
+              <Text style={styles.matchBtnText}>Send Message</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.matchBtnSecondary}
+              onPress={() => setMatchData(null)}
+            >
+              <Text style={styles.matchBtnSecondaryText}>Keep Swiping</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -506,37 +602,108 @@ const styles = StyleSheet.create({
   matchCard: {
     backgroundColor: '#FDFDFD',
     borderRadius: 24,
-    padding: 32,
+    paddingHorizontal: 28,
+    paddingVertical: 28,
     alignItems: 'center',
-    width: '80%',
+    width: '86%',
     shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 10,
   },
-  matchEmoji: { fontSize: 48, marginBottom: 12 },
+  matchEmoji: { fontSize: 44, marginBottom: 6 },
   matchTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
     color: '#0C5389',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   matchSub: {
     fontSize: 15,
     color: '#4A6070',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  matchAvatars: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  matchAvatarWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: '#FDFDFD',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  matchAvatarRight: {
+    marginLeft: -20,
+  },
+  matchAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 45,
+  },
+  matchAvatarPlaceholder: {
+    backgroundColor: '#D9E1E6',
+  },
+  matchInterestsWrap: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  matchInterestsLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4A6070',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  matchChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  matchChip: {
+    backgroundColor: 'rgba(24,154,162,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  matchChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#189AA2',
   },
   matchBtn: {
     backgroundColor: '#0C5389',
     paddingHorizontal: 28,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 14,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   matchBtnText: {
     color: '#FDFDFD',
     fontWeight: '700',
     fontSize: 15,
+  },
+  matchBtnSecondary: {
+    paddingVertical: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  matchBtnSecondaryText: {
+    color: '#4A6070',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
