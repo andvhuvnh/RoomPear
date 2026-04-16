@@ -14,7 +14,7 @@
  *  9  Listing         (optional → listings + profiles.has_listing)
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   View,
   Text,
@@ -31,12 +31,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import { savePreferences } from '../lib/preferences';
 import { uploadStagedPhotosAndMerge } from '../lib/profilePhotos';
 import { uploadProfileImage } from '../lib/storage';
 import PublicProfileCard from '../components/PublicProfileCard';
+import type { SearchAreaValue } from '../lib/searchAreaTypes';
+
+const SearchAreaMapPicker = lazy(() => import('../components/SearchAreaMapPicker'));
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -216,9 +220,12 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [ethnicity, setEthnicity] = useState('');
 
   // Step 1: Location
+  const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+  const useLegacyLocationUi = !Constants.expoConfig?.extra?.mapboxAccessToken || isExpoGo;
   const [city, setCity] = useState('');
   const [locationState, setLocationState] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [searchArea, setSearchArea] = useState<SearchAreaValue | null>(null);
 
   // Step 2: Budget
   const [minBudget, setMinBudget] = useState('');
@@ -366,9 +373,14 @@ export default function OnboardingScreen({ onComplete }: Props) {
         : undefined;
 
       const result = await savePreferences(userId, {
-        city: city.trim() || undefined,
-        state: locationState.trim() || undefined,
-        zip_code: zipCode.trim() || undefined,
+        city: (searchArea?.city || city.trim()) || undefined,
+        state: (searchArea?.state || locationState.trim()) || undefined,
+        zip_code: (searchArea?.zipCode || zipCode.trim()) || undefined,
+        location: searchArea?.searchLabel || undefined,
+        search_lat: searchArea?.latitude,
+        search_lng: searchArea?.longitude,
+        search_radius_miles: searchArea?.radiusMiles,
+        search_label: searchArea?.searchLabel,
         min_budget: minBudget ? parseFloat(minBudget) : undefined,
         max_budget: maxBudget ? parseFloat(maxBudget) : undefined,
         room_type: (['private', 'shared', 'flexible', 'entire'] as const).includes(roomType as any)
@@ -561,8 +573,13 @@ export default function OnboardingScreen({ onComplete }: Props) {
         );
 
       case 1:
-        return (
+        return useLegacyLocationUi ? (
           <View style={styles.stepBody}>
+            {isExpoGo && (
+              <Text style={styles.hint}>
+                Expo Go doesn't support Mapbox. Enter location manually, or run a dev build to use the map.
+              </Text>
+            )}
             <TextInput
               style={styles.input}
               placeholder="City"
@@ -589,6 +606,10 @@ export default function OnboardingScreen({ onComplete }: Props) {
               maxLength={5}
             />
           </View>
+        ) : (
+          <Suspense fallback={<ActivityIndicator color="#0C5389" style={{ marginVertical: 24 }} />}>
+            <SearchAreaMapPicker onChange={setSearchArea} />
+          </Suspense>
         );
 
       case 2: {
