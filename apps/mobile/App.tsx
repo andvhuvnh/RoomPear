@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
+import { redeemPendingReferralIfAny } from './lib/referrals';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -34,6 +35,23 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      const r = await redeemPendingReferralIfAny();
+      if (cancelled || !r?.success) return;
+      Alert.alert(
+        'Referral applied',
+        'You and your friend each earned a bonus reveal for Likes.'
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
 
   const checkUserState = async (session: Session | null) => {
     if (!session) {

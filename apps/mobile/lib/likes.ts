@@ -75,31 +75,77 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
   return result;
 }
 
+export type ConsumeRevealReason = 'already_used' | 'no_bonus';
+
 /**
- * Attempts to use the daily free reveal.
- * Returns { success: true } if the reveal was granted,
- * or { success: false, reason: 'already_used' } if today's reveal is spent.
+ * Uses the daily free reveal first; if already used today, consumes one bonus reveal.
  */
-export async function useDailyReveal(
+export async function consumeReveal(
   userId: string
-): Promise<{ success: boolean; reason?: 'already_used' }> {
-  const { data } = await supabase
+): Promise<{ success: boolean; reason?: ConsumeRevealReason; usedBonus?: boolean }> {
+  const { data, error } = await supabase
     .from('profiles')
-    .select('last_free_reveal_at')
+    .select('last_free_reveal_at, bonus_reveal_balance')
     .eq('id', userId)
     .single();
 
-  const lastReveal: string | null = data?.last_free_reveal_at ?? null;
-  const todayStr = new Date().toDateString();
-
-  if (lastReveal && new Date(lastReveal).toDateString() === todayStr) {
+  if (error || !data) {
     return { success: false, reason: 'already_used' };
   }
 
-  await supabase
+  const lastReveal: string | null = data.last_free_reveal_at ?? null;
+  const todayStr = new Date().toDateString();
+  const dailyAvailable = !lastReveal || new Date(lastReveal).toDateString() !== todayStr;
+  const bonus = Math.max(0, Number(data.bonus_reveal_balance ?? 0));
+
+  if (dailyAvailable) {
+    await supabase
+      .from('profiles')
+      .update({ last_free_reveal_at: new Date().toISOString() })
+      .eq('id', userId);
+    return { success: true, usedBonus: false };
+  }
+
+  if (bonus <= 0) {
+    return { success: false, reason: 'already_used' };
+  }
+
+  const { error: upErr } = await supabase
     .from('profiles')
-    .update({ last_free_reveal_at: new Date().toISOString() })
+    .update({ bonus_reveal_balance: bonus - 1 })
     .eq('id', userId);
 
-  return { success: true };
+  if (upErr) {
+    return { success: false, reason: 'no_bonus' };
+  }
+
+  return { success: true, usedBonus: true };
+}
+
+export async function fetchPersistedRevealedIds(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('like_reveals')
+    .select('liker_id')
+    .eq('user_id', userId);
+
+  if (error || !data) return new Set<string>();
+  return new Set<string>(data.map((row: { liker_id: string }) => row.liker_id));
+}
+
+export async function persistRevealedLiker(
+  userId: string,
+  likerId: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('like_reveals')
+    .upsert({ user_id: userId, liker_id: likerId }, { onConflict: 'user_id,liker_id' });
+
+  return !error;
+}
+
+export async function unpersistRevealedLiker(
+  userId: string,
+  likerId: string
+): Promise<void> {
+  await supabase.from('like_reveals').delete().eq('user_id', userId).eq('liker_id', likerId);
 }
