@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback } from 'react';
-import { getProfileImageUrls, pickImage } from '../lib/storage';
+import { getProfileImageUrls, getProfileImageUrl, pickImage, uploadListingPhoto, pickListingImage } from '../lib/storage';
 import { getPreferences, savePreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { appendProfilePhoto, removeProfilePhotoAt, replaceProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
@@ -63,6 +63,9 @@ const PROMPTS = [
   'After work I usually…',
   'The best thing about me as a roommate…',
 ];
+
+const MAX_LISTING_PHOTOS = 6;
+type ListingPhotoItem = { kind: 'path'; path: string; url: string } | { kind: 'local'; uri: string };
 
 type DealbreakerLevel = 'hard' | 'soft' | 'none';
 type PromptEntry = { question: string; answer: string };
@@ -113,6 +116,7 @@ export default function UserProfileScreen({ route }: Props) {
   const [editListingState, setEditListingState] = useState('');
   const [editListingZip, setEditListingZip] = useState('');
   const [editMoveInDate, setEditMoveInDate] = useState('');
+  const [editListingPhotos, setEditListingPhotos] = useState<ListingPhotoItem[]>([]);
 
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
@@ -125,7 +129,7 @@ export default function UserProfileScreen({ route }: Props) {
     setListing(l);
   }, []);
 
-  const openListingModal = () => {
+  const openListingModal = async () => {
     setEditRent(listing?.rent != null ? String(listing.rent) : '');
     setEditRoomType(listing?.room_type ?? '');
     setEditAddress(listing?.address ?? '');
@@ -133,13 +137,38 @@ export default function UserProfileScreen({ route }: Props) {
     setEditListingState(listing?.state ?? '');
     setEditListingZip(listing?.zip_code ?? '');
     setEditMoveInDate(listing?.move_in_date ?? '');
+    const paths = listing?.listing_photos ?? [];
+    const items: ListingPhotoItem[] = await Promise.all(
+      paths.map(async (path) => {
+        const url = await getProfileImageUrl(path);
+        return { kind: 'path' as const, path, url: url ?? '' };
+      })
+    );
+    setEditListingPhotos(items);
     setListingOpen(true);
+  };
+
+  const handleAddListingPhoto = async () => {
+    if (editListingPhotos.length >= MAX_LISTING_PHOTOS) return;
+    const uri = await pickListingImage();
+    if (!uri) return;
+    setEditListingPhotos((prev) => [...prev, { kind: 'local', uri }]);
   };
 
   const handleSaveListing = async () => {
     if (!user) return;
     setSavingListing(true);
     try {
+      const photoPaths: string[] = [];
+      for (const item of editListingPhotos) {
+        if (item.kind === 'path') {
+          photoPaths.push(item.path);
+        } else {
+          const { path, error } = await uploadListingPhoto(user.id, item.uri);
+          if (error || !path) { Alert.alert('Error', error ?? 'Photo upload failed'); return; }
+          photoPaths.push(path);
+        }
+      }
       const result = await saveListing(user.id, {
         rent: editRent ? parseFloat(editRent) : null,
         room_type: editRoomType.trim() || null,
@@ -148,6 +177,7 @@ export default function UserProfileScreen({ route }: Props) {
         state: editListingState.trim() || null,
         zip_code: editListingZip.trim() || null,
         move_in_date: editMoveInDate.trim() || null,
+        listing_photos: photoPaths,
       });
       if (!result.ok) { Alert.alert('Error', result.error); return; }
       setListingOpen(false);
@@ -868,6 +898,34 @@ export default function UserProfileScreen({ route }: Props) {
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+
+            <Text style={styles.listingFieldLabel}>Photos ({editListingPhotos.length}/{MAX_LISTING_PHOTOS})</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+                {editListingPhotos.map((item, idx) => (
+                  <View key={idx} style={{ position: 'relative' }}>
+                    <Image
+                      source={{ uri: item.kind === 'path' ? item.url : item.uri }}
+                      style={{ width: 110, height: 82, borderRadius: 8, backgroundColor: '#ddd' }}
+                    />
+                    <TouchableOpacity
+                      style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setEditListingPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18 }}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {editListingPhotos.length < MAX_LISTING_PHOTOS && (
+                  <TouchableOpacity
+                    style={{ width: 110, height: 82, borderRadius: 8, borderWidth: 1.5, borderColor: '#189AA2', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}
+                    onPress={handleAddListingPhoto}
+                  >
+                    <Text style={{ color: '#189AA2', fontSize: 26, lineHeight: 30 }}>+</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </ScrollView>
 
             <Text style={styles.listingFieldLabel}>Monthly Rent ($)</Text>
             <TextInput

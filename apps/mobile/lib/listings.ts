@@ -10,6 +10,7 @@ export type Listing = {
   state: string | null;
   zip_code: string | null;
   move_in_date: string | null;
+  listing_photos: string[] | null;
 };
 
 export type ListingInput = {
@@ -20,12 +21,13 @@ export type ListingInput = {
   state: string | null;
   zip_code: string | null;
   move_in_date: string | null;
+  listing_photos?: string[] | null;
 };
 
 export async function getListing(userId: string): Promise<Listing | null> {
   const { data } = await supabase
     .from('listings')
-    .select('id, user_id, rent, room_type, address, city, state, zip_code, move_in_date')
+    .select('id, user_id, rent, room_type, address, city, state, zip_code, move_in_date, listing_photos')
     .eq('user_id', userId)
     .maybeSingle();
   return data ?? null;
