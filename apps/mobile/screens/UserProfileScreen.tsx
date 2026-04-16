@@ -23,6 +23,7 @@ import PublicProfileCard from '../components/PublicProfileCard';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
 import * as Clipboard from 'expo-clipboard';
 import { redeemReferralCode, redeemErrorMessage } from '../lib/referrals';
+import { getListing, saveListing, deleteListing, type Listing } from '../lib/listings';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 
@@ -101,11 +102,75 @@ export default function UserProfileScreen({ route }: Props) {
   const [editPrompts, setEditPrompts] = useState<PromptEntry[]>([]);
   const [promptPickerIndex, setPromptPickerIndex] = useState<number | null>(null);
 
+  // Listing state
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [listingOpen, setListingOpen] = useState(false);
+  const [savingListing, setSavingListing] = useState(false);
+  const [editRent, setEditRent] = useState('');
+  const [editRoomType, setEditRoomType] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editListingCity, setEditListingCity] = useState('');
+  const [editListingState, setEditListingState] = useState('');
+  const [editListingZip, setEditListingZip] = useState('');
+  const [editMoveInDate, setEditMoveInDate] = useState('');
+
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editOccupation, setEditOccupation] = useState('');
   const [editHobbies, setEditHobbies] = useState<string[]>([]);
   const [editHobbyDraft, setEditHobbyDraft] = useState('');
+
+  const loadListing = useCallback(async (userId: string) => {
+    const l = await getListing(userId);
+    setListing(l);
+  }, []);
+
+  const openListingModal = () => {
+    setEditRent(listing?.rent != null ? String(listing.rent) : '');
+    setEditRoomType(listing?.room_type ?? '');
+    setEditAddress(listing?.address ?? '');
+    setEditListingCity(listing?.city ?? '');
+    setEditListingState(listing?.state ?? '');
+    setEditListingZip(listing?.zip_code ?? '');
+    setEditMoveInDate(listing?.move_in_date ?? '');
+    setListingOpen(true);
+  };
+
+  const handleSaveListing = async () => {
+    if (!user) return;
+    setSavingListing(true);
+    try {
+      const result = await saveListing(user.id, {
+        rent: editRent ? parseFloat(editRent) : null,
+        room_type: editRoomType.trim() || null,
+        address: editAddress.trim() || null,
+        city: editListingCity.trim() || null,
+        state: editListingState.trim() || null,
+        zip_code: editListingZip.trim() || null,
+        move_in_date: editMoveInDate.trim() || null,
+      });
+      if (!result.ok) { Alert.alert('Error', result.error); return; }
+      setListingOpen(false);
+      await loadListing(user.id);
+      await loadProfile(user.id);
+    } finally {
+      setSavingListing(false);
+    }
+  };
+
+  const handleDeleteListing = () => {
+    if (!user) return;
+    Alert.alert('Remove listing', 'Remove your place listing?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          await deleteListing(user.id);
+          setListing(null);
+          await loadProfile(user.id);
+        },
+      },
+    ]);
+  };
 
   const loadProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
@@ -138,7 +203,7 @@ export default function UserProfileScreen({ route }: Props) {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => {
       setUser(u ? { id: u.id, email: u.email } : null);
-      if (u) loadProfile(u.id);
+      if (u) { loadProfile(u.id); loadListing(u.id); }
     });
 
     const {
@@ -146,17 +211,18 @@ export default function UserProfileScreen({ route }: Props) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user;
       setUser(u ? { id: u.id, email: u.email } : null);
-      if (u) loadProfile(u.id);
+      if (u) { loadProfile(u.id); loadListing(u.id); }
       else {
         setProfile(null);
         setPrefs(null);
         setImageUrls([]);
         setPhotoPaths([]);
+        setListing(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [loadProfile, loadListing]);
 
   const openEditProfile = () => {
     if (!profile) return;
@@ -399,6 +465,41 @@ export default function UserProfileScreen({ route }: Props) {
               <TouchableOpacity style={styles.secondaryButton} onPress={openEditPrompts}>
                 <Text style={styles.secondaryButtonText}>Edit prompts</Text>
               </TouchableOpacity>
+            </View>
+
+            {/* ── My Listing ── */}
+            <View style={styles.listingCard}>
+              <Text style={styles.accountTitle}>My Place Listing</Text>
+              {listing ? (
+                <>
+                  <View style={styles.listingRow}>
+                    <Text style={styles.listingValue}>
+                      {listing.room_type ?? 'Room'}{listing.city ? ` · ${listing.city}${listing.state ? `, ${listing.state}` : ''}` : ''}
+                    </Text>
+                    {listing.rent != null && (
+                      <Text style={styles.listingRent}>${listing.rent}/mo</Text>
+                    )}
+                  </View>
+                  {listing.move_in_date && (
+                    <Text style={styles.listingSub}>Available {listing.move_in_date}</Text>
+                  )}
+                  <View style={styles.listingBtns}>
+                    <TouchableOpacity style={styles.listingEditBtn} onPress={openListingModal}>
+                      <Text style={styles.listingEditBtnText}>Edit listing</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.listingDeleteBtn} onPress={handleDeleteListing}>
+                      <Text style={styles.listingDeleteBtnText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.listingSub}>Let others know you have a place available.</Text>
+                  <TouchableOpacity style={styles.primaryButton} onPress={openListingModal}>
+                    <Text style={styles.primaryButtonText}>Add a listing</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
             <View style={styles.accountCard}>
@@ -747,6 +848,95 @@ export default function UserProfileScreen({ route }: Props) {
             </TouchableOpacity>
           </ScrollView>
         </View>
+      </Modal>
+
+      {/* ── Listing modal ── */}
+      <Modal
+        visible={listingOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setListingOpen(false)}
+      >
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setListingOpen(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>{listing ? 'Edit Listing' : 'Add Listing'}</Text>
+            <TouchableOpacity onPress={handleSaveListing} disabled={savingListing}>
+              {savingListing ? <ActivityIndicator color="#189AA2" /> : <Text style={styles.modalSave}>Save</Text>}
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+
+            <Text style={styles.listingFieldLabel}>Monthly Rent ($)</Text>
+            <TextInput
+              style={styles.listingInput}
+              value={editRent}
+              onChangeText={setEditRent}
+              placeholder="e.g. 1200"
+              placeholderTextColor="#9AA"
+              keyboardType="numeric"
+            />
+
+            <Text style={styles.listingFieldLabel}>Room Type</Text>
+            <View style={styles.chipsWrap}>
+              {[
+                { label: 'Private room', value: 'private' },
+                { label: 'Shared room', value: 'shared' },
+                { label: 'Studio', value: 'studio' },
+                { label: 'Entire place', value: 'entire' },
+              ].map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[styles.chip, editRoomType === t.value && styles.chipOn]}
+                  onPress={() => setEditRoomType(t.value)}
+                >
+                  <Text style={[styles.chipText, editRoomType === t.value && styles.chipTextOn]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.listingFieldLabel}>City</Text>
+            <TextInput
+              style={styles.listingInput}
+              value={editListingCity}
+              onChangeText={setEditListingCity}
+              placeholder="e.g. Riverside"
+              placeholderTextColor="#9AA"
+            />
+
+            <Text style={styles.listingFieldLabel}>State</Text>
+            <TextInput
+              style={styles.listingInput}
+              value={editListingState}
+              onChangeText={setEditListingState}
+              placeholder="e.g. CA"
+              placeholderTextColor="#9AA"
+              autoCapitalize="characters"
+              maxLength={2}
+            />
+
+            <Text style={styles.listingFieldLabel}>Address (optional)</Text>
+            <TextInput
+              style={styles.listingInput}
+              value={editAddress}
+              onChangeText={setEditAddress}
+              placeholder="Street address"
+              placeholderTextColor="#9AA"
+            />
+
+            <Text style={styles.listingFieldLabel}>Available From</Text>
+            <TextInput
+              style={styles.listingInput}
+              value={editMoveInDate}
+              onChangeText={setEditMoveInDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9AA"
+            />
+
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -1217,5 +1407,90 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#189AA2',
+  },
+
+  // ── Listing card ────────────────────────────────────────────────────────────
+  listingCard: {
+    marginTop: 20,
+    backgroundColor: '#FDFDFD',
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+  },
+  listingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  listingValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C5389',
+    flex: 1,
+  },
+  listingRent: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#189AA2',
+    marginLeft: 8,
+  },
+  listingSub: {
+    fontSize: 13,
+    color: '#4A6070',
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  listingBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  listingEditBtn: {
+    flex: 1,
+    backgroundColor: '#F4F7F9',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#189AA2',
+  },
+  listingEditBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0C5389',
+  },
+  listingDeleteBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E53935',
+  },
+  listingDeleteBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E53935',
+  },
+  listingFieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4A6070',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  listingInput: {
+    backgroundColor: '#F4F7F9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0C5389',
   },
 });
