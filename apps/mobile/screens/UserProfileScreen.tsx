@@ -21,6 +21,8 @@ import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisp
 import { appendProfilePhoto, removeProfilePhotoAt, replaceProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
 import PublicProfileCard from '../components/PublicProfileCard';
 import ProfileDetailsForm from '../components/ProfileDetailsForm';
+import * as Clipboard from 'expo-clipboard';
+import { redeemReferralCode, redeemErrorMessage } from '../lib/referrals';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 
@@ -86,6 +88,9 @@ export default function UserProfileScreen({ route }: Props) {
   const [savingPhotos, setSavingPhotos] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [savingPrompts, setSavingPrompts] = useState(false);
+
+  const [referralDraft, setReferralDraft] = useState('');
+  const [referralBusy, setReferralBusy] = useState(false);
 
   // Edit preferences state
   const [editInterests, setEditInterests] = useState<Record<string, string[]>>({});
@@ -315,6 +320,39 @@ export default function UserProfileScreen({ route }: Props) {
     if (error) Alert.alert('Error', error.message);
   };
 
+  const handleCopyReferralCode = async (code: string) => {
+    try {
+      await Clipboard.setStringAsync(code);
+      Alert.alert('Copied', 'Your referral code is on the clipboard.');
+    } catch {
+      Alert.alert('Copy failed', 'Could not copy to clipboard.');
+    }
+  };
+
+  const handleApplyReferralCode = async () => {
+    const code = referralDraft.trim().toUpperCase();
+    if (code.length < 4) {
+      Alert.alert('Referral code', 'Enter a valid code (at least 4 characters).');
+      return;
+    }
+    setReferralBusy(true);
+    try {
+      const result = await redeemReferralCode(code);
+      if (result.success) {
+        setReferralDraft('');
+        Alert.alert(
+          'Referral applied',
+          'You and your friend each earned a bonus reveal for Likes.'
+        );
+        if (user) await loadProfile(user.id);
+      } else {
+        Alert.alert('Referral', redeemErrorMessage(result.error));
+      }
+    } finally {
+      setReferralBusy(false);
+    }
+  };
+
   const displayName = profile?.name?.trim() || '';
   const displayAge =
     typeof profile?.age === 'number' && !Number.isNaN(profile.age)
@@ -361,6 +399,54 @@ export default function UserProfileScreen({ route }: Props) {
               <TouchableOpacity style={styles.secondaryButton} onPress={openEditPrompts}>
                 <Text style={styles.secondaryButtonText}>Edit prompts</Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.accountCard}>
+              <Text style={styles.accountTitle}>Invite friends</Text>
+              <Text style={styles.inviteHelp}>
+                Share your code. When a friend joins RoomPear and applies it, you both get +1 bonus reveal
+                on Likes (on top of your daily free reveal).
+              </Text>
+              {profile?.referral_code ? (
+                <View style={styles.referralCodeRow}>
+                  <Text style={styles.referralCodeText}>{profile.referral_code}</Text>
+                  <TouchableOpacity
+                    style={styles.referralCopyBtn}
+                    onPress={() => handleCopyReferralCode(profile.referral_code as string)}
+                  >
+                    <Text style={styles.referralCopyBtnText}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {!profile?.referred_by_user_id ? (
+                <>
+                  <Text style={styles.inviteLabel}>Have a friend&apos;s code?</Text>
+                  <TextInput
+                    style={styles.referralInput}
+                    placeholder="Enter code"
+                    placeholderTextColor="#7B8A99"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    value={referralDraft}
+                    onChangeText={(t) => setReferralDraft(t.toUpperCase())}
+                    editable={!referralBusy}
+                  />
+                  <TouchableOpacity
+                    style={[styles.referralApplyBtn, referralBusy && styles.referralApplyBtnDim]}
+                    onPress={handleApplyReferralCode}
+                    disabled={referralBusy}
+                  >
+                    {referralBusy ? (
+                      <ActivityIndicator color="#FDFDFD" />
+                    ) : (
+                      <Text style={styles.referralApplyBtnText}>Apply code</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.inviteLinked}>You joined with a friend&apos;s referral.</Text>
+              )}
             </View>
 
             <View style={styles.accountCard}>
@@ -745,6 +831,78 @@ const styles = StyleSheet.create({
   accountValue: {
     fontSize: 16,
     color: '#0C5389',
+  },
+  inviteHelp: {
+    fontSize: 14,
+    color: '#4A6070',
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  referralCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F5F8FA',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+    marginBottom: 16,
+  },
+  referralCodeText: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: '#0C5389',
+  },
+  referralCopyBtn: {
+    backgroundColor: '#0C5389',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  referralCopyBtnText: {
+    color: '#FDFDFD',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  inviteLabel: {
+    fontSize: 12,
+    color: '#189AA2',
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  referralInput: {
+    borderWidth: 1,
+    borderColor: '#D9E1E6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    color: '#0B1B2B',
+    marginBottom: 10,
+  },
+  referralApplyBtn: {
+    backgroundColor: '#189AA2',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  referralApplyBtnDim: {
+    opacity: 0.65,
+  },
+  referralApplyBtnText: {
+    color: '#FDFDFD',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  inviteLinked: {
+    fontSize: 14,
+    color: '#46BD7F',
+    fontWeight: '600',
   },
   signOutButton: {
     marginTop: 16,

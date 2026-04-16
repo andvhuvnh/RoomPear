@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { setPendingReferralCode } from '../lib/referrals';
 
 type AuthMode = 'signin' | 'signup';
 
@@ -41,6 +42,7 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState('');
 
   const handleGooglePlaceholder = () => {
     Alert.alert('Coming soon', 'Google sign-in will be available soon.');
@@ -114,6 +116,8 @@ export default function AuthScreen() {
     setLoading(true);
 
     try {
+      await setPendingReferralCode(referralCode.trim() || null);
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -200,6 +204,22 @@ export default function AuthScreen() {
                     setSuccess(null);
                   }}
                   keyboardType="phone-pad"
+                  editable={!loading}
+                />
+
+                <Text style={styles.label}>Friend&apos;s referral code (optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. A1B2C3D4"
+                  placeholderTextColor={COLORS.placeholder}
+                  value={referralCode}
+                  onChangeText={(text) => {
+                    setReferralCode(text.toUpperCase());
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
                   editable={!loading}
                 />
               </>
@@ -293,6 +313,7 @@ export default function AuthScreen() {
                 setPassword('');
                 setName('');
                 setPhone('');
+                setReferralCode('');
                 setError(null);
                 setSuccess(null);
               }}

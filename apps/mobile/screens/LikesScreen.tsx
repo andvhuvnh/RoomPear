@@ -16,7 +16,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { fetchLikers, useDailyReveal, type Liker } from '../lib/likes';
+import {
+  fetchLikers,
+  fetchPersistedRevealedIds,
+  consumeReveal,
+  persistRevealedLiker,
+  unpersistRevealedLiker,
+  type Liker,
+} from '../lib/likes';
 import { recordSwipe } from '../lib/discover';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
@@ -35,7 +42,9 @@ export default function LikesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [likedBackIds, setLikedBackIds] = useState<Set<string>>(new Set());
-  const [revealUsed, setRevealUsed] = useState(false);
+  /** True when today's free daily reveal has been consumed */
+  const [dailyRevealSpentToday, setDailyRevealSpentToday] = useState(false);
+  const [bonusRevealBalance, setBonusRevealBalance] = useState(0);
   const [matchName, setMatchName] = useState<string | null>(null);
 
   const load = useCallback(async (isRefresh = false) => {
@@ -51,19 +60,26 @@ export default function LikesScreen() {
     }
     setUserId(uid);
 
-    // Check if daily reveal is already used today
     const { data: profile } = await supabase
       .from('profiles')
-      .select('last_free_reveal_at')
+      .select('last_free_reveal_at, bonus_reveal_balance')
       .eq('id', uid)
       .single();
 
     const lastReveal: string | null = profile?.last_free_reveal_at ?? null;
-    const usedToday = !!lastReveal && new Date(lastReveal).toDateString() === new Date().toDateString();
-    setRevealUsed(usedToday);
+    const usedToday =
+      !!lastReveal && new Date(lastReveal).toDateString() === new Date().toDateString();
+    setDailyRevealSpentToday(usedToday);
+    setBonusRevealBalance(Math.max(0, Number(profile?.bonus_reveal_balance ?? 0)));
 
     const data = await fetchLikers(uid);
     setLikers(data);
+    const persistedRevealed = await fetchPersistedRevealedIds(uid);
+    const pendingIds = new Set(data.map((liker) => liker.id));
+    const filteredRevealed = new Set(
+      [...persistedRevealed].filter((likerId) => pendingIds.has(likerId))
+    );
+    setRevealedIds(filteredRevealed);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -83,13 +99,15 @@ export default function LikesScreen() {
     }
   }
 
+  const canRevealMore = !dailyRevealSpentToday || bonusRevealBalance > 0;
+
   async function handleReveal(liker: Liker) {
     if (revealedIds.has(liker.id)) return;
 
-    if (revealUsed) {
+    if (!canRevealMore) {
       Alert.alert(
         'No reveals left',
-        'You\'ve used your free reveal for today. Come back tomorrow, or go Premium for unlimited reveals.',
+        'Come back tomorrow for another free reveal, invite friends from Profile for bonus reveals, or go Premium for unlimited reveals.',
         [{ text: 'OK' }]
       );
       return;
@@ -97,14 +115,28 @@ export default function LikesScreen() {
 
     if (!userId) return;
 
-    const result = await useDailyReveal(userId);
+    const persisted = await persistRevealedLiker(userId, liker.id);
+    if (!persisted) {
+      Alert.alert(
+        'Reveal failed',
+        'Could not save this reveal right now. Please try again.'
+      );
+      return;
+    }
+
+    const result = await consumeReveal(userId);
     if (result.success) {
       setRevealedIds((prev) => new Set([...prev, liker.id]));
-      setRevealUsed(true);
+      if (result.usedBonus) {
+        setBonusRevealBalance((b) => Math.max(0, b - 1));
+      } else {
+        setDailyRevealSpentToday(true);
+      }
     } else {
+      await unpersistRevealedLiker(userId, liker.id);
       Alert.alert(
         'No reveals left',
-        'You\'ve used your free reveal for today. Come back tomorrow, or go Premium for unlimited reveals.',
+        'Come back tomorrow for another free reveal, invite friends from Profile for bonus reveals, or go Premium for unlimited reveals.',
         [{ text: 'OK' }]
       );
     }
@@ -163,12 +195,12 @@ export default function LikesScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.revealBtn, revealUsed && styles.revealBtnDim]}
+              style={[styles.revealBtn, !canRevealMore && styles.revealBtnDim]}
               onPress={() => handleReveal(item)}
               activeOpacity={0.8}
             >
               <Text style={styles.revealBtnText}>
-                {revealUsed ? '🔒 Premium' : '✨ Reveal'}
+                {!canRevealMore ? '🔒 Premium' : '✨ Reveal'}
               </Text>
             </TouchableOpacity>
           )}
@@ -189,13 +221,15 @@ export default function LikesScreen() {
         )}
       </View>
 
-      {/* Daily reveal banner */}
-      {!loading && likers.length > 0 && (
-        <View style={[styles.banner, revealUsed && styles.bannerUsed]}>
+      {/* Reveal status */}
+      {!loading && userId && likers.length > 0 && (
+        <View style={[styles.banner, !canRevealMore && styles.bannerUsed]}>
           <Text style={styles.bannerText}>
-            {revealUsed
-              ? '🔒 Free reveal used — come back tomorrow'
-              : '✨ You have 1 free reveal today'}
+            {!dailyRevealSpentToday
+              ? '✨ 1 free daily reveal available'
+              : bonusRevealBalance > 0
+                ? `✨ ${bonusRevealBalance} bonus reveal${bonusRevealBalance === 1 ? '' : 's'} (referrals)`
+                : '🔒 No reveals left — come back tomorrow or invite friends (Profile)'}
           </Text>
         </View>
       )}
