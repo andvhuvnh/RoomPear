@@ -10,6 +10,11 @@ export interface Preferences {
   city?: string;
   state?: string;
   zip_code?: string;
+  /** WGS84 — search center from Google Places + Mapbox pin */
+  search_lat?: number;
+  search_lng?: number;
+  search_radius_miles?: number;
+  search_label?: string;
   min_budget?: number;
   max_budget?: number;
   room_type?: 'private' | 'shared' | 'flexible' | 'entire';

@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
@@ -17,6 +18,17 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [appState, setAppState] = useState<AppState>('loading');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const mapboxToken = Constants.expoConfig?.extra?.mapboxAccessToken as string | undefined;
+    if (!mapboxToken || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return;
+    try {
+      const Mapbox = require('@rnmapbox/maps').default;
+      Mapbox.setAccessToken(mapboxToken);
+    } catch {
+      // Dev client built without Mapbox — onboarding uses legacy location fields.
+    }
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
