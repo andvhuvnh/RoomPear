@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import {
   View,
@@ -26,8 +28,12 @@ import {
 } from '../lib/likes';
 import { recordSwipe } from '../lib/discover';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
+import type { LikesStackParamList } from '../navigation/LikesStack';
 
-type NavProp = BottomTabNavigationProp<MainTabParamList>;
+type NavProp = CompositeNavigationProp<
+  NativeStackNavigationProp<LikesStackParamList>,
+  BottomTabNavigationProp<MainTabParamList>
+>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_PADDING = 16;
@@ -35,7 +41,7 @@ const GRID_GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 export default function LikesScreen() {
-  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const navigation = useNavigation<NavProp>();
   const [userId, setUserId] = useState<string | null>(null);
   const [likers, setLikers] = useState<Liker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,7 +153,13 @@ export default function LikesScreen() {
     const photo = item.photoUrls[0];
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={isRevealed ? 0.85 : 1}
+        onPress={() => {
+          if (isRevealed) navigation.navigate('ProfileView', { userId: item.id, name: item.name });
+        }}
+      >
         {/* Photo — blurred unless revealed */}
         <View style={styles.photoWrap}>
           {photo ? (
@@ -205,7 +217,7 @@ export default function LikesScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   }
 

@@ -2,13 +2,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DiscoverScreen from '../screens/DiscoverScreen';
-import LikesScreen from '../screens/LikesScreen';
+import LikesStack, { type LikesStackParamList } from './LikesStack';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import ChatsStack, { type ChatsStackParamList } from './ChatsStack';
 
 export type MainTabParamList = {
   Discover: undefined;
-  Likes: undefined;
+  Likes: NavigatorScreenParams<LikesStackParamList>;
   Chats: NavigatorScreenParams<ChatsStackParamList>;
   Profile: { onDevShowOnboarding?: () => void } | undefined;
 };
@@ -58,7 +58,7 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
       })}
     >
       <Tab.Screen name="Discover" component={DiscoverScreen} />
-      <Tab.Screen name="Likes" component={LikesScreen} />
+      <Tab.Screen name="Likes" component={LikesStack} />
       <Tab.Screen name="Chats" component={ChatsStack} />
       <Tab.Screen
         name="Profile"
