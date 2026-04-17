@@ -308,6 +308,64 @@ export async function pickImage(): Promise<string | null> {
 }
 
 /**
+ * Upload a listing photo for a user
+ * Stored under userId/listings/timestamp.ext in the profile-images bucket
+ */
+export async function uploadListingPhoto(
+  userId: string,
+  imageUri: string
+): Promise<{ path: string | null; error: string | null }> {
+  try {
+    const timestamp = Date.now();
+    const uriParts = imageUri.split('.');
+    const fileExt = uriParts.length > 1 ? uriParts.pop()?.toLowerCase() || 'jpg' : 'jpg';
+    const filePath = `${userId}/listings/${timestamp}.${fileExt}`;
+
+    const base64 = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (!base64 || base64.length === 0) throw new Error('File is empty');
+
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+
+    const contentType = `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`;
+    const { data, error } = await supabase.storage
+      .from(PROFILE_IMAGES_BUCKET)
+      .upload(filePath, bytes.buffer, { contentType, upsert: true, cacheControl: '3600' });
+
+    if (error) return { path: null, error: error.message };
+    return { path: data?.path || filePath, error: null };
+  } catch (error: any) {
+    return { path: null, error: error.message || 'Failed to upload listing photo' };
+  }
+}
+
+/**
+ * Pick a listing photo (4:3 aspect ratio)
+ */
+export async function pickListingImage(): Promise<string | null> {
+  try {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'We need camera roll permissions to upload listing photos.');
+      return null;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Take a photo with the camera
  * @returns The captured image URI, or null if cancelled/error
  */

@@ -115,12 +115,19 @@ export default function SwipeCard({ profile, onPress }: Props) {
           )}
         </View>
 
-        {/* Location */}
-        {!!profile.location && (
-          <Text style={styles.location} numberOfLines={1}>
-            📍 {profile.location}
-          </Text>
-        )}
+        {/* Location + listing badge */}
+        <View style={styles.locationRow}>
+          {!!profile.location && (
+            <Text style={styles.location} numberOfLines={1}>
+              📍 {profile.location}
+            </Text>
+          )}
+          {profile.hasListing && (
+            <View style={styles.listingBadge}>
+              <Text style={styles.listingBadgeText}>🏠 Has a place</Text>
+            </View>
+          )}
+        </View>
 
         {/* Bio */}
         {!!profile.bio && (
@@ -241,7 +248,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#189AA2',
     fontWeight: '500',
-    marginBottom: 6,
   },
   bio: {
     fontSize: 13,
@@ -271,5 +277,25 @@ const styles = StyleSheet.create({
     color: '#9AA',
     marginTop: 4,
     textAlign: 'right',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
+  listingBadge: {
+    backgroundColor: 'rgba(70,189,127,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#46BD7F',
+  },
+  listingBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#46BD7F',
   },
 });

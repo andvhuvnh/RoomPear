@@ -11,6 +11,7 @@ export type DiscoverProfile = {
   hobbies: string[] | null;
   photoUrls: string[];
   location: string;
+  hasListing: boolean;
 };
 
 export async function fetchDiscoverProfiles(
@@ -32,7 +33,7 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, profile_photo_url, subscription_tier, created_at, updated_at, ' +
+      'id, name, age, bio, hobbies, has_listing, profile_photo_url, subscription_tier, created_at, updated_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
       'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed)'
     )
@@ -106,6 +107,7 @@ export async function fetchDiscoverProfiles(
       bio: row.bio ?? null,
       hobbies,
       photoUrls: urls,
+      hasListing: row.has_listing === true,
       location,
     });
   }
