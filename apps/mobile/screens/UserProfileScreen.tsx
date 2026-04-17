@@ -231,11 +231,6 @@ export default function UserProfileScreen({ route }: Props) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user: u } }) => {
-      setUser(u ? { id: u.id, email: u.email } : null);
-      if (u) { loadProfile(u.id); loadListing(u.id); }
-    });
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
