@@ -90,34 +90,37 @@ export default function ChatsScreen({ navigation }: Props) {
 
   function renderMatchItem({ item }: { item: Match }) {
     return (
-      <TouchableOpacity
-        style={styles.gridCard}
-        activeOpacity={0.85}
-        onPress={() =>
-          navigation.navigate('Chat', { otherUserId: item.id, title: item.name })
-        }
-      >
-        {item.photoUrls.length > 0 ? (
-          <Image
-            source={{ uri: item.photoUrls[0] }}
-            style={styles.gridPhoto}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.gridPhoto, styles.gridPhotoPlaceholder]}>
-            <Text style={styles.gridPhotoInitial}>{item.name.slice(0, 1)}</Text>
-          </View>
-        )}
-        <View style={styles.gridInfo}>
+      <View style={styles.gridCard}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('ProfileView', { userId: item.id, name: item.name })}
+        >
+          {item.photoUrls.length > 0 ? (
+            <Image
+              source={{ uri: item.photoUrls[0] }}
+              style={styles.gridPhoto}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.gridPhoto, styles.gridPhotoPlaceholder]}>
+              <Text style={styles.gridPhotoInitial}>{item.name.slice(0, 1)}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.gridInfo}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Chat', { otherUserId: item.id, title: item.name })}
+        >
           <Text style={styles.gridName} numberOfLines={1}>
             {item.name}{item.age ? `, ${item.age}` : ''}
           </Text>
           {!!item.location && (
             <Text style={styles.gridLocation} numberOfLines={1}>{item.location}</Text>
           )}
-          <Text style={styles.gridMatched}>Matched {formatMatchDate(item.matchedAt)}</Text>
-        </View>
-      </TouchableOpacity>
+          <Text style={styles.gridMatched}>Tap to message · {formatMatchDate(item.matchedAt)}</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
@@ -133,19 +136,24 @@ export default function ChatsScreen({ navigation }: Props) {
           })
         }
       >
-        <View style={styles.convAvatar}>
-          {item.otherAvatarUrl ? (
-            <Image
-              source={{ uri: item.otherAvatarUrl }}
-              style={styles.convAvatarImg}
-              resizeMode="cover"
-            />
-          ) : (
-            <Text style={styles.convAvatarText}>
-              {item.otherDisplayName.slice(0, 1).toUpperCase()}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('ProfileView', { userId: item.otherUserId, name: item.otherDisplayName })}
+          activeOpacity={0.8}
+        >
+          <View style={styles.convAvatar}>
+            {item.otherAvatarUrl ? (
+              <Image
+                source={{ uri: item.otherAvatarUrl }}
+                style={styles.convAvatarImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.convAvatarText}>
+                {item.otherDisplayName.slice(0, 1).toUpperCase()}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
         <View style={styles.convBody}>
           <View style={styles.convTop}>
             <Text style={styles.convName} numberOfLines={1}>{item.otherDisplayName}</Text>
