@@ -10,79 +10,64 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { setPendingReferralCode } from '../lib/referrals';
 
-type AuthMode = 'signin' | 'signup';
+type AuthMode = 'welcome' | 'signin' | 'signup';
 
-const COLORS = {
-  blue: '#0C5389',
-  teal: '#189AA2',
-  green: '#46BD7F',
+const C = {
+  bg: '#1A1D2E',
+  bg2: '#252938',
+  lime: '#84CC16',
+  limeDark: '#65A30D',
   white: '#FDFDFD',
-  ink: '#0B1B2B',
-  text: '#2B3A4A',
-  border: '#D9E1E6',
-  placeholder: '#7B8A99',
-  dangerBg: '#FFEBEE',
-  dangerBorder: '#FFCDD2',
-  dangerText: '#C62828',
-  successBg: '#E8F5E9',
-  successBorder: '#C8E6C9',
-  successText: '#2E7D32',
+  gray: '#B0B0B8',
+  grayDim: '#6B7280',
+  surface: 'rgba(255,255,255,0.06)',
+  surfaceBorder: 'rgba(255,255,255,0.10)',
+  inputBg: 'rgba(255,255,255,0.08)',
+  inputBorder: 'rgba(255,255,255,0.15)',
+  danger: '#F87171',
+  success: '#4ADE80',
 };
 
 export default function AuthScreen() {
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const [mode, setMode] = useState<AuthMode>('welcome');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [referralCode, setReferralCode] = useState('');
 
-  const handleGooglePlaceholder = () => {
+  const clearForm = () => {
+    setEmail(''); setPassword(''); setName(''); setPhone('');
+    setReferralCode(''); setError(null);
+  };
+
+  const handleGooglePlaceholder = () =>
     Alert.alert('Coming soon', 'Google sign-in will be available soon.');
-  };
 
-  const handleApplePlaceholder = () => {
+  const handleApplePlaceholder = () =>
     Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
-  };
 
-  const handleFacebookPlaceholder = () => {
-  Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
-  };
+  const handleFacebookPlaceholder = () =>
+    Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
 
   const handleSignIn = async () => {
     setError(null);
-    setSuccess(null);
-
-    if (!email || !password) {
-      const errorMsg = 'Please fill in all fields';
-      setError(errorMsg);
-      Alert.alert('Error', errorMsg);
-      return;
-    }
-
+    if (!email || !password) { setError('Please fill in all fields'); return; }
     setLoading(true);
-
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-
-      setSuccess('Signed in successfully!');
-      console.log('Sign in successful!', data);
-    } catch (error: any) {
-      const errorMsg = error.message || 'Failed to sign in';
-      setError(errorMsg);
-      Alert.alert('Sign In Error', errorMsg);
+    } catch (e: any) {
+      setError(e.message || 'Failed to sign in');
     } finally {
       setLoading(false);
     }
@@ -90,404 +75,464 @@ export default function AuthScreen() {
 
   const handleSignUp = async () => {
     setError(null);
-    setSuccess(null);
-
     if (!email || !password || !name || !phone) {
-      const missingFields = [];
-      if (!email) missingFields.push('email');
-      if (!password) missingFields.push('password');
-      if (!name) missingFields.push('name');
-      if (!phone) missingFields.push('phone number');
-
-      const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
-      setError(errorMsg);
-      Alert.alert('Error', errorMsg);
-      return;
+      setError('Please fill in all required fields'); return;
     }
-
     const phoneRegex = /^[\d\s\-\(\)]+$/;
     if (!phoneRegex.test(phone) || phone.replace(/\D/g, '').length < 10) {
-      const errorMsg = 'Please enter a valid phone number';
-      setError(errorMsg);
-      Alert.alert('Error', errorMsg);
-      return;
+      setError('Please enter a valid phone number'); return;
     }
-
     setLoading(true);
-
     try {
-      await setPendingReferralCode(referralCode.trim() || null);
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name: name.trim(),
-            phone: phone.trim(),
-          },
-        },
+      if (referralCode.trim()) {
+        await setPendingReferralCode(referralCode.trim());
+      }
+      const { error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { name: name.trim(), phone: phone.trim() } },
       });
-
       if (error) throw error;
-
-      const successMsg = 'Account created! Please check your email to verify your account.';
-      setSuccess(successMsg);
-
-      Alert.alert('Success', successMsg, [{ text: 'OK', onPress: () => setMode('signin') }]);
-      console.log('Sign up successful!', data);
-    } catch (error: any) {
-      const errorMsg = error.message || 'Failed to sign up';
-      setError(errorMsg);
-      Alert.alert('Sign Up Error', errorMsg);
+      Alert.alert('Almost there!', 'Check your email to verify your account.', [
+        { text: 'OK', onPress: () => { clearForm(); setMode('signin'); } },
+      ]);
+    } catch (e: any) {
+      setError(e.message || 'Failed to sign up');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-      <View style={styles.container}>
-        <View style={styles.blobTop} />
-        <View style={styles.blobBottom} />
+  if (mode === 'welcome') {
+    return (
+      <View style={styles.welcomeContainer}>
+        {/* Glow blobs */}
+        <View style={styles.glowTL} />
+        <View style={styles.glowBR} />
 
-        <View style={styles.content}>
-          <View style={styles.brandHeader}>
-            <Text style={styles.title}>RoomPear</Text>
-            <Text style={styles.tagline}>Swipe to find your next roommate</Text>
+        {/* Floating card decorations */}
+        <View style={[styles.floatCard, styles.floatCardTL]} />
+        <View style={[styles.floatCard, styles.floatCardTR]} />
+        <View style={[styles.floatCard, styles.floatCardBL]} />
+        <View style={[styles.floatCard, styles.floatCardBR]} />
+
+        {/* Center content */}
+        <View style={styles.welcomeContent}>
+          <Text style={styles.pearEmoji}>🍐</Text>
+          <Text style={styles.welcomeTitle}>RoomPear</Text>
+          <Text style={styles.welcomeTagline}>Find roommates you actually vibe with</Text>
+          <Text style={styles.welcomeSub}>Match based on lifestyle, not just rent.</Text>
+
+          {/* Start Matching CTA */}
+          <TouchableOpacity
+            style={styles.startBtn}
+            onPress={() => { clearForm(); setMode('signup'); }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.startBtnText}>Start Matching</Text>
+          </TouchableOpacity>
+
+          {/* OR divider */}
+          <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>or</Text>
+            <View style={styles.orLine} />
           </View>
 
-          <View style={styles.card}>
-          <Text style={styles.subtitle}>
-            {mode === 'signin' ? 'Welcome back' : 'Create your account'}
-          </Text>
+          {/* Social buttons */}
+          <View style={styles.socialRow}>
+            <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder}>
+              <AntDesign name="google" size={22} color={C.white} />
+            </TouchableOpacity>
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder}>
+                <AntDesign name="apple" size={22} color={C.white} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder}>
+              <FontAwesome name="facebook" size={22} color={C.white} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Log in link */}
+          <TouchableOpacity onPress={() => { clearForm(); setMode('signin'); }}>
+            <Text style={styles.loginLink}>
+              Already have an account?{' '}
+              <Text style={styles.loginLinkBold}>Log in</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.formContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView
+          contentContainerStyle={styles.formScroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Back */}
+          <TouchableOpacity style={styles.backBtn} onPress={() => { clearForm(); setMode('welcome'); }}>
+            <AntDesign name="arrow-left" size={22} color={C.white} />
+          </TouchableOpacity>
+
+          <View style={styles.formHeader}>
+            <Text style={styles.pearEmoji}>🍐</Text>
+            <Text style={styles.formTitle}>
+              {mode === 'signin' ? 'Welcome back' : 'Create account'}
+            </Text>
+            <Text style={styles.formSub}>
+              {mode === 'signin'
+                ? 'Sign in to continue matching'
+                : 'Join RoomPear and find your match'}
+            </Text>
+          </View>
 
           {error && (
-            <View style={styles.errorContainer}>
+            <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
 
-          {success && (
-            <View style={styles.successContainer}>
-              <Text style={styles.successText}>{success}</Text>
-            </View>
+          {mode === 'signup' && (
+            <>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Your name"
+                placeholderTextColor={C.grayDim}
+                value={name}
+                onChangeText={t => { setName(t); setError(null); }}
+                autoCapitalize="words"
+                editable={!loading}
+              />
+              <Text style={styles.label}>Phone</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(555) 123-4567"
+                placeholderTextColor={C.grayDim}
+                value={phone}
+                onChangeText={t => { setPhone(t); setError(null); }}
+                keyboardType="phone-pad"
+                editable={!loading}
+              />
+            </>
           )}
 
-          <View style={styles.form}>
-            {mode === 'signup' && (
-              <>
-                <Text style={styles.label}>Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Your name"
-                  placeholderTextColor={COLORS.placeholder}
-                  value={name}
-                  onChangeText={(text) => {
-                    setName(text);
-                    setError(null);
-                    setSuccess(null);
-                  }}
-                  autoCapitalize="words"
-                  editable={!loading}
-                />
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="you@example.com"
+            placeholderTextColor={C.grayDim}
+            value={email}
+            onChangeText={t => { setEmail(t); setError(null); }}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            editable={!loading}
+          />
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="••••••••"
+            placeholderTextColor={C.grayDim}
+            value={password}
+            onChangeText={t => { setPassword(t); setError(null); }}
+            secureTextEntry
+            editable={!loading}
+          />
 
-                <Text style={styles.label}>Phone</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="(555) 123-4567"
-                  placeholderTextColor={COLORS.placeholder}
-                  value={phone}
-                  onChangeText={(text) => {
-                    setPhone(text);
-                    setError(null);
-                    setSuccess(null);
-                  }}
-                  keyboardType="phone-pad"
-                  editable={!loading}
-                />
+          {mode === 'signup' && (
+            <>
+              <Text style={styles.label}>Referral code (optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. A1B2C3D4"
+                placeholderTextColor={C.grayDim}
+                value={referralCode}
+                onChangeText={t => { setReferralCode(t.toUpperCase()); setError(null); }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                editable={!loading}
+              />
+            </>
+          )}
 
-                <Text style={styles.label}>Friend&apos;s referral code (optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. A1B2C3D4"
-                  placeholderTextColor={COLORS.placeholder}
-                  value={referralCode}
-                  onChangeText={(text) => {
-                    setReferralCode(text.toUpperCase());
-                    setError(null);
-                    setSuccess(null);
-                  }}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
-              </>
-            )}
-
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={COLORS.placeholder}
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                setError(null);
-                setSuccess(null);
-              }}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!loading}
-            />
-
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={COLORS.placeholder}
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setError(null);
-                setSuccess(null);
-              }}
-              secureTextEntry
-              editable={!loading}
-            />
-
-            <TouchableOpacity
-              style={[styles.primaryButton, loading && styles.buttonDisabled]}
-              onPress={mode === 'signin' ? handleSignIn : handleSignUp}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {mode === 'signin' ? 'Continue' : 'Create account'}
+          {/* CTA — 36px gap from last input, matches Airbnb/Linear pattern */}
+          <TouchableOpacity
+            style={[styles.startBtn, styles.formCta, loading && { opacity: 0.6 }]}
+            onPress={mode === 'signin' ? handleSignIn : handleSignUp}
+            disabled={loading}
+          >
+            {loading
+              ? <ActivityIndicator color={C.bg} />
+              : <Text style={styles.startBtnText}>
+                  {mode === 'signin' ? 'Sign In' : 'Create Account'}
                 </Text>
-              )}
+            }
+          </TouchableOpacity>
+
+          <View style={[styles.orRow, { marginTop: 8 }]}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>or continue with</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          <View style={styles.socialRow}>
+            <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder} disabled={loading}>
+              <AntDesign name="google" size={22} color={C.white} />
             </TouchableOpacity>
-
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* GOOGLE */}
-            <TouchableOpacity
-              style={[styles.oauthButton, loading && styles.buttonDisabled]}
-              onPress={handleGooglePlaceholder}
-              disabled={loading}
-            >
-              <Text style={styles.oauthText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            {/* APPLE */}
             {Platform.OS === 'ios' && (
-              <TouchableOpacity
-                style={[styles.appleButton, loading && styles.buttonDisabled]}
-                onPress={handleApplePlaceholder}
-                disabled={loading}
-              >
-                <Text style={styles.appleText}>Continue with Apple</Text>
+              <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder} disabled={loading}>
+                <AntDesign name="apple" size={22} color={C.white} />
               </TouchableOpacity>
             )}
-
-            {/* FACEBOOK */}
-            <TouchableOpacity
-              style={[styles.oauthButton, loading && styles.buttonDisabled]}
-              onPress={handleFacebookPlaceholder}
-              disabled={loading}
-            >
-              <Text style={styles.oauthText}>Continue with Facebook</Text>
+            <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder} disabled={loading}>
+              <FontAwesome name="facebook" size={22} color={C.white} />
             </TouchableOpacity>
+          </View>
 
-
-            <TouchableOpacity
-              onPress={() => {
-                setMode(mode === 'signin' ? 'signup' : 'signin');
-                setEmail('');
-                setPassword('');
-                setName('');
-                setPhone('');
-                setReferralCode('');
-                setError(null);
-                setSuccess(null);
-              }}
-              disabled={loading}
-              style={styles.switchWrap}
-            >
-              <Text style={styles.switchText}>
-                {mode === 'signin'
-                  ? "Don't have an account? Sign Up"
-                  : 'Already have an account? Sign In'}
+          <TouchableOpacity
+            style={styles.switchModeBtn}
+            onPress={() => { clearForm(); setMode(mode === 'signin' ? 'signup' : 'signin'); }}
+            disabled={loading}
+          >
+            <Text style={styles.loginLink}>
+              {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+              <Text style={styles.loginLinkBold}>
+                {mode === 'signin' ? 'Sign Up' : 'Log In'}
               </Text>
-            </TouchableOpacity>
-
-            <Text style={styles.disclaimer}>
-              By continuing, you agree to RoomPear’s Terms and Privacy Policy.
             </Text>
-          </View>
-          </View>
-        </View>
-      </View>
-    </TouchableWithoutFeedback>
+          </TouchableOpacity>
+
+          <Text style={styles.disclaimer}>
+            By continuing, you agree to RoomPear's Terms and Privacy Policy.
+          </Text>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  content: { flex: 1, paddingHorizontal: 20, justifyContent: 'center' },
-
-  blobTop: {
-    position: 'absolute',
-    top: -140,
-    right: -120,
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: COLORS.teal,
-    opacity: 0.14,
+  // ── Welcome ─────────────────────────────────────────────────
+  welcomeContainer: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  blobBottom: {
+
+  glowTL: {
     position: 'absolute',
-    bottom: -170,
-    left: -140,
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-    backgroundColor: COLORS.green,
+    top: -80,
+    left: -80,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: C.lime,
     opacity: 0.12,
   },
-
-  brandHeader: { alignItems: 'center', marginBottom: 16 },
-  title: { fontSize: 36, fontWeight: '800', color: COLORS.ink, letterSpacing: 0.2 },
-  tagline: { marginTop: 6, fontSize: 14, color: COLORS.text, opacity: 0.9 },
-
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+  glowBR: {
+    position: 'absolute',
+    bottom: -100,
+    right: -80,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: C.lime,
+    opacity: 0.10,
   },
 
-  subtitle: {
-    marginTop: 6,
+  floatCard: {
+    position: 'absolute',
+    width: 100,
+    height: 140,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  floatCardTL: { top: 60, left: -22, transform: [{ rotate: '-12deg' }] },
+  floatCardTR: { top: 80, right: -18, transform: [{ rotate: '10deg' }] },
+  floatCardBL: { bottom: 100, left: -18, transform: [{ rotate: '8deg' }] },
+  floatCardBR: { bottom: 80, right: -24, transform: [{ rotate: '-10deg' }] },
+
+  welcomeContent: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    width: '100%',
+  },
+  pearEmoji: {
+    fontSize: 56,
+    marginBottom: 8,
+  },
+  welcomeTitle: {
+    fontSize: 42,
+    fontWeight: '800',
+    color: C.white,
+    letterSpacing: 0.5,
     marginBottom: 12,
-    fontSize: 18,
+  },
+  welcomeTagline: {
+    fontSize: 20,
     fontWeight: '700',
-    color: COLORS.ink,
+    color: C.white,
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 26,
+  },
+  welcomeSub: {
+    fontSize: 15,
+    color: C.gray,
+    textAlign: 'center',
+    marginBottom: 36,
+  },
+
+  startBtn: {
+    width: '100%',
+    backgroundColor: C.lime,
+    borderRadius: 50,
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: C.lime,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
+    marginBottom: 20,
+  },
+  startBtnText: {
+    color: '#0F1A00',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
+  orText: { marginHorizontal: 12, fontSize: 13, color: C.grayDim, fontWeight: '600' },
+
+  socialRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 28,
+    justifyContent: 'center',
+  },
+  socialBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loginLink: {
+    fontSize: 15,
+    color: C.gray,
+    textAlign: 'center',
+  },
+  loginLinkBold: {
+    color: C.lime,
+    fontWeight: '700',
+  },
+
+  // ── Form ────────────────────────────────────────────────────
+  formContainer: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  formScroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+
+  formHeader: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  formTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: C.white,
+    marginBottom: 6,
+  },
+  formSub: {
+    fontSize: 14,
+    color: C.gray,
     textAlign: 'center',
   },
 
-  form: { width: '100%' },
-  label: { fontSize: 12, fontWeight: '700', color: COLORS.text, marginBottom: 6, marginTop: 10 },
-  input: {
-    backgroundColor: '#FFFFFF',
+  errorBox: {
+    backgroundColor: 'rgba(248,113,113,0.12)',
     borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.30)',
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: { color: C.danger, fontSize: 14 },
+
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.gray,
+    marginBottom: 6,
+    marginTop: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  input: {
+    backgroundColor: C.inputBg,
+    borderRadius: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 16,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    color: COLORS.ink,
+    borderColor: C.inputBorder,
+    color: C.white,
   },
 
-  primaryButton: {
-    backgroundColor: COLORS.blue,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
-  buttonDisabled: { opacity: 0.65 },
-
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-    marginBottom: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-    opacity: 0.9,
-  },
-  dividerText: {
-    marginHorizontal: 10,
-    fontSize: 12,
-    color: COLORS.text,
-    opacity: 0.7,
-    fontWeight: '700',
+  formCta: {
+    marginTop: 36,
   },
 
-  oauthButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#FFFFFF',
-    marginTop: 10,
+  switchModeBtn: {
+    marginTop: 8,
+    paddingVertical: 8,
   },
-  oauthText: {
-    color: COLORS.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  appleButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 10,
-    backgroundColor: '#000000',
-  },
-  appleText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  switchWrap: { marginTop: 14 },
-  switchText: { textAlign: 'center', color: COLORS.blue, fontSize: 15, fontWeight: '700' },
 
   disclaimer: {
-    marginTop: 12,
+    marginTop: 20,
     fontSize: 12,
-    color: COLORS.text,
-    opacity: 0.75,
+    color: C.grayDim,
     textAlign: 'center',
     lineHeight: 16,
   },
-
-  errorContainer: {
-    backgroundColor: COLORS.dangerBg,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.dangerBorder,
-  },
-  errorText: { color: COLORS.dangerText, fontSize: 14 },
-
-  successContainer: {
-    backgroundColor: COLORS.successBg,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.successBorder,
-  },
-  successText: { color: COLORS.successText, fontSize: 14 },
 });
