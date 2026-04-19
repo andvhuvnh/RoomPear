@@ -501,7 +501,7 @@ export default function UserProfileScreen({ route }: Props) {
             <View style={styles.headerRow}>
               <View style={styles.headerTitleBlock}>
                 <Text style={styles.titleOnGreen}>Profile</Text>
-                <Text style={styles.taglineOnGreen}>Preview how roommates see you</Text>
+                <Text style={styles.taglineOnGreen}>Your preview · edit details below</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -513,13 +513,9 @@ export default function UserProfileScreen({ route }: Props) {
               </Pressable>
             </View>
 
-            <BlurView
-              intensity={Platform.OS === 'ios' ? 38 : 28}
-              tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
-              {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-              style={styles.glassPanel}
-            >
+            <View style={styles.heroCardWrap}>
               <PublicProfileCard
+                variant="immersive"
                 imageUrls={imageUrls}
                 name={displayName}
                 age={displayAge}
@@ -527,8 +523,15 @@ export default function UserProfileScreen({ route }: Props) {
                 bio=""
                 hobbies={[]}
               />
+            </View>
 
-              <Text style={styles.quickSectionLabel}>Edit Photos & personality</Text>
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 38 : 28}
+              tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
+              {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+              style={styles.glassActionsSheet}
+            >
+              <Text style={styles.quickSectionLabel}>Photos & personality</Text>
               <View style={styles.quickGrid}>
                 <TouchableOpacity
                   style={styles.quickTile}
@@ -586,7 +589,7 @@ export default function UserProfileScreen({ route }: Props) {
             contentContainerStyle={styles.settingsScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.settingsSectionLabel}>Your profile</Text>
+            <Text style={styles.settingsSectionLabel}>Basics</Text>
             <View style={styles.settingsGroup}>
               <TouchableOpacity
                 style={styles.settingsRow}
@@ -598,40 +601,11 @@ export default function UserProfileScreen({ route }: Props) {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
               </TouchableOpacity>
-              <View style={styles.settingsRowDivider} />
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => afterCloseSettings(() => setEditPhotosOpen(true))}
-              >
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="images-outline" size={20} color={theme.foreground} />
-                  <Text style={styles.settingsRowTitle}>Photos</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-              </TouchableOpacity>
-              <View style={styles.settingsRowDivider} />
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => afterCloseSettings(() => openEditPrefs())}
-              >
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="heart-outline" size={20} color={theme.foreground} />
-                  <Text style={styles.settingsRowTitle}>Interests & dealbreakers</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-              </TouchableOpacity>
-              <View style={styles.settingsRowDivider} />
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => afterCloseSettings(() => openEditPrompts())}
-              >
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={20} color={theme.foreground} />
-                  <Text style={styles.settingsRowTitle}>Personality prompts</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-              </TouchableOpacity>
             </View>
+
+            <Text style={styles.settingsHelp}>
+              Edit photos, interests, and prompts from the profile tab — not here.
+            </Text>
 
             <Text style={styles.settingsSectionLabel}>Your place</Text>
             <View style={styles.settingsGroup}>
@@ -841,7 +815,7 @@ export default function UserProfileScreen({ route }: Props) {
               autoCapitalize="words"
             />
             <Text style={styles.nameFieldHint}>
-              City and location come from your housing preferences (set during onboarding).
+              City and location come from onboarding.
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -1182,6 +1156,7 @@ export default function UserProfileScreen({ route }: Props) {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+
     </View>
   );
 }
@@ -1268,13 +1243,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 12,
   },
-  glassPanel: {
+  heroCardWrap: {
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  glassActionsSheet: {
     marginHorizontal: 16,
-    marginTop: -6,
+    marginTop: 10,
     borderRadius: 16,
     paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 24,
+    paddingTop: 18,
+    paddingBottom: 16,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.5)',
@@ -1284,6 +1264,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 28,
     elevation: 8,
+  },
+  settingsHelp: {
+    fontSize: 13,
+    color: theme.mutedForeground,
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 4,
   },
   settingsBtn: {
     width: 44,
@@ -1354,7 +1342,7 @@ const styles = StyleSheet.create({
     color: theme.mutedForeground,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginTop: 20,
+    marginTop: 2,
     marginBottom: 10,
   },
   quickGrid: {
