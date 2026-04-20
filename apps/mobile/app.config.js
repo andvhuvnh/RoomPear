@@ -35,6 +35,7 @@ module.exports = {
       mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
       googlePlacesApiKey: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
     },
+    plugins: ['expo-font'],
   },
 };
 

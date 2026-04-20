@@ -2011,8 +2011,9 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   dbBtnNone: {
-    backgroundColor: theme.muted,
-    borderColor: theme.border,
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(37, 37, 37, 0.55)',
+    borderWidth: 2,
   },
   dbBtnText: {
     fontSize: 13,
@@ -2021,6 +2022,7 @@ const styles = StyleSheet.create({
   },
   dbBtnTextActive: {
     color: theme.foreground,
+    fontWeight: '700',
   },
 
   // ── Prompts modal ────────────────────────────────────────────────────────────
