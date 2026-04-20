@@ -10,6 +10,8 @@ import {
   NativeScrollEvent,
   type ListRenderItemInfo,
   type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 
 const CARD_RADIUS = 16;
@@ -24,8 +26,9 @@ export type PublicProfileCardProps = {
   /** Short intro shown under age / location */
   bio?: string | null;
   hobbies?: string[] | null;
-  /** Edge-to-edge hero: name/meta on image, minimal chrome */
-  variant?: 'default' | 'immersive';
+  /** default: standard card. immersive: hero + name on image. profilePhotos: photos + dots only (e.g. own profile tab). */
+  variant?: 'default' | 'immersive' | 'profilePhotos';
+  style?: StyleProp<ViewStyle>;
 };
 
 export default function PublicProfileCard({
@@ -36,12 +39,13 @@ export default function PublicProfileCard({
   bio,
   hobbies,
   variant = 'default',
+  style,
 }: PublicProfileCardProps) {
   const immersive = variant === 'immersive';
-  const imageHeight = immersive ? IMAGE_HEIGHT_IMMERSIVE : IMAGE_HEIGHT;
-  const [cardWidth, setCardWidth] = useState(
-    () => Dimensions.get('window').width - 40
-  );
+  const profilePhotos = variant === 'profilePhotos';
+  const heroStyle = immersive || profilePhotos;
+  const imageHeight = heroStyle ? IMAGE_HEIGHT_IMMERSIVE : IMAGE_HEIGHT;
+  const [cardWidth, setCardWidth] = useState(() => Dimensions.get('window').width - 40);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const onCardLayout = useCallback((e: LayoutChangeEvent) => {
@@ -109,14 +113,22 @@ export default function PublicProfileCard({
 
   if (imageUrls.length === 0) {
     return (
-      <View style={[styles.card, immersive ? styles.cardOuterImmersive : styles.cardOuter]} onLayout={onCardLayout}>
-        <View style={immersive ? styles.emptyHeroWrap : undefined}>
+      <View
+        style={[
+          styles.card,
+          heroStyle ? styles.cardOuterImmersive : styles.cardOuter,
+          (immersive || profilePhotos) && styles.cardImmersive,
+          style,
+        ]}
+        onLayout={onCardLayout}
+      >
+        <View style={heroStyle ? styles.emptyHeroWrap : undefined}>
           <View style={[styles.emptyCover, { width: cardWidth, height: imageHeight }]}>
             <Text style={styles.emptyCoverText}>Add photos to see your card</Text>
           </View>
           {immersive ? overlayMeta : null}
         </View>
-        {!immersive ? (
+        {!heroStyle ? (
           <View style={styles.infoBlock}>
             <Text style={styles.name}>{displayName}</Text>
             {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
@@ -128,8 +140,16 @@ export default function PublicProfileCard({
   }
 
   return (
-    <View style={[styles.card, immersive ? styles.cardOuterImmersive : styles.cardOuter, immersive && styles.cardImmersive]} onLayout={onCardLayout}>
-      <View style={[styles.imageWrap, immersive && styles.imageWrapImmersive]}>
+    <View
+      style={[
+        styles.card,
+        heroStyle ? styles.cardOuterImmersive : styles.cardOuter,
+        (immersive || profilePhotos) && styles.cardImmersive,
+        style,
+      ]}
+      onLayout={onCardLayout}
+    >
+      <View style={[styles.imageWrap, heroStyle && styles.imageWrapImmersive]}>
         <FlatList
           data={imageUrls}
           keyExtractor={(_, index) => `photo-${index}`}
@@ -145,10 +165,18 @@ export default function PublicProfileCard({
             index,
           })}
         />
-        <View style={[styles.bottomScrim, immersive && styles.bottomScrimImmersive]} pointerEvents="none" />
+        {!profilePhotos ? (
+          <View
+            style={[styles.bottomScrim, immersive && styles.bottomScrimImmersive]}
+            pointerEvents="none"
+          />
+        ) : null}
         {immersive ? overlayMeta : null}
         {imageUrls.length > 1 ? (
-          <View style={[styles.dots, immersive && styles.dotsImmersive]} pointerEvents="none">
+          <View
+            style={[styles.dots, immersive && styles.dotsImmersive]}
+            pointerEvents="none"
+          >
             {imageUrls.map((_, i) => (
               <View
                 key={i}
@@ -162,7 +190,7 @@ export default function PublicProfileCard({
         ) : null}
       </View>
 
-      {!immersive ? (
+      {!heroStyle ? (
         <View style={styles.infoBlock}>
           <Text style={styles.name} numberOfLines={2}>
             {displayName}
@@ -174,7 +202,7 @@ export default function PublicProfileCard({
           ) : null}
           {detailsSection}
         </View>
-      ) : detailsSection ? (
+      ) : detailsSection && !profilePhotos ? (
         <View style={styles.infoBlockCompact}>{detailsSection}</View>
       ) : null}
     </View>

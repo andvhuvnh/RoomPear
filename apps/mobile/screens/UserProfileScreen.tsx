@@ -12,13 +12,16 @@ import {
   Platform,
   TextInput,
   Pressable,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getProfileImageUrls, getProfileImageUrl, pickImage, uploadListingPhoto, pickListingImage } from '../lib/storage';
 import { getPreferences, savePreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
@@ -110,9 +113,9 @@ export default function UserProfileScreen({ route }: Props) {
   const [photoPaths, setPhotoPaths] = useState<string[]>([]);
 
   const [editNameOpen, setEditNameOpen] = useState(false);
-  const [editPhotosOpen, setEditPhotosOpen] = useState(false);
-  const [editPrefsOpen, setEditPrefsOpen] = useState(false);
-  const [editPromptsOpen, setEditPromptsOpen] = useState(false);
+  const [profileEditorSection, setProfileEditorSection] = useState<
+    'photos' | 'interests' | 'dealbreakers' | 'prompts' | null
+  >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPhotos, setSavingPhotos] = useState(false);
@@ -145,6 +148,98 @@ export default function UserProfileScreen({ route }: Props) {
   const [editListingPhotos, setEditListingPhotos] = useState<ListingPhotoItem[]>([]);
 
   const [editName, setEditName] = useState('');
+
+  const windowDims = Dimensions.get('window');
+  /** Expanded sheet height when swiped up (peek stays small). */
+  const SHEET_EXPANDED_HEIGHT = Math.round(windowDims.height * 0.7);
+  const SHEET_PEEK_HEIGHT = 76;
+  const SHEET_COLLAPSED_OFFSET = Math.max(0, SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT);
+
+  const sheetTranslateY = useRef(new Animated.Value(SHEET_COLLAPSED_OFFSET)).current;
+  const sheetDragStart = useRef(SHEET_COLLAPSED_OFFSET);
+  const sheetYCurrent = useRef(SHEET_COLLAPSED_OFFSET);
+
+  const snapSheetTarget = useCallback(
+    (y: number, velocityY: number) => {
+      if (velocityY < -0.45) return 0;
+      if (velocityY > 0.45) return SHEET_COLLAPSED_OFFSET;
+      return y < SHEET_COLLAPSED_OFFSET / 2 ? 0 : SHEET_COLLAPSED_OFFSET;
+    },
+    [SHEET_COLLAPSED_OFFSET]
+  );
+
+  const sheetHandlePan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.75,
+        onPanResponderGrant: () => {
+          sheetTranslateY.stopAnimation((v) => {
+            sheetDragStart.current = v;
+            sheetYCurrent.current = v;
+          });
+        },
+        onPanResponderMove: (_, g) => {
+          const next = Math.max(
+            0,
+            Math.min(SHEET_COLLAPSED_OFFSET, sheetDragStart.current + g.dy)
+          );
+          sheetYCurrent.current = next;
+          sheetTranslateY.setValue(next);
+        },
+        onPanResponderRelease: (_, g) => {
+          const target = snapSheetTarget(sheetYCurrent.current, g.vy);
+          sheetYCurrent.current = target;
+          Animated.spring(sheetTranslateY, {
+            toValue: target,
+            useNativeDriver: true,
+            tension: 300,
+            friction: 34,
+          }).start();
+        },
+      }),
+    [SHEET_COLLAPSED_OFFSET, sheetTranslateY, snapSheetTarget]
+  );
+
+  const togglePersonalitySheet = useCallback(() => {
+    sheetTranslateY.stopAnimation((v) => {
+      const target = v < SHEET_COLLAPSED_OFFSET / 2 ? SHEET_COLLAPSED_OFFSET : 0;
+      sheetYCurrent.current = target;
+      Animated.spring(sheetTranslateY, {
+        toValue: target,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 34,
+      }).start();
+    });
+  }, [SHEET_COLLAPSED_OFFSET, sheetTranslateY]);
+
+  const activateProfileSection = useCallback(
+    (section: 'photos' | 'interests' | 'dealbreakers' | 'prompts') => {
+      if (profileEditorSection === section) {
+        setProfileEditorSection(null);
+        return;
+      }
+      if (section === 'interests' || section === 'dealbreakers') {
+        const defaultDB = Object.fromEntries(
+          DEALBREAKER_ITEMS.map((d) => [d.key, 'none' as DealbreakerLevel])
+        );
+        setEditInterests(prefs?.interests ?? {});
+        setEditDealbreakers({ ...defaultDB, ...(prefs?.dealbreakers ?? {}) });
+        setExpandedPrefCat('fitness');
+      }
+      if (section === 'prompts') {
+        const current: PromptEntry[] = Array.isArray(profile?.prompts)
+          ? [...profile.prompts]
+          : [];
+        setEditPrompts(current.length > 0 ? current : [{ question: '', answer: '' }]);
+        setPromptPickerIndex(null);
+      }
+      setProfileEditorSection(section);
+    },
+    [profileEditorSection, prefs, profile?.prompts]
+  );
 
   const loadListing = useCallback(async (userId: string) => {
     const l = await getListing(userId);
@@ -369,32 +464,17 @@ export default function UserProfileScreen({ route }: Props) {
     ]);
   };
 
-  const openEditPrefs = () => {
-    const defaultDB = Object.fromEntries(DEALBREAKER_ITEMS.map((d) => [d.key, 'none' as DealbreakerLevel]));
-    setEditInterests(prefs?.interests ?? {});
-    setEditDealbreakers({ ...defaultDB, ...(prefs?.dealbreakers ?? {}) });
-    setExpandedPrefCat('fitness');
-    setEditPrefsOpen(true);
-  };
-
   const handleSavePrefs = async () => {
     if (!user) return;
     setSavingPrefs(true);
     try {
       await savePreferences(user.id, { interests: editInterests, dealbreakers: editDealbreakers });
-      setEditPrefsOpen(false);
+      setProfileEditorSection(null);
       const p = await getPreferences(user.id);
       setPrefs(p);
     } finally {
       setSavingPrefs(false);
     }
-  };
-
-  const openEditPrompts = () => {
-    const current: PromptEntry[] = Array.isArray(profile?.prompts) ? [...profile.prompts] : [];
-    setEditPrompts(current.length > 0 ? current : [{ question: '', answer: '' }]);
-    setPromptPickerIndex(null);
-    setEditPromptsOpen(true);
   };
 
   const handleSavePrompts = async () => {
@@ -403,7 +483,7 @@ export default function UserProfileScreen({ route }: Props) {
     try {
       const filtered = editPrompts.filter((p) => p.question && p.answer.trim());
       await supabase.from('profiles').update({ prompts: filtered }).eq('id', user.id);
-      setEditPromptsOpen(false);
+      setProfileEditorSection(null);
       await loadProfile(user.id);
     } finally {
       setSavingPrompts(false);
@@ -485,89 +565,399 @@ export default function UserProfileScreen({ route }: Props) {
         style={[StyleSheet.absoluteFill, styles.fullScreenBlur]}
         pointerEvents="none"
       />
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: 12 + insets.top,
-            paddingBottom: 32 + insets.bottom,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={[styles.profileRoot, { paddingTop: 8 + insets.top }]}>
         {user && (
-          <>
-            <View style={styles.headerRow}>
-              <View style={styles.headerTitleBlock}>
-                <Text style={styles.titleOnGreen}>Profile</Text>
-                <Text style={styles.taglineOnGreen}>Your preview · edit details below</Text>
+          <KeyboardAvoidingView
+            style={styles.profileKeyboardRoot}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+          >
+            <View style={styles.profileStage}>
+              <View style={styles.headerRow}>
+                <View style={styles.headerTitleBlock}>
+                  <Text style={styles.titleOnGreen}>Profile</Text>
+                  <Text style={styles.taglineOnGreen}>
+                    Swipe up on the panel for photos & personality
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open settings"
+                  onPress={() => setSettingsOpen(true)}
+                  style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
+                >
+                  <Ionicons name="settings-outline" size={24} color="rgba(255,255,255,0.95)" />
+                </Pressable>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Open settings"
-                onPress={() => setSettingsOpen(true)}
-                style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
+
+              <View style={styles.profilePhotoStage}>
+                <View style={styles.profileHeroWrap}>
+                  <PublicProfileCard
+                    variant="profilePhotos"
+                    imageUrls={imageUrls}
+                    name={displayName}
+                    age={displayAge}
+                    location={formatLocationLine(prefs)}
+                    bio=""
+                    hobbies={[]}
+                  />
+                </View>
+              </View>
+
+              <Animated.View
+                style={[
+                  styles.personalitySheet,
+                  {
+                    height: SHEET_EXPANDED_HEIGHT + Math.max(insets.bottom, 10),
+                    transform: [{ translateY: sheetTranslateY }],
+                  },
+                ]}
               >
-                <Ionicons name="settings-outline" size={24} color="rgba(255,255,255,0.95)" />
-              </Pressable>
-            </View>
+                <BlurView
+                  intensity={Platform.OS === 'ios' ? 38 : 28}
+                  tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
+                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+                  style={styles.personalitySheetBlur}
+                >
+                  <View style={styles.sheetHandleZone} {...sheetHandlePan.panHandlers}>
+                    <Pressable
+                      onPress={togglePersonalitySheet}
+                      accessibilityRole="button"
+                      accessibilityLabel="Expand or collapse Photos and personality"
+                      style={({ pressed }) => [styles.sheetGrabRow, pressed && { opacity: 0.9 }]}
+                    >
+                      <View style={styles.sheetHandlePill} />
+                      <Text style={styles.sheetGrabTitle}>Photos & personality</Text>
+                      <Ionicons name="chevron-up" size={18} color='rgba(26, 26, 30, 0.72)' />
+                    </Pressable>
+                  </View>
+                  <ScrollView
+                    style={styles.personalitySheetScroll}
+                    contentContainerStyle={styles.personalitySheetScrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled
+                  >
+                    <Text style={styles.accordionHint}>Tap a row — sections drop down below</Text>
 
-            <View style={styles.heroCardWrap}>
-              <PublicProfileCard
-                variant="immersive"
-                imageUrls={imageUrls}
-                name={displayName}
-                age={displayAge}
-                location={formatLocationLine(prefs)}
-                bio=""
-                hobbies={[]}
-              />
-            </View>
-
-            <BlurView
-              intensity={Platform.OS === 'ios' ? 38 : 28}
-              tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
-              {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-              style={styles.glassActionsSheet}
-            >
-              <Text style={styles.quickSectionLabel}>Photos & personality</Text>
-              <View style={styles.quickGrid}>
-                <TouchableOpacity
-                  style={styles.quickTile}
-                  onPress={() => setEditPhotosOpen(true)}
+                    <TouchableOpacity
+                  style={[
+                    styles.accordionRow,
+                    profileEditorSection === 'photos' && styles.accordionRowOpen,
+                  ]}
+                  onPress={() => activateProfileSection('photos')}
                   activeOpacity={0.85}
                 >
-                  <View style={styles.quickTileIconWrap}>
+                  <View style={styles.accordionRowLeft}>
                     <Ionicons name="images-outline" size={22} color={theme.foreground} />
+                    <Text style={styles.accordionRowLabel}>Photos</Text>
                   </View>
-                  <Text style={styles.quickTileLabel}>Photos</Text>
+                  <Ionicons
+                    name={profileEditorSection === 'photos' ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color='rgba(26, 26, 30, 0.72)'
+                  />
                 </TouchableOpacity>
+                {profileEditorSection === 'photos' ? (
+                  <View style={styles.accordionBody}>
+                    <Text style={styles.photosHelp}>
+                      First photo is your cover. Swipe on your profile card to see the rest. Keep 3–5 photos.
+                    </Text>
+                    {savingPhotos ? (
+                      <ActivityIndicator style={{ marginVertical: 16 }} color={theme.primary} />
+                    ) : null}
+                    <View style={styles.photoList}>
+                      {imageUrls.map((url, index) => (
+                        <View key={url + index} style={styles.photoRow}>
+                          <Image source={{ uri: url }} style={styles.photoRowImage} />
+                          <View style={styles.photoRowMeta}>
+                            <Text style={styles.photoRowLabel}>
+                              {index === 0 ? 'Cover photo' : `Photo ${index + 1}`}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => handleRemovePhoto(index)}
+                              disabled={savingPhotos}
+                            >
+                              <Text style={styles.photoRemoveLink}>Remove</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.addPhotoBtn,
+                        photoPaths.length >= MAX_PROFILE_PHOTOS && styles.addPhotoBtnDisabled,
+                      ]}
+                      onPress={handleAddPhoto}
+                      disabled={savingPhotos || photoPaths.length >= MAX_PROFILE_PHOTOS}
+                    >
+                      <Text style={styles.addPhotoBtnText}>
+                        {photoPaths.length >= MAX_PROFILE_PHOTOS
+                          ? `Maximum ${MAX_PROFILE_PHOTOS} photos`
+                          : '+ Add photo'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <View style={styles.accordionDivider} />
+
                 <TouchableOpacity
-                  style={styles.quickTile}
-                  onPress={openEditPrefs}
+                  style={[
+                    styles.accordionRow,
+                    profileEditorSection === 'interests' && styles.accordionRowOpen,
+                  ]}
+                  onPress={() => activateProfileSection('interests')}
                   activeOpacity={0.85}
                 >
-                  <View style={styles.quickTileIconWrap}>
+                  <View style={styles.accordionRowLeft}>
                     <Ionicons name="heart-outline" size={22} color={theme.foreground} />
+                    <Text style={styles.accordionRowLabel}>Interests</Text>
                   </View>
-                  <Text style={styles.quickTileLabel}>Interests</Text>
+                  <Ionicons
+                    name={profileEditorSection === 'interests' ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color='rgba(26, 26, 30, 0.72)'
+                  />
                 </TouchableOpacity>
+                {profileEditorSection === 'interests' ? (
+                  <View style={styles.accordionBody}>
+                    <Text style={styles.prefSectionSub}>Select up to 5 per category</Text>
+                    {INTEREST_CATEGORIES.map((cat) => {
+                      const selected = editInterests[cat.key] ?? [];
+                      const isCatExpanded = expandedPrefCat === cat.key;
+                      return (
+                        <View key={cat.key} style={styles.catBlock}>
+                          <TouchableOpacity
+                            style={styles.catHeader}
+                            onPress={() => setExpandedPrefCat(isCatExpanded ? null : cat.key)}
+                          >
+                            <Text style={styles.catLabel}>
+                              {cat.label} {selected.length > 0 ? `(${selected.length})` : ''}
+                            </Text>
+                            <Text style={styles.catChevron}>{isCatExpanded ? '▲' : '▼'}</Text>
+                          </TouchableOpacity>
+                          {isCatExpanded ? (
+                            <View style={styles.chipsWrap}>
+                              {cat.options.map((opt) => {
+                                const on = selected.includes(opt);
+                                const disabled = !on && selected.length >= 5;
+                                return (
+                                  <TouchableOpacity
+                                    key={opt}
+                                    style={[styles.chip, on && styles.chipOn, disabled && styles.chipDim]}
+                                    disabled={disabled}
+                                    onPress={() => {
+                                      setEditInterests((prev) => {
+                                        const cur = prev[cat.key] ?? [];
+                                        return {
+                                          ...prev,
+                                          [cat.key]: on ? cur.filter((x) => x !== opt) : [...cur, opt],
+                                        };
+                                      });
+                                    }}
+                                  >
+                                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt}</Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                    <TouchableOpacity
+                      style={styles.accordionSaveBtn}
+                      onPress={handleSavePrefs}
+                      disabled={savingPrefs}
+                      activeOpacity={0.85}
+                    >
+                      {savingPrefs ? (
+                        <ActivityIndicator color={theme.primaryForeground} />
+                      ) : (
+                        <Text style={styles.accordionSaveBtnText}>Save interests</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <View style={styles.accordionDivider} />
+
                 <TouchableOpacity
-                  style={styles.quickTile}
-                  onPress={openEditPrompts}
+                  style={[
+                    styles.accordionRow,
+                    profileEditorSection === 'dealbreakers' && styles.accordionRowOpen,
+                  ]}
+                  onPress={() => activateProfileSection('dealbreakers')}
                   activeOpacity={0.85}
                 >
-                  <View style={styles.quickTileIconWrap}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={22} color={theme.foreground} />
+                  <View style={styles.accordionRowLeft}>
+                    <Ionicons name="shield-outline" size={22} color={theme.foreground} />
+                    <Text style={styles.accordionRowLabel}>Dealbreakers</Text>
                   </View>
-                  <Text style={styles.quickTileLabel}>Prompts</Text>
+                  <Ionicons
+                    name={profileEditorSection === 'dealbreakers' ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color='rgba(26, 26, 30, 0.72)'
+                  />
                 </TouchableOpacity>
-              </View>
-            </BlurView>
-          </>
+                {profileEditorSection === 'dealbreakers' ? (
+                  <View style={styles.accordionBody}>
+                    <Text style={styles.prefSectionSub}>Hard = never · Soft = prefer not · None = fine</Text>
+                    {DEALBREAKER_ITEMS.map((item) => {
+                      const val = editDealbreakers[item.key] ?? 'none';
+                      return (
+                        <View key={item.key} style={styles.dbRow}>
+                          <Text style={styles.dbLabel}>{item.label}</Text>
+                          <View style={styles.dbBtns}>
+                            {(['hard', 'soft', 'none'] as DealbreakerLevel[]).map((lvl) => (
+                              <TouchableOpacity
+                                key={lvl}
+                                style={[
+                                  styles.dbBtn,
+                                  val === lvl &&
+                                    (lvl === 'hard'
+                                      ? styles.dbBtnHard
+                                      : lvl === 'soft'
+                                        ? styles.dbBtnSoft
+                                        : styles.dbBtnNone),
+                                ]}
+                                onPress={() =>
+                                  setEditDealbreakers((prev) => ({ ...prev, [item.key]: lvl }))
+                                }
+                              >
+                                <Text style={[styles.dbBtnText, val === lvl && styles.dbBtnTextActive]}>
+                                  {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      );
+                    })}
+                    <TouchableOpacity
+                      style={styles.accordionSaveBtn}
+                      onPress={handleSavePrefs}
+                      disabled={savingPrefs}
+                      activeOpacity={0.85}
+                    >
+                      {savingPrefs ? (
+                        <ActivityIndicator color={theme.primaryForeground} />
+                      ) : (
+                        <Text style={styles.accordionSaveBtnText}>Save dealbreakers</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <View style={styles.accordionDivider} />
+
+                <TouchableOpacity
+                  style={[
+                    styles.accordionRow,
+                    profileEditorSection === 'prompts' && styles.accordionRowOpen,
+                  ]}
+                  onPress={() => activateProfileSection('prompts')}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.accordionRowLeft}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={22} color={theme.foreground} />
+                    <Text style={styles.accordionRowLabel}>Prompts</Text>
+                  </View>
+                  <Ionicons
+                    name={profileEditorSection === 'prompts' ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color='rgba(26, 26, 30, 0.72)'
+                  />
+                </TouchableOpacity>
+                {profileEditorSection === 'prompts' ? (
+                  <View style={styles.accordionBody}>
+                    <Text style={styles.prefSectionSub}>Pick up to 3 prompts and answer them.</Text>
+                    {editPrompts.map((entry, idx) => (
+                      <View key={idx} style={styles.promptBlock}>
+                        {promptPickerIndex === idx ? (
+                          <View style={styles.promptPickerList}>
+                            {PROMPTS.filter(
+                              (p) => !editPrompts.some((e, i) => i !== idx && e.question === p)
+                            ).map((p) => (
+                              <TouchableOpacity
+                                key={p}
+                                style={styles.promptPickerItem}
+                                onPress={() => {
+                                  setEditPrompts((prev) =>
+                                    prev.map((e, i) => (i === idx ? { ...e, question: p } : e))
+                                  );
+                                  setPromptPickerIndex(null);
+                                }}
+                              >
+                                <Text style={styles.promptPickerText}>{p}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.promptQuestion}
+                            onPress={() => setPromptPickerIndex(idx)}
+                          >
+                            <Text
+                              style={[
+                                styles.promptQuestionText,
+                                !entry.question && styles.promptQuestionPlaceholder,
+                              ]}
+                            >
+                              {entry.question || 'Tap to choose a prompt…'}
+                            </Text>
+                            <Text style={styles.promptQuestionEdit}>✎</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TextInput
+                          style={styles.promptAnswerInput}
+                          value={entry.answer}
+                          onChangeText={(t) =>
+                            setEditPrompts((prev) =>
+                              prev.map((e, i) => (i === idx ? { ...e, answer: t } : e))
+                            )
+                          }
+                          placeholder="Your answer…"
+                          placeholderTextColor="#9AA"
+                          multiline
+                          maxLength={300}
+                        />
+                        <TouchableOpacity onPress={() => setEditPrompts((prev) => prev.filter((_, i) => i !== idx))}>
+                          <Text style={styles.promptRemove}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    {editPrompts.length < 3 ? (
+                      <TouchableOpacity
+                        style={styles.addPromptBtn}
+                        onPress={() => setEditPrompts((prev) => [...prev, { question: '', answer: '' }])}
+                      >
+                        <Text style={styles.addPromptBtnText}>+ Add prompt</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.accordionSaveBtn}
+                      onPress={handleSavePrompts}
+                      disabled={savingPrompts}
+                      activeOpacity={0.85}
+                    >
+                      {savingPrompts ? (
+                        <ActivityIndicator color={theme.primaryForeground} />
+                      ) : (
+                        <Text style={styles.accordionSaveBtnText}>Save prompts</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                  </ScrollView>
+                </BlurView>
+              </Animated.View>
+            </View>
+          </KeyboardAvoidingView>
         )}
-      </ScrollView>
+      </View>
 
       {/* Settings hub: deep links into existing flows + future sections */}
       <Modal
@@ -821,225 +1211,6 @@ export default function UserProfileScreen({ route }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Edit preferences modal (interests + dealbreakers) ── */}
-      <Modal
-        visible={editPrefsOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setEditPrefsOpen(false)}
-      >
-        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditPrefsOpen(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Interests & Dealbreakers</Text>
-            <TouchableOpacity onPress={handleSavePrefs} disabled={savingPrefs}>
-              {savingPrefs ? <ActivityIndicator color={theme.primary} /> : <Text style={styles.modalSave}>Save</Text>}
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-            {/* Interests */}
-            <Text style={styles.prefSectionTitle}>Interests</Text>
-            <Text style={styles.prefSectionSub}>Select up to 5 per category</Text>
-            {INTEREST_CATEGORIES.map((cat) => {
-              const selected = editInterests[cat.key] ?? [];
-              const isExpanded = expandedPrefCat === cat.key;
-              return (
-                <View key={cat.key} style={styles.catBlock}>
-                  <TouchableOpacity style={styles.catHeader} onPress={() => setExpandedPrefCat(isExpanded ? null : cat.key)}>
-                    <Text style={styles.catLabel}>{cat.label} {selected.length > 0 ? `(${selected.length})` : ''}</Text>
-                    <Text style={styles.catChevron}>{isExpanded ? '▲' : '▼'}</Text>
-                  </TouchableOpacity>
-                  {isExpanded && (
-                    <View style={styles.chipsWrap}>
-                      {cat.options.map((opt) => {
-                        const on = selected.includes(opt);
-                        const disabled = !on && selected.length >= 5;
-                        return (
-                          <TouchableOpacity
-                            key={opt}
-                            style={[styles.chip, on && styles.chipOn, disabled && styles.chipDim]}
-                            disabled={disabled}
-                            onPress={() => {
-                              setEditInterests((prev) => {
-                                const cur = prev[cat.key] ?? [];
-                                return { ...prev, [cat.key]: on ? cur.filter((x) => x !== opt) : [...cur, opt] };
-                              });
-                            }}
-                          >
-                            <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-
-            {/* Dealbreakers */}
-            <Text style={[styles.prefSectionTitle, { marginTop: 24 }]}>Dealbreakers</Text>
-            <Text style={styles.prefSectionSub}>Hard = never · Soft = prefer not · None = fine</Text>
-            {DEALBREAKER_ITEMS.map((item) => {
-              const val = editDealbreakers[item.key] ?? 'none';
-              return (
-                <View key={item.key} style={styles.dbRow}>
-                  <Text style={styles.dbLabel}>{item.label}</Text>
-                  <View style={styles.dbBtns}>
-                    {(['hard', 'soft', 'none'] as DealbreakerLevel[]).map((lvl) => (
-                      <TouchableOpacity
-                        key={lvl}
-                        style={[styles.dbBtn, val === lvl && (lvl === 'hard' ? styles.dbBtnHard : lvl === 'soft' ? styles.dbBtnSoft : styles.dbBtnNone)]}
-                        onPress={() => setEditDealbreakers((prev) => ({ ...prev, [item.key]: lvl }))}
-                      >
-                        <Text style={[styles.dbBtnText, val === lvl && styles.dbBtnTextActive]}>
-                          {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Edit prompts modal ── */}
-      <Modal
-        visible={editPromptsOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setEditPromptsOpen(false)}
-      >
-        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditPromptsOpen(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Prompts</Text>
-            <TouchableOpacity onPress={handleSavePrompts} disabled={savingPrompts}>
-              {savingPrompts ? <ActivityIndicator color={theme.primary} /> : <Text style={styles.modalSave}>Save</Text>}
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.prefSectionSub}>Pick up to 3 prompts and answer them.</Text>
-
-            {editPrompts.map((entry, idx) => (
-              <View key={idx} style={styles.promptBlock}>
-                {/* Prompt picker */}
-                {promptPickerIndex === idx ? (
-                  <View style={styles.promptPickerList}>
-                    {PROMPTS.filter((p) => !editPrompts.some((e, i) => i !== idx && e.question === p)).map((p) => (
-                      <TouchableOpacity
-                        key={p}
-                        style={styles.promptPickerItem}
-                        onPress={() => {
-                          setEditPrompts((prev) => prev.map((e, i) => i === idx ? { ...e, question: p } : e));
-                          setPromptPickerIndex(null);
-                        }}
-                      >
-                        <Text style={styles.promptPickerText}>{p}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.promptQuestion} onPress={() => setPromptPickerIndex(idx)}>
-                    <Text style={[styles.promptQuestionText, !entry.question && styles.promptQuestionPlaceholder]}>
-                      {entry.question || 'Tap to choose a prompt…'}
-                    </Text>
-                    <Text style={styles.promptQuestionEdit}>✎</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Answer input */}
-                <TextInput
-                  style={styles.promptAnswerInput}
-                  value={entry.answer}
-                  onChangeText={(t) => setEditPrompts((prev) => prev.map((e, i) => i === idx ? { ...e, answer: t } : e))}
-                  placeholder="Your answer…"
-                  placeholderTextColor="#9AA"
-                  multiline
-                  maxLength={300}
-                />
-
-                {/* Remove */}
-                <TouchableOpacity onPress={() => setEditPrompts((prev) => prev.filter((_, i) => i !== idx))}>
-                  <Text style={styles.promptRemove}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-
-            {editPrompts.length < 3 && (
-              <TouchableOpacity
-                style={styles.addPromptBtn}
-                onPress={() => setEditPrompts((prev) => [...prev, { question: '', answer: '' }])}
-              >
-                <Text style={styles.addPromptBtnText}>+ Add prompt</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={editPhotosOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setEditPhotosOpen(false)}
-      >
-        <View style={styles.modalRoot}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditPhotosOpen(false)}>
-              <Text style={styles.modalCancel}>Done</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Photos</Text>
-            <View style={{ width: 48 }} />
-          </View>
-          <ScrollView contentContainerStyle={styles.photosModalContent}>
-            <Text style={styles.photosHelp}>
-              First photo is your cover. Swipe on your profile card to see the rest. Keep 3–5 photos.
-            </Text>
-            {savingPhotos ? (
-              <ActivityIndicator style={{ marginVertical: 16 }} color={theme.primary} />
-            ) : null}
-            <View style={styles.photoList}>
-              {imageUrls.map((url, index) => (
-                <View key={url + index} style={styles.photoRow}>
-                  <Image source={{ uri: url }} style={styles.photoRowImage} />
-                  <View style={styles.photoRowMeta}>
-                    <Text style={styles.photoRowLabel}>
-                      {index === 0 ? 'Cover photo' : `Photo ${index + 1}`}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => handleRemovePhoto(index)}
-                      disabled={savingPhotos}
-                    >
-                      <Text style={styles.photoRemoveLink}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.addPhotoBtn,
-                photoPaths.length >= MAX_PROFILE_PHOTOS && styles.addPhotoBtnDisabled,
-              ]}
-              onPress={handleAddPhoto}
-              disabled={savingPhotos || photoPaths.length >= MAX_PROFILE_PHOTOS}
-            >
-              <Text style={styles.addPhotoBtnText}>
-                {photoPaths.length >= MAX_PROFILE_PHOTOS
-                  ? `Maximum ${MAX_PROFILE_PHOTOS} photos`
-                  : '+ Add photo'}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
-
       {/* ── Listing modal ── */}
       <Modal
         visible={listingOpen}
@@ -1166,14 +1337,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.background,
   },
-  scrollView: {
-    flex: 1,
-    zIndex: 1,
-    backgroundColor: 'transparent',
-  },
-  scrollContent: {
-    paddingHorizontal: 0,
-  },
   fullScreenBlur: {
     zIndex: 0,
   },
@@ -1232,38 +1395,145 @@ const styles = StyleSheet.create({
     bottom: 120,
     left: 40,
   },
+  profileRoot: {
+    flex: 1,
+    zIndex: 1,
+    backgroundColor: 'transparent',
+  },
+  profileKeyboardRoot: {
+    flex: 1,
+  },
+  profileStage: {
+    flex: 1,
+    minHeight: 0,
+    position: 'relative',
+  },
+  profilePhotoStage: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  personalitySheet: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 0,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#1A2C24',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 18,
+    zIndex: 10,
+  },
+  personalitySheetBlur: {
+    flex: 1,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: 'hidden',
+  },
+  sheetHandleZone: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0, 0, 0, 0.06)',
+  },
+  sheetGrabRow: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+  },
+  sheetHandlePill: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
+    marginBottom: 10,
+  },
+  sheetGrabTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.foreground,
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  personalitySheetScroll: {
+    flexGrow: 1,
+  },
+  personalitySheetScrollContent: {
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 20,
+  },
+  accordionHint: {
+    fontSize: 13,
+    color: 'rgba(20, 20, 24, 0.82)',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  accordionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderRadius: theme.radiusMd,
+  },
+  accordionRowOpen: {
+    backgroundColor: 'rgba(3, 2, 19, 0.04)',
+  },
+  accordionRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  accordionRowLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.foreground,
+  },
+  accordionBody: {
+    paddingBottom: 12,
+    paddingHorizontal: 2,
+  },
+  accordionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: theme.border,
+    marginVertical: 2,
+  },
+  accordionSaveBtn: {
+    marginTop: 16,
+    backgroundColor: theme.primary,
+    borderRadius: theme.radiusMd,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accordionSaveBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.primaryForeground,
+  },
+  profileHeroWrap: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 12,
     paddingHorizontal: 20,
   },
   headerTitleBlock: {
     flex: 1,
     paddingRight: 12,
-  },
-  heroCardWrap: {
-    paddingHorizontal: 12,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  glassActionsSheet: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 16,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
-    shadowColor: '#1A2C24',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 28,
-    elevation: 8,
   },
   settingsHelp: {
     fontSize: 13,
@@ -1335,46 +1605,6 @@ const styles = StyleSheet.create({
     color: theme.mutedForeground,
     marginTop: 14,
     lineHeight: 19,
-  },
-  quickSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.mutedForeground,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginTop: 2,
-    marginBottom: 10,
-  },
-  quickGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  quickTile: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-    backgroundColor: theme.inputBackground,
-    borderRadius: theme.radiusLg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.border,
-  },
-  quickTileIconWrap: {
-    marginBottom: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.background,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.border,
-  },
-  quickTileLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.foreground,
-    textAlign: 'center',
   },
   settingsModalRoot: {
     flex: 1,
@@ -1693,7 +1923,7 @@ const styles = StyleSheet.create({
   },
   prefSectionSub: {
     fontSize: 13,
-    color: theme.mutedForeground,
+    color: 'rgba(20, 20, 24, 0.8)',
     marginBottom: 16,
   },
   catBlock: {
@@ -1718,7 +1948,7 @@ const styles = StyleSheet.create({
   },
   catChevron: {
     fontSize: 12,
-    color: theme.mutedForeground,
+    color: 'rgba(20, 20, 24, 0.72)',
   },
   chipsWrap: {
     flexDirection: 'row',
