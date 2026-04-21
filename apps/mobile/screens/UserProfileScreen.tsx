@@ -15,6 +15,7 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -71,6 +72,12 @@ const PROMPTS = [
 ];
 
 const MAX_LISTING_PHOTOS = 6;
+/** Horizontal overlap between filmstrip thumbnails (underlap — lower = more spaced / more visible per card). */
+const FILM_STRIP_OVERLAP = 10;
+/** Gap after the last gallery thumb before the add tile (add never stacks under photos). */
+const FILM_ADD_LEADING_GAP = 14;
+/** Portrait strip tiles: height = width × (taller than square — matches reference gallery). */
+const FILM_STRIP_HEIGHT_FACTOR = 1.45;
 type ListingPhotoItem = { kind: 'path'; path: string; url: string } | { kind: 'local'; uri: string };
 
 /** Light theme: shadcn-style neutrals + RoomPear pear green accents. */
@@ -93,6 +100,8 @@ const theme = {
   pearMuted: '#E4EDE6',
   pearDark: '#5A6B5D',
   pearForeground: '#FFFFFF',
+  /** Light veil on top of the sheet BlurView — keeps text readable while staying glassy. */
+  sheetGlassOverlay: 'rgba(242, 244, 248, 0.44)',
 };
 
 type DealbreakerLevel = 'hard' | 'soft' | 'none';
@@ -106,6 +115,18 @@ type Props = BottomTabScreenProps<MainTabParamList, 'Profile'>;
 export default function UserProfileScreen({ route }: Props) {
   const onDevShowOnboarding = route.params?.onDevShowOnboarding;
   const insets = useSafeAreaInsets();
+  /** Pull dock flush with tab bar — tab scenes often leave a gap above the bar. */
+  const profileSheetDockBottom = -Math.min(insets.bottom + 18, 36);
+  const { width: windowWidth } = useWindowDimensions();
+  /** Overlapping strip: portrait width + height (not square). */
+  const { filmThumbWidth, filmThumbHeight } = useMemo(() => {
+    const scrollPad = 14 * 2;
+    const accordionPad = 2 * 2;
+    const inner = windowWidth - scrollPad - accordionPad;
+    const w = Math.max(76, Math.min(102, Math.floor(inner * 0.27)));
+    const h = Math.round(w * FILM_STRIP_HEIGHT_FACTOR);
+    return { filmThumbWidth: w, filmThumbHeight: h };
+  }, [windowWidth]);
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -152,12 +173,24 @@ export default function UserProfileScreen({ route }: Props) {
   const windowDims = Dimensions.get('window');
   /** Expanded sheet height when swiped up (peek stays small). */
   const SHEET_EXPANDED_HEIGHT = Math.round(windowDims.height * 0.7);
-  const SHEET_PEEK_HEIGHT = 76;
+  /** Collapsed strip height — solid header only (no blur), so the card photo doesn’t bleed through. */
+  const SHEET_PEEK_HEIGHT = 88;
   const SHEET_COLLAPSED_OFFSET = Math.max(0, SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT);
 
   const sheetTranslateY = useRef(new Animated.Value(SHEET_COLLAPSED_OFFSET)).current;
   const sheetDragStart = useRef(SHEET_COLLAPSED_OFFSET);
   const sheetYCurrent = useRef(SHEET_COLLAPSED_OFFSET);
+
+  /** Accordion intro + body only make sense when the sheet is expanded (not the collapsed grab strip). */
+  const [profileSheetExpanded, setProfileSheetExpanded] = useState(false);
+  useEffect(() => {
+    const id = sheetTranslateY.addListener(({ value }) => {
+      setProfileSheetExpanded(value < SHEET_COLLAPSED_OFFSET / 2);
+    });
+    return () => {
+      sheetTranslateY.removeListener(id);
+    };
+  }, [SHEET_COLLAPSED_OFFSET, sheetTranslateY]);
 
   const snapSheetTarget = useCallback(
     (y: number, velocityY: number) => {
@@ -576,9 +609,7 @@ export default function UserProfileScreen({ route }: Props) {
               <View style={styles.headerRow}>
                 <View style={styles.headerTitleBlock}>
                   <Text style={styles.titleOnGreen}>Profile</Text>
-                  <Text style={styles.taglineOnGreen}>
-                    Swipe up on the panel for photos & personality
-                  </Text>
+                  <Text style={styles.taglineOnGreen}>Swipe up to adjust your profile</Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -609,35 +640,54 @@ export default function UserProfileScreen({ route }: Props) {
                   styles.personalitySheet,
                   {
                     height: SHEET_EXPANDED_HEIGHT + Math.max(insets.bottom, 10),
+                    bottom: profileSheetDockBottom,
                     transform: [{ translateY: sheetTranslateY }],
                   },
                 ]}
               >
                 <BlurView
-                  intensity={Platform.OS === 'ios' ? 38 : 28}
+                  intensity={Platform.OS === 'ios' ? 52 : 32}
                   tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
-                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-                  style={styles.personalitySheetBlur}
+                  {...(Platform.OS === 'android'
+                    ? { experimentalBlurMethod: 'dimezisBlurView' as const }
+                    : {})}
+                  style={styles.sheetBlur}
+                  pointerEvents="none"
+                />
+                <View style={styles.sheetGlassTint} pointerEvents="none" />
+                {/* Handle fills the peek height so ScrollView content never shows when collapsed */}
+                <View
+                  style={[styles.sheetHandleSolid, { minHeight: SHEET_PEEK_HEIGHT }]}
+                  {...sheetHandlePan.panHandlers}
                 >
-                  <View style={styles.sheetHandleZone} {...sheetHandlePan.panHandlers}>
-                    <Pressable
-                      onPress={togglePersonalitySheet}
-                      accessibilityRole="button"
-                      accessibilityLabel="Expand or collapse Photos and personality"
-                      style={({ pressed }) => [styles.sheetGrabRow, pressed && { opacity: 0.9 }]}
-                    >
-                      <View style={styles.sheetHandlePill} />
-                      <Text style={styles.sheetGrabTitle}>Photos & personality</Text>
-                      <Ionicons name="chevron-up" size={18} color='rgba(26, 26, 30, 0.72)' />
-                    </Pressable>
-                  </View>
+                  <Pressable
+                    onPress={togglePersonalitySheet}
+                    accessibilityRole="button"
+                    accessibilityLabel="Expand or collapse Adjust profile"
+                    style={({ pressed }) => [styles.sheetGrabRow, pressed && { opacity: 0.92 }]}
+                  >
+                    <View style={styles.sheetHandlePill} />
+                    <Text style={styles.sheetGrabTitle}>Adjust profile</Text>
+                    <Ionicons
+                      name={profileSheetExpanded ? 'chevron-down' : 'chevron-up'}
+                      size={18}
+                      color="rgba(26, 26, 30, 0.72)"
+                    />
+                  </Pressable>
+                </View>
+                <View style={styles.personalitySheetBody}>
                   <ScrollView
                     style={styles.personalitySheetScroll}
-                    contentContainerStyle={styles.personalitySheetScrollContent}
+                    contentContainerStyle={[
+                      styles.personalitySheetScrollContent,
+                      { paddingBottom: 52 + Math.max(insets.bottom, 12) },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled
                   >
+                    {profileSheetExpanded ? (
+                      <>
                     <Text style={styles.accordionHint}>Tap a row — sections drop down below</Text>
 
                     <TouchableOpacity
@@ -660,44 +710,101 @@ export default function UserProfileScreen({ route }: Props) {
                 </TouchableOpacity>
                 {profileEditorSection === 'photos' ? (
                   <View style={styles.accordionBody}>
-                    <Text style={styles.photosHelp}>
-                      First photo is your cover. Swipe on your profile card to see the rest. Keep 3–5 photos.
-                    </Text>
                     {savingPhotos ? (
                       <ActivityIndicator style={{ marginVertical: 16 }} color={theme.primary} />
                     ) : null}
-                    <View style={styles.photoList}>
-                      {imageUrls.map((url, index) => (
-                        <View key={url + index} style={styles.photoRow}>
-                          <Image source={{ uri: url }} style={styles.photoRowImage} />
-                          <View style={styles.photoRowMeta}>
-                            <Text style={styles.photoRowLabel}>
-                              {index === 0 ? 'Cover photo' : `Photo ${index + 1}`}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => handleRemovePhoto(index)}
-                              disabled={savingPhotos}
-                            >
-                              <Text style={styles.photoRemoveLink}>Remove</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
+                    <View style={styles.photoEditLayout}>
+                      {imageUrls.length === 0 ? (
+                        <TouchableOpacity
+                          style={styles.coverEmpty}
+                          onPress={handleAddPhoto}
+                          disabled={savingPhotos}
+                          activeOpacity={0.88}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add main photo"
+                        >
+                          <Ionicons name="image-outline" size={40} color={theme.mutedForeground} />
+                          <Text style={styles.coverEmptyTitle}>Add main photo</Text>
+                          <Text style={styles.coverEmptyHint}>
+                            Up to {MAX_PROFILE_PHOTOS} photos — extras overlap below
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.coverHero,
+                              pressed && styles.coverHeroPressed,
+                            ]}
+                            onPress={() => handleRemovePhoto(0)}
+                            disabled={savingPhotos}
+                            accessibilityRole="button"
+                            accessibilityLabel="Main photo, tap to edit"
+                          >
+                            <Image source={{ uri: imageUrls[0] }} style={styles.coverImage} />
+                            <View style={styles.mainPhotoPill} pointerEvents="none">
+                              <Text style={styles.mainPhotoPillText}>Main</Text>
+                            </View>
+                          </Pressable>
+
+                          <ScrollView
+                            horizontal
+                            nestedScrollEnabled
+                            showsHorizontalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            style={styles.photoFilmScroll}
+                            contentContainerStyle={styles.photoFilmScrollContent}
+                          >
+                            {imageUrls.slice(1).map((url, index) => {
+                              const realIndex = index + 1;
+                              return (
+                                <Pressable
+                                  key={`film-${realIndex}-${url}`}
+                                  style={({ pressed }) => [
+                                    styles.photoFilmCell,
+                                    {
+                                      width: filmThumbWidth,
+                                      height: filmThumbHeight,
+                                      marginLeft: index === 0 ? 0 : -FILM_STRIP_OVERLAP,
+                                      zIndex: index + 1,
+                                    },
+                                    pressed && styles.photoFilmCellPressed,
+                                  ]}
+                                  onPress={() => handleRemovePhoto(realIndex)}
+                                  disabled={savingPhotos}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Photo ${realIndex + 1}, tap to edit`}
+                                >
+                                  <Image source={{ uri: url }} style={styles.photoFilmImage} />
+                                </Pressable>
+                              );
+                            })}
+                            {photoPaths.length < MAX_PROFILE_PHOTOS ? (
+                              <TouchableOpacity
+                                style={[
+                                  styles.photoFilmCell,
+                                  styles.photoFilmAdd,
+                                  {
+                                    width: filmThumbWidth,
+                                    height: filmThumbHeight,
+                                    marginLeft:
+                                      imageUrls.length > 1 ? FILM_ADD_LEADING_GAP : 0,
+                                    zIndex: imageUrls.length + 2,
+                                  },
+                                ]}
+                                onPress={handleAddPhoto}
+                                disabled={savingPhotos}
+                                activeOpacity={0.85}
+                                accessibilityRole="button"
+                                accessibilityLabel="Add photo"
+                              >
+                                <Ionicons name="add" size={28} color={theme.pearDark} />
+                              </TouchableOpacity>
+                            ) : null}
+                          </ScrollView>
+                        </>
+                      )}
                     </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.addPhotoBtn,
-                        photoPaths.length >= MAX_PROFILE_PHOTOS && styles.addPhotoBtnDisabled,
-                      ]}
-                      onPress={handleAddPhoto}
-                      disabled={savingPhotos || photoPaths.length >= MAX_PROFILE_PHOTOS}
-                    >
-                      <Text style={styles.addPhotoBtnText}>
-                        {photoPaths.length >= MAX_PROFILE_PHOTOS
-                          ? `Maximum ${MAX_PROFILE_PHOTOS} photos`
-                          : '+ Add photo'}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 ) : null}
 
@@ -951,8 +1058,10 @@ export default function UserProfileScreen({ route }: Props) {
                     </TouchableOpacity>
                   </View>
                 ) : null}
+                      </>
+                    ) : null}
                   </ScrollView>
-                </BlurView>
+                </View>
               </Animated.View>
             </View>
           </KeyboardAvoidingView>
@@ -1414,33 +1523,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 4,
   },
+  sheetBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  sheetGlassTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: theme.sheetGlassOverlay,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
   personalitySheet: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 0,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    left: 0,
+    right: 0,
+    flexDirection: 'column',
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
     shadowColor: '#1A2C24',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 18,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 12,
     zIndex: 10,
   },
-  personalitySheetBlur: {
+  personalitySheetBody: {
     flex: 1,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    overflow: 'hidden',
+    minHeight: 0,
+    backgroundColor: 'transparent',
   },
-  sheetHandleZone: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0, 0, 0, 0.06)',
+  sheetHandleSolid: {
+    backgroundColor: 'transparent',
+    zIndex: 3,
   },
   sheetGrabRow: {
     alignItems: 'center',
@@ -1468,7 +1587,6 @@ const styles = StyleSheet.create({
   personalitySheetScrollContent: {
     paddingHorizontal: 14,
     paddingTop: 6,
-    paddingBottom: 20,
   },
   accordionHint: {
     fontSize: 13,
@@ -1845,61 +1963,107 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
-  photosHelp: {
-    fontSize: 14,
-    color: theme.mutedForeground,
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  photoList: {
+  photoEditLayout: {
     width: '100%',
   },
-  photoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    backgroundColor: theme.inputBackground,
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+  coverEmpty: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: theme.radiusLg,
+    borderWidth: 1.5,
     borderColor: theme.border,
-  },
-  photoRowImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 10,
-    backgroundColor: '#D9E1E6',
-  },
-  photoRowMeta: {
-    flex: 1,
-    marginLeft: 14,
-    justifyContent: 'center',
-  },
-  photoRowLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.foreground,
-    marginBottom: 6,
-  },
-  photoRemoveLink: {
-    fontSize: 15,
-    color: '#E85D4C',
-    fontWeight: '600',
-  },
-  addPhotoBtn: {
-    marginTop: 20,
-    backgroundColor: theme.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderStyle: 'dashed',
+    backgroundColor: theme.inputBackground,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginBottom: 4,
   },
-  addPhotoBtnDisabled: {
-    opacity: 0.5,
-  },
-  addPhotoBtnText: {
-    color: theme.primaryForeground,
+  coverEmptyTitle: {
+    marginTop: 10,
     fontSize: 16,
     fontWeight: '600',
+    color: theme.foreground,
+  },
+  coverEmptyHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: theme.mutedForeground,
+    textAlign: 'center',
+  },
+  coverHero: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: 16 / 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: theme.muted,
+    marginBottom: 4,
+    shadowColor: '#1A2C24',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  coverHeroPressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.995 }],
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoFilmScroll: {
+    marginTop: 8,
+    flexGrow: 0,
+  },
+  photoFilmScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingBottom: 2,
+    paddingRight: 4,
+  },
+  photoFilmCell: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: theme.muted,
+    borderWidth: 0,
+    shadowColor: '#1A2C24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  photoFilmCellPressed: {
+    opacity: 0.88,
+  },
+  photoFilmImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoFilmAdd: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(90, 107, 93, 0.38)',
+    backgroundColor: 'rgba(232, 240, 234, 0.55)',
+  },
+  mainPhotoPill: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  mainPhotoPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   devButton: {
     marginTop: 12,
