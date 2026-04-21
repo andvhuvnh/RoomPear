@@ -15,10 +15,13 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// Stub out @rnmapbox/maps on web — it requires mapbox-gl CSS which isn't installed
-// The app is mobile-only; web is used only for Expo dev server
+// Stub out mapbox on web — the app is mobile-only, web is dev-only
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === 'web' && moduleName === 'mapbox-gl/dist/mapbox-gl.css') {
+  if (platform === 'web' && (
+    moduleName === 'mapbox-gl' ||
+    moduleName === 'mapbox-gl/dist/mapbox-gl.css' ||
+    moduleName.startsWith('@rnmapbox/maps')
+  )) {
     return { type: 'empty' };
   }
   return context.resolveRequest(context, moduleName, platform);

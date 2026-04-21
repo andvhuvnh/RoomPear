@@ -1122,10 +1122,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           return (
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {/* Question header */}
-                <View style={styles.pAnswerHeader}>
-                  <Text style={styles.pAnswerQuestion}>{currentPrompt.question}</Text>
-                </View>
+                <Text style={styles.pAnswerQuestion}>{currentPrompt.question}</Text>
 
                 {/* Suggestions */}
                 <Text style={styles.pSuggestLabel}>Tap a suggestion or write your own</Text>
@@ -1215,37 +1212,39 @@ export default function OnboardingScreen({ onComplete }: Props) {
             </TouchableOpacity>
 
             {/* Browse all modal */}
-            <Modal visible={promptBrowseAll} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPromptBrowseAll(false)}>
+            <Modal visible={promptBrowseAll} animationType="slide" transparent onRequestClose={() => setPromptBrowseAll(false)}>
               <View style={styles.pAllModalRoot}>
-                <View style={styles.pAllModalHeader}>
-                  <Text style={styles.pAllModalTitle}>All prompts</Text>
-                  <TouchableOpacity onPress={() => setPromptBrowseAll(false)}>
-                    <Text style={styles.pAllModalClose}>Done</Text>
-                  </TouchableOpacity>
+                <View style={styles.pAllModalSheet}>
+                  <View style={styles.pAllModalHeader}>
+                    <Text style={styles.pAllModalTitle}>All prompts</Text>
+                    <TouchableOpacity onPress={() => setPromptBrowseAll(false)}>
+                      <Text style={styles.pAllModalClose}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView style={styles.pAllModalScroll} showsVerticalScrollIndicator={false}>
+                    {PROMPTS.map((p, i) => {
+                      const selected = isPromptSelected(p.question);
+                      const disabled = !selected && maxDone;
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          style={[styles.pAllRow, selected && styles.pAllRowSelected, disabled && styles.pAllRowDisabled]}
+                          onPress={() => {
+                            if (disabled) return;
+                            setPromptCardIdx(i);
+                            setPromptBrowseAll(false);
+                            setPromptDraft('');
+                            setPromptMode('answer');
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pAllRowText, selected && styles.pAllRowTextSelected]}>{p.question}</Text>
+                          {selected && <Text style={styles.pAllRowCheck}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
                 </View>
-                <ScrollView contentContainerStyle={styles.pAllModalList} showsVerticalScrollIndicator={false}>
-                  {PROMPTS.map((p, i) => {
-                    const selected = isPromptSelected(p.question);
-                    const disabled = !selected && maxDone;
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        style={[styles.pAllRow, selected && styles.pAllRowSelected, disabled && styles.pAllRowDisabled]}
-                        onPress={() => {
-                          if (disabled) return;
-                          setPromptCardIdx(i);
-                          setPromptBrowseAll(false);
-                          setPromptDraft('');
-                          setPromptMode('answer');
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.pAllRowText, selected && styles.pAllRowTextSelected]}>{p.question}</Text>
-                        {selected && <Text style={styles.pAllRowCheck}>✓</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
               </View>
             </Modal>
           </View>
@@ -1855,14 +1854,12 @@ const styles = StyleSheet.create({
   pUseBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 
   pAnswerHeader: {
-    backgroundColor: D.selectedBg,
+    backgroundColor: D.surface,
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: D.selectedBorder,
     padding: 20,
     marginBottom: 24,
   },
-  pAnswerQuestion: { fontSize: 19, fontWeight: '700', color: D.white, lineHeight: 27 },
+  pAnswerQuestion: { fontSize: 28, fontWeight: '700', color: '#1A2C24', lineHeight: 36, marginBottom: 20 },
   pSuggestLabel: { fontSize: 13, color: D.gray, fontWeight: '600', marginBottom: 10 },
   pSuggestList: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   pSuggestChip: {
@@ -1922,12 +1919,15 @@ const styles = StyleSheet.create({
   pAllModalTitle: { fontSize: 18, fontWeight: '700', color: D.white },
   pAllModalClose: { fontSize: 15, color: D.gray, fontWeight: '600' },
   pAllModalList: {
-    backgroundColor: D.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
     paddingBottom: 32,
   },
+  pAllModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '80%',
+  },
+  pAllModalScroll: { flex: 1 },
   pAllRow: {
     flexDirection: 'row',
     alignItems: 'center',
