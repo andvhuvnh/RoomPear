@@ -72,10 +72,8 @@ const PROMPTS = [
 ];
 
 const MAX_LISTING_PHOTOS = 6;
-/** Horizontal overlap between filmstrip thumbnails (underlap — lower = more spaced / more visible per card). */
-const FILM_STRIP_OVERLAP = 10;
-/** Gap after the last gallery thumb before the add tile (add never stacks under photos). */
-const FILM_ADD_LEADING_GAP = 14;
+/** Horizontal gap between filmstrip thumbnails and before the add tile (no overlap). */
+const FILM_STRIP_GAP = 12;
 /** Portrait strip tiles: height = width × (taller than square — matches reference gallery). */
 const FILM_STRIP_HEIGHT_FACTOR = 1.45;
 type ListingPhotoItem = { kind: 'path'; path: string; url: string } | { kind: 'local'; uri: string };
@@ -765,8 +763,6 @@ export default function UserProfileScreen({ route }: Props) {
                                     {
                                       width: filmThumbWidth,
                                       height: filmThumbHeight,
-                                      marginLeft: index === 0 ? 0 : -FILM_STRIP_OVERLAP,
-                                      zIndex: index + 1,
                                     },
                                     pressed && styles.photoFilmCellPressed,
                                   ]}
@@ -787,9 +783,6 @@ export default function UserProfileScreen({ route }: Props) {
                                   {
                                     width: filmThumbWidth,
                                     height: filmThumbHeight,
-                                    marginLeft:
-                                      imageUrls.length > 1 ? FILM_ADD_LEADING_GAP : 0,
-                                    zIndex: imageUrls.length + 2,
                                   },
                                 ]}
                                 onPress={handleAddPhoto}
@@ -2020,6 +2013,7 @@ const styles = StyleSheet.create({
   photoFilmScrollContent: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    gap: FILM_STRIP_GAP,
     paddingBottom: 2,
     paddingRight: 4,
   },
