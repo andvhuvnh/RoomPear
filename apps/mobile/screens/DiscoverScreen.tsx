@@ -4,15 +4,19 @@ import {
   Dimensions,
   Image,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { ArrowCounterClockwise, Heart, Star, X } from 'phosphor-react-native';
 import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
 import { getProfileImageUrls } from '../lib/storage';
@@ -21,6 +25,23 @@ import SwipeCard from '../components/SwipeCard';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const C = {
+  bg:            '#1A3329',
+  text:          '#1A2C24',
+  white:         '#FFFFFF',
+  gray:          '#717182',
+  grayDim:       '#A0A0B0',
+  surface:       'rgba(255,255,255,0.82)',
+  surfaceBorder: 'rgba(255,255,255,0.45)',
+  cta:           '#030213',
+  pass:          '#D4183D',
+  like:          '#2D6A4F',
+  top:           '#FF9500',
+};
+
+const GRAD = ['#1A3329','#2D4F42','#5A806B','#9CB8A8','#D8E8DF','#F5FAF7','#FFFFFF'] as const;
+const LOCS = [0, 0.06, 0.14, 0.28, 0.48, 0.72, 1] as const;
 
 type Action = 'like' | 'pass' | 'top_pick';
 
@@ -31,6 +52,27 @@ type MatchData = {
   myPhotoUrl: string | null;
   sharedInterests: string[];
 };
+
+function Background({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <LinearGradient
+        colors={GRAD}
+        locations={LOCS}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 52 : 34}
+        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterial' : 'light'}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {children}
+    </View>
+  );
+}
 
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
@@ -44,7 +86,6 @@ export default function DiscoverScreen() {
   const [expandedProfile, setExpandedProfile] = useState<DiscoverProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Animation values for the front card
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
@@ -55,7 +96,6 @@ export default function DiscoverScreen() {
       setUserId(uid);
       if (uid) {
         loadProfiles(uid);
-        // Fetch my own photo + interests for the match modal
         const { data: me } = await supabase
           .from('profiles')
           .select('profile_photo_url, hobbies')
@@ -68,7 +108,6 @@ export default function DiscoverScreen() {
             setMyPhotoUrl(urls?.[0] ?? null);
           }
         }
-        // Use preferences.interests (flattened) if available, fall back to profiles.hobbies
         const { data: myPrefs } = await supabase
           .from('preferences')
           .select('interests')
@@ -91,7 +130,6 @@ export default function DiscoverScreen() {
     setLoading(false);
   }
 
-  // Animate the card flying off in the given direction, then advance to next
   function animateOut(direction: Action, onDone: () => void) {
     const toX =
       direction === 'like' ? SCREEN_WIDTH * 1.5
@@ -100,23 +138,10 @@ export default function DiscoverScreen() {
     const toY = direction === 'top_pick' ? -SCREEN_HEIGHT : 0;
 
     Animated.parallel([
-      Animated.timing(translateX, {
-        toValue: toX,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: toY,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-      Animated.timing(cardOpacity, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }),
+      Animated.timing(translateX, { toValue: toX, duration: 280, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: toY, duration: 280, useNativeDriver: true }),
+      Animated.timing(cardOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
     ]).start(() => {
-      // Reset values before content changes so new card appears at origin
       translateX.setValue(0);
       translateY.setValue(0);
       cardOpacity.setValue(1);
@@ -156,11 +181,8 @@ export default function DiscoverScreen() {
     setActionDisabled(true);
     cardOpacity.setValue(0);
     setCurrentIndex((prev) => prev - 1);
-    Animated.timing(cardOpacity, {
-      toValue: 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(() => setActionDisabled(false));
+    Animated.timing(cardOpacity, { toValue: 1, duration: 220, useNativeDriver: true })
+      .start(() => setActionDisabled(false));
   }
 
   const currentProfile = profiles[currentIndex];
@@ -169,101 +191,97 @@ export default function DiscoverScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyText}>Finding roommates…</Text>
-      </View>
+      <Background>
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>Finding roommates…</Text>
+        </View>
+      </Background>
     );
   }
 
   if (!currentProfile) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyTitle}>You're all caught up</Text>
-        <Text style={styles.emptyText}>No more profiles right now.{'\n'}Check back later!</Text>
-        <TouchableOpacity
-          style={styles.refreshBtn}
-          onPress={() => userId && loadProfiles(userId)}
-        >
-          <Text style={styles.refreshBtnText}>Refresh</Text>
-        </TouchableOpacity>
-      </View>
+      <Background>
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>You're all caught up</Text>
+          <Text style={styles.emptyText}>No more profiles right now.{'\n'}Check back later!</Text>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={() => userId && loadProfiles(userId)}
+          >
+            <Text style={styles.refreshBtnText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      </Background>
     );
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Discover</Text>
-        <Text style={styles.headerCount}>
-          {remaining} {remaining === 1 ? 'person' : 'people'} nearby
-        </Text>
-      </View>
+    <Background>
+      <SafeAreaView style={styles.root} edges={['top']}>
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Discover</Text>
+          <Text style={styles.headerCount}>
+            {remaining} {remaining === 1 ? 'person' : 'people'} nearby
+          </Text>
+        </View>
 
-      {/* ── Card stack ── */}
-      <View style={styles.cardArea}>
-        {/* Back card — static, slightly smaller */}
-        {nextProfile && (
-          <View style={styles.backCardWrap} pointerEvents="none">
-            <SwipeCard profile={nextProfile} onPress={() => {}} />
-          </View>
-        )}
+        {/* ── Card stack ── */}
+        <View style={styles.cardArea}>
+          {nextProfile && (
+            <View style={styles.backCardWrap} pointerEvents="none">
+              <SwipeCard profile={nextProfile} onPress={() => {}} />
+            </View>
+          )}
+          <Animated.View
+            style={[
+              styles.frontCardWrap,
+              { transform: [{ translateX }, { translateY }], opacity: cardOpacity },
+            ]}
+          >
+            <SwipeCard
+              profile={currentProfile}
+              onPress={() => setExpandedProfile(currentProfile)}
+            />
+          </Animated.View>
+        </View>
 
-        {/* Front card — animated */}
-        <Animated.View
-          style={[
-            styles.frontCardWrap,
-            {
-              transform: [{ translateX }, { translateY }],
-              opacity: cardOpacity,
-            },
-          ]}
-        >
-          <SwipeCard
-            profile={currentProfile}
-            onPress={() => setExpandedProfile(currentProfile)}
-          />
-        </Animated.View>
-      </View>
+        {/* ── Action buttons ── */}
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnUndo, (actionDisabled || currentIndex === 0) && styles.btnDisabled]}
+            onPress={handleUndo}
+            disabled={actionDisabled || currentIndex === 0}
+          >
+            <ArrowCounterClockwise size={22} color={C.grayDim} weight="bold" />
+          </TouchableOpacity>
 
-      {/* ── Action buttons ── */}
-      <View style={styles.actions}>
-        {/* Undo */}
-        <TouchableOpacity
-          style={[styles.btn, styles.btnUndo, (actionDisabled || currentIndex === 0) && styles.btnDisabled]}
-          onPress={handleUndo}
-          disabled={actionDisabled || currentIndex === 0}
-        >
-          <Text style={[styles.btnIcon, styles.btnIconUndo]}>↩</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnPass, actionDisabled && styles.btnDisabled]}
+            onPress={() => handleAction('pass')}
+            disabled={actionDisabled}
+          >
+            <X size={28} color={C.pass} weight="bold" />
+          </TouchableOpacity>
 
-        {/* Pass */}
-        <TouchableOpacity
-          style={[styles.btn, styles.btnPass, actionDisabled && styles.btnDisabled]}
-          onPress={() => handleAction('pass')}
-          disabled={actionDisabled}
-        >
-          <Text style={[styles.btnIcon, styles.btnIconPass]}>✕</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnTop, actionDisabled && styles.btnDisabled]}
+            onPress={() => handleAction('top_pick')}
+            disabled={actionDisabled}
+          >
+            <Star size={26} color={C.top} weight="fill" />
+          </TouchableOpacity>
 
-        {/* Top Pick */}
-        <TouchableOpacity
-          style={[styles.btn, styles.btnTop, actionDisabled && styles.btnDisabled]}
-          onPress={() => handleAction('top_pick')}
-          disabled={actionDisabled}
-        >
-          <Text style={[styles.btnIcon, styles.btnIconTop]}>★</Text>
-        </TouchableOpacity>
-
-        {/* Like */}
-        <TouchableOpacity
-          style={[styles.btn, styles.btnLike, actionDisabled && styles.btnDisabled]}
-          onPress={() => handleAction('like')}
-          disabled={actionDisabled}
-        >
-          <Text style={[styles.btnIcon, styles.btnIconLike]}>♥</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnLike, actionDisabled && styles.btnDisabled]}
+            onPress={() => handleAction('like')}
+            disabled={actionDisabled}
+          >
+            <Heart size={30} color={C.like} weight="fill" />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       {/* ── Full profile modal ── */}
       <Modal visible={!!expandedProfile} animationType="slide" statusBarTranslucent>
@@ -317,24 +335,24 @@ export default function DiscoverScreen() {
                 style={[styles.btn, styles.btnPass]}
                 onPress={() => { setExpandedProfile(null); handleAction('pass'); }}
               >
-                <Text style={[styles.btnIcon, styles.btnIconPass]}>✕</Text>
+                <X size={28} color={C.pass} weight="bold" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btn, styles.btnTop]}
                 onPress={() => { setExpandedProfile(null); handleAction('top_pick'); }}
               >
-                <Text style={[styles.btnIcon, styles.btnIconTop]}>★</Text>
+                <Star size={26} color={C.top} weight="fill" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btn, styles.btnLike]}
                 onPress={() => { setExpandedProfile(null); handleAction('like'); }}
               >
-                <Text style={[styles.btnIcon, styles.btnIconLike]}>♥</Text>
+                <Heart size={30} color={C.like} weight="fill" />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.closeBtn} onPress={() => setExpandedProfile(null)}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <X size={16} color={C.white} weight="bold" />
             </TouchableOpacity>
           </View>
         )}
@@ -347,7 +365,6 @@ export default function DiscoverScreen() {
             <Text style={styles.matchEmoji}>🍐</Text>
             <Text style={styles.matchTitle}>It's a Match!</Text>
 
-            {/* Avatars */}
             <View style={styles.matchAvatars}>
               <View style={styles.matchAvatarWrap}>
                 {matchData?.myPhotoUrl ? (
@@ -369,7 +386,6 @@ export default function DiscoverScreen() {
               You and {matchData?.name} both want to be roommates!
             </Text>
 
-            {/* Shared interests */}
             {matchData && matchData.sharedInterests.length > 0 && (
               <View style={styles.matchInterestsWrap}>
                 <Text style={styles.matchInterestsLabel}>You both like</Text>
@@ -395,52 +411,48 @@ export default function DiscoverScreen() {
             >
               <Text style={styles.matchBtnText}>Send Message</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.matchBtnSecondary}
-              onPress={() => setMatchData(null)}
-            >
+            <TouchableOpacity style={styles.matchBtnSecondary} onPress={() => setMatchData(null)}>
               <Text style={styles.matchBtnSecondaryText}>Keep Swiping</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </Background>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F4F7F9',
   },
+
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
-    backgroundColor: '#F4F7F9',
   },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#0C5389',
+    color: C.text,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 15,
-    color: '#4A6070',
+    color: C.gray,
     textAlign: 'center',
     lineHeight: 22,
   },
   refreshBtn: {
     marginTop: 24,
-    backgroundColor: '#0C5389',
+    backgroundColor: C.cta,
     paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 13,
+    borderRadius: 50,
   },
   refreshBtnText: {
-    color: '#FDFDFD',
+    color: C.white,
     fontWeight: '700',
     fontSize: 15,
   },
@@ -455,14 +467,14 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
-    color: '#0C5389',
+    color: C.white,
   },
   headerCount: {
     fontSize: 13,
-    color: '#189AA2',
-    fontWeight: '600',
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '500',
   },
 
   // Card area
@@ -475,7 +487,7 @@ const styles = StyleSheet.create({
   backCardWrap: {
     position: 'absolute',
     transform: [{ scale: 0.96 }, { translateY: 10 }],
-    opacity: 0.7,
+    opacity: 0.65,
   },
   frontCardWrap: {
     position: 'absolute',
@@ -488,14 +500,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     paddingVertical: 20,
-    paddingBottom: 28,
-    backgroundColor: '#F4F7F9',
+    paddingBottom: 32,
   },
   btn: {
     borderRadius: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FDFDFD',
+    backgroundColor: C.surface,
+    borderWidth: 1.5,
+    borderColor: C.surfaceBorder,
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 3 },
@@ -503,20 +516,15 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   btnDisabled: { opacity: 0.35 },
-  btnUndo: { width: 52, height: 52, borderWidth: 1.5, borderColor: '#C0CDD6' },
-  btnPass: { width: 64, height: 64, borderWidth: 2, borderColor: '#E53935' },
-  btnTop:  { width: 64, height: 64, borderWidth: 2, borderColor: '#F59E0B' },
-  btnLike: { width: 72, height: 72, borderWidth: 2, borderColor: '#189AA2' },
-  btnIcon: { fontSize: 24 },
-  btnIconUndo: { color: '#9AA', fontSize: 20 },
-  btnIconPass: { color: '#E53935' },
-  btnIconTop:  { color: '#F59E0B' },
-  btnIconLike: { color: '#189AA2', fontSize: 26 },
+  btnUndo: { width: 52, height: 52 },
+  btnPass: { width: 64, height: 64, borderColor: 'rgba(212,24,61,0.35)' },
+  btnTop:  { width: 64, height: 64, borderColor: 'rgba(255,149,0,0.35)' },
+  btnLike: { width: 72, height: 72, borderColor: 'rgba(45,106,79,0.35)' },
 
   // Full profile modal
   profileModal: {
     flex: 1,
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
   },
   profileInfo: {
     padding: 24,
@@ -525,24 +533,24 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#0C5389',
+    color: C.text,
   },
   profileLocation: {
     fontSize: 15,
-    color: '#189AA2',
+    color: C.gray,
     fontWeight: '500',
     marginTop: 4,
   },
   profileBio: {
     fontSize: 15,
-    color: '#4A6070',
+    color: C.gray,
     lineHeight: 22,
     marginTop: 16,
   },
   profileSectionLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#4A6070',
+    color: C.grayDim,
     marginTop: 20,
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -554,7 +562,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   profileChip: {
-    backgroundColor: 'rgba(24,154,162,0.12)',
+    backgroundColor: 'rgba(26,44,36,0.08)',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 16,
@@ -562,7 +570,7 @@ const styles = StyleSheet.create({
   profileChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#189AA2',
+    color: C.text,
   },
   modalActions: {
     flexDirection: 'row',
@@ -571,9 +579,9 @@ const styles = StyleSheet.create({
     gap: 20,
     paddingVertical: 20,
     paddingBottom: 36,
-    backgroundColor: '#FDFDFD',
-    borderTopWidth: 1,
-    borderTopColor: '#E8EEF2',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.08)',
   },
   closeBtn: {
     position: 'absolute',
@@ -586,41 +594,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeBtnText: {
-    color: '#FDFDFD',
-    fontSize: 16,
-    fontWeight: '700',
-  },
 
   // Match modal
   matchOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: '#FDFDFD',
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
     paddingHorizontal: 28,
-    paddingVertical: 28,
+    paddingVertical: 32,
     alignItems: 'center',
     width: '86%',
     shadowColor: '#000',
     shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowRadius: 24,
+    elevation: 12,
   },
-  matchEmoji: { fontSize: 44, marginBottom: 6 },
+  matchEmoji: { fontSize: 48, marginBottom: 6 },
   matchTitle: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '900',
-    color: '#0C5389',
+    color: C.text,
     marginBottom: 16,
   },
   matchSub: {
     fontSize: 15,
-    color: '#4A6070',
+    color: C.gray,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 16,
@@ -635,24 +638,16 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 45,
     borderWidth: 3,
-    borderColor: '#FDFDFD',
+    borderColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
     overflow: 'hidden',
   },
-  matchAvatarRight: {
-    marginLeft: -20,
-  },
-  matchAvatar: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 45,
-  },
-  matchAvatarPlaceholder: {
-    backgroundColor: '#D9E1E6',
-  },
+  matchAvatarRight: { marginLeft: -20 },
+  matchAvatar: { width: '100%', height: '100%', borderRadius: 45 },
+  matchAvatarPlaceholder: { backgroundColor: '#E0E0E0' },
   matchInterestsWrap: {
     alignItems: 'center',
     marginBottom: 20,
@@ -660,7 +655,7 @@ const styles = StyleSheet.create({
   matchInterestsLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#4A6070',
+    color: C.grayDim,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginBottom: 8,
@@ -672,7 +667,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   matchChip: {
-    backgroundColor: 'rgba(24,154,162,0.12)',
+    backgroundColor: 'rgba(26,44,36,0.08)',
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 12,
@@ -680,21 +675,21 @@ const styles = StyleSheet.create({
   matchChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#189AA2',
+    color: C.text,
   },
   matchBtn: {
-    backgroundColor: '#0C5389',
+    backgroundColor: C.cta,
     paddingHorizontal: 28,
-    paddingVertical: 13,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 50,
     width: '100%',
     alignItems: 'center',
     marginBottom: 10,
   },
   matchBtnText: {
-    color: '#FDFDFD',
+    color: C.white,
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 16,
   },
   matchBtnSecondary: {
     paddingVertical: 10,
@@ -702,7 +697,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   matchBtnSecondaryText: {
-    color: '#4A6070',
+    color: C.gray,
     fontSize: 15,
     fontWeight: '500',
   },

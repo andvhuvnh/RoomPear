@@ -158,14 +158,14 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 20,
-    backgroundColor: '#FDFDFD',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
-    shadowColor: '#0C5389',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.10,
-    shadowRadius: 18,
-    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 10,
   },
 
   // Photo
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#D9E1E6',
+    backgroundColor: '#E8E8E8',
   },
   dots: {
     position: 'absolute',
@@ -191,31 +191,31 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 18,
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
   },
   dotInactive: {
     width: 5,
-    backgroundColor: 'rgba(253,253,253,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
   photoBadge: {
     position: 'absolute',
     top: 12,
     right: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
   },
   photoBadgeText: {
-    color: '#FDFDFD',
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
   },
 
   // Divider
   divider: {
-    height: 1,
-    backgroundColor: '#E8EEF2',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(0,0,0,0.06)',
   },
 
   // Info
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 14,
     paddingBottom: 10,
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
   },
   nameRow: {
     flexDirection: 'row',
@@ -235,23 +235,22 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#0C5389',
+    color: '#1A2C24',
     flexShrink: 1,
   },
   age: {
     fontSize: 20,
     fontWeight: '400',
-    color: '#0C5389',
-    opacity: 0.7,
+    color: '#717182',
   },
   location: {
     fontSize: 13,
-    color: '#189AA2',
+    color: '#717182',
     fontWeight: '500',
   },
   bio: {
     fontSize: 13,
-    color: '#4A6070',
+    color: '#717182',
     lineHeight: 19,
     marginBottom: 8,
   },
@@ -262,7 +261,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chip: {
-    backgroundColor: 'rgba(24,154,162,0.10)',
+    backgroundColor: 'rgba(26,44,36,0.08)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -270,11 +269,11 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#189AA2',
+    color: '#1A2C24',
   },
   tapHint: {
     fontSize: 11,
-    color: '#9AA',
+    color: '#A0A0B0',
     marginTop: 4,
     textAlign: 'right',
   },
@@ -286,16 +285,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   listingBadge: {
-    backgroundColor: 'rgba(70,189,127,0.15)',
+    backgroundColor: 'rgba(45,106,79,0.10)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#46BD7F',
+    borderColor: 'rgba(45,106,79,0.30)',
   },
   listingBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#46BD7F',
+    color: '#2D6A4F',
   },
 });

@@ -225,18 +225,18 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   card: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
     borderRadius: CARD_RADIUS,
     overflow: 'hidden',
-    shadowColor: '#0C5389',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.10,
     shadowRadius: 20,
     elevation: 8,
   },
   cardImmersive: {
     borderRadius: 22,
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.14,
     shadowRadius: 28,
   },
   imageWrap: {
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   coverImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#D9E1E6',
+    backgroundColor: '#E8E8E8',
   },
   bottomScrim: {
     position: 'absolute',
@@ -260,11 +260,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 88,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   bottomScrimImmersive: {
     height: 140,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.42)',
   },
   immersiveOverlay: {
     position: 'absolute',
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 16,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.95)',
+    color: 'rgba(255,255,255,0.90)',
     textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
@@ -314,11 +314,11 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   dotActive: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
     width: 18,
   },
   dotInactive: {
-    backgroundColor: 'rgba(253,253,253,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.45)',
   },
   infoBlock: {
     paddingHorizontal: 20,
@@ -333,21 +333,20 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#0C5389',
+    color: '#1A2C24',
     letterSpacing: -0.3,
   },
   meta: {
     marginTop: 6,
     fontSize: 16,
-    color: '#189AA2',
+    color: '#717182',
     fontWeight: '500',
   },
   bio: {
     marginTop: 14,
     fontSize: 15,
     lineHeight: 22,
-    color: '#0C5389',
-    opacity: 0.92,
+    color: '#717182',
   },
   hobbiesRow: {
     flexDirection: 'row',
@@ -357,7 +356,7 @@ const styles = StyleSheet.create({
     marginBottom: -8,
   },
   hobbyChip: {
-    backgroundColor: 'rgba(24, 154, 162, 0.14)',
+    backgroundColor: 'rgba(26,44,36,0.08)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -367,19 +366,18 @@ const styles = StyleSheet.create({
   hobbyChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#189AA2',
+    color: '#1A2C24',
   },
   emptyCover: {
     height: IMAGE_HEIGHT,
-    backgroundColor: '#D9E1E6',
+    backgroundColor: '#E8E8E8',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
   },
   emptyCoverText: {
     fontSize: 15,
-    color: '#0C5389',
+    color: '#717182',
     textAlign: 'center',
-    opacity: 0.85,
   },
 });
