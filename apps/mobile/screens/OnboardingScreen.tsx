@@ -48,6 +48,8 @@ import {
   Prohibit, MusicNote, Sun, Moon, Bed,
   XCircle, MinusCircle, CheckCircle,
 } from 'phosphor-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
@@ -378,6 +380,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [promptCardIdx, setPromptCardIdx] = useState(0);
   const [promptMode, setPromptMode] = useState<'browse' | 'answer'>('browse');
   const [promptDraft, setPromptDraft] = useState('');
+  const [promptBrowseAll, setPromptBrowseAll] = useState(false);
   const promptSlide = useRef(new Animated.Value(0)).current;
   const promptFade  = useRef(new Animated.Value(1)).current;
   // Step 15: Photos
@@ -893,7 +896,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                   mode="date"
                   display="spinner"
                   minimumDate={tomorrow}
-                  themeVariant="dark"
+                  themeVariant="light"
                   style={{ width: '100%' }}
                   onChange={(_, date) => { if (date) setMoveInDate(date); }}
                 />
@@ -1205,6 +1208,46 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 <Text style={styles.pUseBtnText}>{maxDone ? 'All done!' : 'Use this prompt'}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Browse all link */}
+            <TouchableOpacity style={styles.pBrowseAllBtn} onPress={() => setPromptBrowseAll(true)}>
+              <Text style={styles.pBrowseAllText}>Browse all prompts</Text>
+            </TouchableOpacity>
+
+            {/* Browse all modal */}
+            <Modal visible={promptBrowseAll} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPromptBrowseAll(false)}>
+              <View style={styles.pAllModalRoot}>
+                <View style={styles.pAllModalHeader}>
+                  <Text style={styles.pAllModalTitle}>All prompts</Text>
+                  <TouchableOpacity onPress={() => setPromptBrowseAll(false)}>
+                    <Text style={styles.pAllModalClose}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrollView contentContainerStyle={styles.pAllModalList} showsVerticalScrollIndicator={false}>
+                  {PROMPTS.map((p, i) => {
+                    const selected = isPromptSelected(p.question);
+                    const disabled = !selected && maxDone;
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={[styles.pAllRow, selected && styles.pAllRowSelected, disabled && styles.pAllRowDisabled]}
+                        onPress={() => {
+                          if (disabled) return;
+                          setPromptCardIdx(i);
+                          setPromptBrowseAll(false);
+                          setPromptDraft('');
+                          setPromptMode('answer');
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.pAllRowText, selected && styles.pAllRowTextSelected]}>{p.question}</Text>
+                        {selected && <Text style={styles.pAllRowCheck}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </Modal>
           </View>
         );
       }
@@ -1300,6 +1343,20 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      {/* ── Gradient + blur background (matches profile screen) ── */}
+      <LinearGradient
+        colors={['#1A3329', '#2D4F42', '#5A806B', '#9CB8A8', '#D8E8DF', '#F5FAF7', '#FFFFFF']}
+        locations={[0, 0.06, 0.14, 0.28, 0.48, 0.72, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 52 : 34}
+        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterial' : 'light'}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
         {/* ── Header ── */}
@@ -1349,28 +1406,31 @@ export default function OnboardingScreen({ onComplete }: Props) {
   );
 }
 
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── Theme — matches profile-design branch ────────────────────────────────────
 
 const D = {
-  bg:            '#1A1D2E',
-  surface:       'rgba(255,255,255,0.06)',
-  surfaceBorder: 'rgba(255,255,255,0.10)',
-  inputBg:       'rgba(255,255,255,0.08)',
-  inputBorder:   'rgba(255,255,255,0.15)',
-  white:         '#FDFDFD',
-  gray:          '#B0B0B8',
-  grayDim:       '#6B7280',
-  lime:          '#84CC16',
-  limeDark:      '#65A30D',
-  red:           '#F87171',
-  orange:        '#FB923C',
-  trackBg:       'rgba(255,255,255,0.10)',
+  bg:            'transparent',
+  surface:       'rgba(255,255,255,0.82)',   // glass card
+  section:       'rgba(255,255,255,0.55)',
+  surfaceBorder: 'rgba(255,255,255,0.45)',
+  inputBg:       'rgba(255,255,255,0.60)',
+  inputBorder:   'rgba(0,0,0,0.06)',
+  white:         '#1A2C24',                  // dark forest text (matches profile)
+  gray:          '#717182',
+  grayDim:       '#A0A0B0',
+  lime:          '#030213',                  // near-black for buttons/accents
+  limeDark:      '#000000',
+  selectedBg:    '#030213',
+  selectedBorder:'#030213',
+  red:           '#D4183D',
+  orange:        '#FF9500',
+  trackBg:       'rgba(255,255,255,0.35)',
 };
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: D.bg },
+  root:  { flex: 1, backgroundColor: '#1A3329' },
   flex:  { flex: 1 },
 
   // Header
@@ -1383,122 +1443,116 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  backBtnText: { fontSize: 22, color: D.white },
+  backBtnText: { fontSize: 22, color: 'rgba(255,255,255,0.90)' },
   progressWrap: { flex: 1 },
   progressTrack: {
-    height: 4,
+    height: 5,
     backgroundColor: D.trackBg,
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: D.lime, borderRadius: 2 },
+  progressFill: { height: '100%', backgroundColor: D.lime, borderRadius: 3 },
   stepCounter: { fontSize: 12, color: D.gray, fontWeight: '600', minWidth: 38, textAlign: 'right' },
 
   // Question block
   questionBlock: {
     paddingHorizontal: 24,
-    paddingBottom: 28,
-    paddingTop: 8,
+    paddingBottom: 24,
+    paddingTop: 4,
   },
   stepEmoji: { fontSize: 48, marginBottom: 16 },
   stepQuestion: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
-    color: D.white,
-    lineHeight: 36,
-    marginBottom: 8,
+    color: '#FFFFFF',
+    lineHeight: 35,
+    marginBottom: 6,
+    marginTop: 14,
   },
-  stepSubtitle: { fontSize: 15, color: D.gray, lineHeight: 21 },
+  stepSubtitle: { fontSize: 15, color: 'rgba(255,255,255,0.72)', lineHeight: 22 },
 
   // Content areas
-  inputWrapper: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
-  scrollWrapper: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
+  inputWrapper: { flex: 1, paddingHorizontal: 24 },
+  scrollWrapper: { flex: 1, paddingHorizontal: 24 },
   scrollArea: { flex: 1 },
 
   // Single focused input (name, age)
   focusInput: { paddingTop: 8 },
   heroInput: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '600',
     color: D.white,
-    borderBottomWidth: 2,
-    borderBottomColor: D.lime,
+    borderBottomWidth: 1.5,
+    borderBottomColor: 'rgba(0,0,0,0.15)',
     paddingVertical: 12,
     paddingHorizontal: 0,
+    backgroundColor: 'transparent',
   },
 
   // Stacked inputs (location, budget)
   inputStack: { gap: 0 },
   input: {
     backgroundColor: D.inputBg,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: D.inputBorder,
+    borderRadius: 12,
+    borderWidth: 0,
     paddingHorizontal: 16,
     paddingVertical: 15,
-    fontSize: 17,
+    fontSize: 16,
     color: D.white,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: D.gray,
+    color: D.grayDim,
     marginTop: 16,
     marginBottom: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
   hint: { fontSize: 13, color: D.grayDim, lineHeight: 18, marginBottom: 12 },
   errorText: { fontSize: 13, color: D.red, marginBottom: 8 },
 
-  // Chip area (full-width chips)
-  chipArea: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    paddingTop: 4,
-  },
+  // Chips
+  chipArea: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
   chip: {
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 50,
-    borderWidth: 1.5,
-    borderColor: D.surfaceBorder,
+    borderRadius: 12,
+    borderWidth: 0,
     backgroundColor: D.surface,
     marginRight: 8,
     marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  chipSelected: { backgroundColor: D.lime, borderColor: D.lime },
-  chipDisabled: { opacity: 0.35 },
-  chipText: { fontSize: 15, color: D.gray },
-  chipTextSelected: { color: '#0F1A00', fontWeight: '700' },
+  chipSelected: { backgroundColor: D.selectedBg, shadowOpacity: 0 },
+  chipDisabled: { opacity: 0.4 },
+  chipText: { fontSize: 15, color: D.white },
+  chipTextSelected: { color: '#FFFFFF', fontWeight: '700' },
 
   // Scale (cleanliness)
   scaleArea: { paddingTop: 16 },
   scaleLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   scaleLabel: { fontSize: 13, color: D.gray },
-  scaleChips: { flexDirection: 'row', gap: 12 },
+  scaleChips: { flexDirection: 'row', gap: 10 },
   scaleChip: {
     flex: 1,
     aspectRatio: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: D.surfaceBorder,
     backgroundColor: D.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scaleChipSelected: { backgroundColor: D.lime, borderColor: D.lime },
+  scaleChipSelected: { backgroundColor: D.selectedBg, borderColor: D.selectedBorder },
   scaleChipText: { fontSize: 20, fontWeight: '700', color: D.gray },
-  scaleChipTextSelected: { color: '#0F1A00' },
+  scaleChipTextSelected: { color: '#FFFFFF' },
 
   // Yes/No rows (pets & smoking)
   yesNoArea: { gap: 20, paddingTop: 8 },
@@ -1508,10 +1562,10 @@ const styles = StyleSheet.create({
 
   // Date picker
   dateBtn: {
-    backgroundColor: D.inputBg,
+    backgroundColor: D.surface,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: D.inputBorder,
+    borderWidth: 1.5,
+    borderColor: D.surfaceBorder,
     padding: 18,
     alignItems: 'center',
     marginTop: 8,
@@ -1521,9 +1575,9 @@ const styles = StyleSheet.create({
   datePickerWrap: {
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: D.surface,
+    borderWidth: 1.5,
+    borderColor: D.surfaceBorder,
   },
   dateDoneBtn: {
     alignSelf: 'flex-end',
@@ -1533,9 +1587,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 10,
   },
-  dateDoneBtnText: { color: '#0F1A00', fontSize: 14, fontWeight: '700' },
+  dateDoneBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 
-  // Dealbreakers
+  // Dealbreakers (old chip style — unused in card flow but kept)
   dbRow: { marginBottom: 18 },
   dbLabel: { fontSize: 15, color: D.white, fontWeight: '500', marginBottom: 8 },
   dbChips: { flexDirection: 'row', gap: 8 },
@@ -1544,9 +1598,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: D.surfaceBorder,
     backgroundColor: D.surface, alignItems: 'center',
   },
-  dbChipHard: { backgroundColor: 'rgba(248,113,113,0.20)', borderColor: D.red },
-  dbChipSoft: { backgroundColor: 'rgba(251,146,60,0.20)', borderColor: D.orange },
-  dbChipNone: { backgroundColor: 'rgba(132,204,22,0.20)', borderColor: D.lime },
+  dbChipHard: { backgroundColor: '#FEF2F2', borderColor: D.red },
+  dbChipSoft: { backgroundColor: '#FFF7ED', borderColor: D.orange },
+  dbChipNone: { backgroundColor: D.selectedBg, borderColor: D.lime },
   dbChipText: { fontSize: 13, color: D.gray, fontWeight: '500' },
   dbChipTextSelected: { color: D.white, fontWeight: '700' },
 
@@ -1558,27 +1612,27 @@ const styles = StyleSheet.create({
   catContent: { paddingBottom: 10 },
   customInputRow: { marginTop: 4, marginBottom: 8 },
   customInput: {
-    backgroundColor: D.inputBg, borderRadius: 10, borderWidth: 1,
-    borderColor: D.inputBorder, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: D.surface, borderRadius: 10, borderWidth: 1.5,
+    borderColor: D.surfaceBorder, paddingHorizontal: 14, paddingVertical: 10,
     fontSize: 14, color: D.white,
   },
 
-  // Prompts
+  // Prompts (legacy — kept for safety)
   promptCount: { fontSize: 13, color: D.lime, fontWeight: '600', marginBottom: 12 },
   promptBlock: { marginBottom: 8 },
   promptRow: {
-    padding: 14, borderRadius: 12, borderWidth: 1.5,
+    padding: 14, borderRadius: 14, borderWidth: 1.5,
     borderColor: D.surfaceBorder, backgroundColor: D.surface,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  promptRowSelected: { borderColor: D.lime, backgroundColor: 'rgba(132,204,22,0.08)' },
+  promptRowSelected: { borderColor: D.selectedBorder, backgroundColor: D.selectedBg },
   promptRowDimmed: { opacity: 0.35 },
   promptText: { fontSize: 14, color: D.gray, flex: 1, lineHeight: 20 },
   promptTextSelected: { color: D.white, fontWeight: '500' },
   promptCheck: { fontSize: 16, color: D.lime, marginLeft: 8, fontWeight: '700' },
   promptInput: {
-    backgroundColor: D.inputBg, borderRadius: 12, borderWidth: 1,
-    borderColor: D.inputBorder, paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: D.surface, borderRadius: 12, borderWidth: 1.5,
+    borderColor: D.surfaceBorder, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 14, color: D.white, marginTop: 6, minHeight: 80, textAlignVertical: 'top',
   },
 
@@ -1588,10 +1642,10 @@ const styles = StyleSheet.create({
   photoImg: { width: '100%', height: '100%', resizeMode: 'cover' },
   photoRemove: {
     position: 'absolute', top: 6, right: 6, width: 26, height: 26,
-    borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center', justifyContent: 'center',
   },
-  photoRemoveText: { color: D.white, fontSize: 12, fontWeight: '700' },
+  photoRemoveText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   photoAdd: {
     borderRadius: 14, borderWidth: 2, borderColor: D.surfaceBorder,
     borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center',
@@ -1608,68 +1662,68 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingTop: 12,
     gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: D.surfaceBorder,
-    backgroundColor: D.bg,
   },
   skipBtn: {
     flex: 1,
-    borderRadius: 50,
-    paddingVertical: 15,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
-    backgroundColor: D.surface,
-    borderWidth: 1,
-    borderColor: D.surfaceBorder,
+    backgroundColor: D.inputBg,
+    borderWidth: 0,
   },
   skipBtnText: { fontSize: 16, fontWeight: '600', color: D.gray },
   nextBtn: {
     flex: 2,
-    borderRadius: 50,
-    paddingVertical: 15,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     backgroundColor: D.lime,
-    shadowColor: D.lime,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
   },
   nextBtnFlex: { flex: 1 },
-  nextBtnDisabled: { opacity: 0.4, shadowOpacity: 0 },
-  nextBtnText: { fontSize: 16, fontWeight: '800', color: '#0F1A00' },
+  nextBtnDisabled: { opacity: 0.35, shadowOpacity: 0 },
+  nextBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 
   // State picker trigger
   pickerBtn: {
     backgroundColor: D.inputBg,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: D.inputBorder,
+    borderRadius: 12,
+    borderWidth: 0,
     paddingHorizontal: 16,
     paddingVertical: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  pickerBtnText: { fontSize: 17, color: D.white, fontWeight: '500' },
-  pickerBtnPlaceholder: { fontSize: 17, color: D.grayDim },
+  pickerBtnText: { fontSize: 16, color: D.white, fontWeight: '500' },
+  pickerBtnPlaceholder: { fontSize: 16, color: D.grayDim },
   pickerChevron: { fontSize: 11, color: D.lime },
 
   // Disabled input
-  inputDisabled: { opacity: 0.35 },
+  inputDisabled: { opacity: 0.4 },
 
   // Modal bottom sheet
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#252938',
+    backgroundColor: 'rgba(242,242,247,0.97)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 16,
     maxHeight: '75%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1677,16 +1731,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: D.surfaceBorder,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: D.white },
-  modalClose: { fontSize: 18, color: D.gray, paddingHorizontal: 4 },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: D.white },
+  modalClose: { fontSize: 18, color: D.grayDim, paddingHorizontal: 4 },
   modalSearch: {
     marginHorizontal: 16,
+    marginTop: 12,
     marginBottom: 8,
     backgroundColor: D.inputBg,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: D.inputBorder,
+    borderWidth: 0,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 15,
@@ -1703,130 +1759,83 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: D.surfaceBorder,
   },
-  stateRowSelected: { backgroundColor: 'rgba(132,204,22,0.10)' },
-  stateRowText: { fontSize: 16, color: D.gray },
-  stateRowTextSelected: { color: D.lime, fontWeight: '700' },
+  stateRowSelected: { backgroundColor: D.selectedBg },
+  stateRowText: { fontSize: 16, color: D.white },
+  stateRowTextSelected: { color: '#FFFFFF', fontWeight: '700' },
   stateRowAbbr: { fontSize: 14, color: D.grayDim, fontWeight: '600' },
 
   // Dealbreaker card sub-flow
-  dbCardArea: {
-    flex: 1,
-    paddingTop: 8,
-    gap: 14,
-  },
-  dbDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  dbDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  dbDotActive: {
-    backgroundColor: D.lime,
-    width: 20,
-    borderRadius: 4,
-  },
-  dbDotDone: {
-    backgroundColor: 'rgba(132,204,22,0.40)',
-  },
+  dbCardArea: { flex: 1, paddingTop: 8, gap: 12 },
+  dbDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 8 },
+  dbDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: D.trackBg },
+  dbDotActive: { backgroundColor: D.lime, width: 20, borderRadius: 4 },
+  dbDotDone: { backgroundColor: D.selectedBorder },
   dbCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: D.surface,
-    borderWidth: 1.5,
-    borderColor: D.surfaceBorder,
-    borderRadius: 18,
-    paddingVertical: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 16,
+    paddingVertical: 18,
     paddingHorizontal: 20,
     gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  dbCardHard: {
-    backgroundColor: 'rgba(248,113,113,0.15)',
-    borderColor: D.red,
-  },
-  dbCardSoft: {
-    backgroundColor: 'rgba(251,146,60,0.15)',
-    borderColor: D.orange,
-  },
-  dbCardNone: {
-    backgroundColor: 'rgba(132,204,22,0.15)',
-    borderColor: D.lime,
-  },
+  dbCardHard: { backgroundColor: '#FEF2F2', borderColor: D.red },
+  dbCardSoft: { backgroundColor: '#FFF7ED', borderColor: D.orange },
+  dbCardNone: { backgroundColor: '#F9FAFB', borderColor: '#9CA3AF' },
   dbCardEmoji: { fontSize: 32 },
   dbCardText: { flex: 1 },
-  dbCardLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: D.white,
-    marginBottom: 2,
-  },
+  dbCardLabel: { fontSize: 17, fontWeight: '700', color: D.white, marginBottom: 2 },
   dbCardLabelSelected: { color: D.white },
-  dbCardSub: {
-    fontSize: 13,
-    color: D.gray,
-  },
+  dbCardSub: { fontSize: 13, color: D.gray },
 
   // ── Prompt card sub-flow ──────────────────────────────────────────────────────
 
-  // Browse mode
-  pProgressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 20,
-  },
-  pProgressDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: D.trackBg,
-  },
+  pProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
+  pProgressDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: D.trackBg },
   pProgressDotDone: { backgroundColor: D.lime },
   pProgressText: { fontSize: 13, color: D.gray, fontWeight: '600', marginLeft: 4 },
 
   pCard: {
     flex: 1,
     backgroundColor: D.surface,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: D.surfaceBorder,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.9)',
     padding: 28,
     justifyContent: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 3,
   },
-  pCardQuestion: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: D.white,
-    lineHeight: 34,
-  },
+  pCardQuestion: { fontSize: 24, fontWeight: '800', color: D.white, lineHeight: 32 },
   pCardDoneBadge: {
     alignSelf: 'flex-start',
     marginTop: 16,
-    backgroundColor: 'rgba(132,204,22,0.15)',
+    backgroundColor: D.selectedBg,
     borderRadius: 50,
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  pCardDoneBadgeText: { fontSize: 12, fontWeight: '700', color: D.lime },
+  pCardDoneBadgeText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 
-  pActions: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingBottom: 8,
-  },
+  pActions: { flexDirection: 'row', gap: 12, paddingBottom: 8 },
   pSkipBtn: {
     flex: 1,
     borderRadius: 50,
     paddingVertical: 15,
     alignItems: 'center',
     backgroundColor: D.surface,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: D.surfaceBorder,
   },
   pSkipBtnText: { fontSize: 16, fontWeight: '600', color: D.gray },
@@ -1836,30 +1845,24 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
     backgroundColor: D.lime,
-    shadowColor: D.lime,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   pUseBtnDisabled: { opacity: 0.4, shadowOpacity: 0 },
-  pUseBtnText: { fontSize: 16, fontWeight: '800', color: '#0F1A00' },
+  pUseBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 
-  // Answer mode
   pAnswerHeader: {
-    backgroundColor: D.surface,
-    borderRadius: 20,
+    backgroundColor: D.selectedBg,
+    borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: D.lime,
+    borderColor: D.selectedBorder,
     padding: 20,
     marginBottom: 24,
   },
-  pAnswerQuestion: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: D.white,
-    lineHeight: 28,
-  },
+  pAnswerQuestion: { fontSize: 19, fontWeight: '700', color: D.white, lineHeight: 27 },
   pSuggestLabel: { fontSize: 13, color: D.gray, fontWeight: '600', marginBottom: 10 },
   pSuggestList: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   pSuggestChip: {
@@ -1870,14 +1873,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: D.surfaceBorder,
   },
-  pSuggestChipActive: { borderColor: D.lime, backgroundColor: 'rgba(132,204,22,0.10)' },
+  pSuggestChipActive: { borderColor: D.selectedBorder, backgroundColor: D.selectedBg },
   pSuggestText: { fontSize: 14, color: D.gray, fontWeight: '500' },
-  pSuggestTextActive: { color: D.lime },
+  pSuggestTextActive: { color: '#FFFFFF', fontWeight: '600' },
   pDraftInput: {
-    backgroundColor: D.inputBg,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: D.inputBorder,
+    backgroundColor: D.surface,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: D.surfaceBorder,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
@@ -1892,13 +1895,51 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     backgroundColor: D.lime,
-    shadowColor: D.lime,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
     marginBottom: 24,
   },
   pSaveBtnDisabled: { opacity: 0.4, shadowOpacity: 0 },
-  pSaveBtnText: { fontSize: 16, fontWeight: '800', color: '#0F1A00' },
+  pSaveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+
+  // Browse-all link + modal
+  pBrowseAllBtn: { alignItems: 'center', paddingVertical: 12 },
+  pBrowseAllText: { fontSize: 14, color: D.gray, fontWeight: '500', textDecorationLine: 'underline' },
+  pAllModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  pAllModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: D.surfaceBorder,
+  },
+  pAllModalTitle: { fontSize: 18, fontWeight: '700', color: D.white },
+  pAllModalClose: { fontSize: 15, color: D.gray, fontWeight: '600' },
+  pAllModalList: {
+    backgroundColor: D.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingBottom: 32,
+  },
+  pAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  pAllRowSelected: { backgroundColor: 'rgba(3,2,19,0.04)' },
+  pAllRowDisabled: { opacity: 0.35 },
+  pAllRowText: { fontSize: 15, color: D.white, flex: 1 },
+  pAllRowTextSelected: { fontWeight: '600' },
+  pAllRowCheck: { marginLeft: 12 },
 });
