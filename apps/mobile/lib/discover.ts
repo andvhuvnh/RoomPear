@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
-import { getProfileImageUrls } from './storage';
+import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
 import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
+
+export type PromptEntry = { question: string; answer: string };
 
 export type DiscoverProfile = {
   id: string;
@@ -9,7 +11,9 @@ export type DiscoverProfile = {
   age: number | null;
   bio: string | null;
   hobbies: string[] | null;
-  photoUrls: string[];
+  prompts: PromptEntry[];
+  photoUrls: string[];         // profile photos + listing photos combined
+  profilePhotoCount: number;   // split point: photoUrls[0..n-1] are profile, rest are listing
   location: string;
   hasListing: boolean;
 };
@@ -33,7 +37,7 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, has_listing, profile_photo_url, subscription_tier, created_at, updated_at, ' +
+      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, created_at, updated_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
       'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed)'
     )
@@ -100,13 +104,36 @@ export async function fetchDiscoverProfiles(
     const interestChips = Object.values(prefs?.interests ?? {}).flat() as string[];
     const hobbies = interestChips.length > 0 ? interestChips : (row.hobbies ?? null);
 
+    // Fetch listing photos if this user has a place listed
+    let listingPhotoUrls: string[] = [];
+    if (row.has_listing === true) {
+      const { data: listing } = await supabase
+        .from('listings')
+        .select('listing_photos')
+        .eq('user_id', row.id)
+        .maybeSingle();
+
+      const paths: string[] = Array.isArray(listing?.listing_photos)
+        ? listing.listing_photos
+        : [];
+
+      const signed = await Promise.all(paths.map(p => getProfileImageUrl(p)));
+      listingPhotoUrls = signed.filter((u): u is string => u !== null);
+    }
+
+    const prompts: PromptEntry[] = Array.isArray(row.prompts)
+      ? row.prompts.filter((p: any) => p?.question && p?.answer)
+      : [];
+
     result.push({
       id: row.id,
       name: row.name ?? 'Unknown',
       age: row.age ?? null,
       bio: row.bio ?? null,
       hobbies,
-      photoUrls: urls,
+      prompts,
+      photoUrls: [...urls, ...listingPhotoUrls],
+      profilePhotoCount: urls.length,
       hasListing: row.has_listing === true,
       location,
     });

@@ -10,10 +10,13 @@ import {
   NativeScrollEvent,
   type ListRenderItemInfo,
   type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 
 const CARD_RADIUS = 16;
 const IMAGE_HEIGHT = 420;
+const IMAGE_HEIGHT_IMMERSIVE = 500;
 
 export type PublicProfileCardProps = {
   imageUrls: string[];
@@ -23,6 +26,9 @@ export type PublicProfileCardProps = {
   /** Short intro shown under age / location */
   bio?: string | null;
   hobbies?: string[] | null;
+  /** default: standard card. immersive: hero + name on image. profilePhotos: photos + dots only (e.g. own profile tab). */
+  variant?: 'default' | 'immersive' | 'profilePhotos';
+  style?: StyleProp<ViewStyle>;
 };
 
 export default function PublicProfileCard({
@@ -32,10 +38,14 @@ export default function PublicProfileCard({
   location,
   bio,
   hobbies,
+  variant = 'default',
+  style,
 }: PublicProfileCardProps) {
-  const [cardWidth, setCardWidth] = useState(
-    () => Dimensions.get('window').width - 40
-  );
+  const immersive = variant === 'immersive';
+  const profilePhotos = variant === 'profilePhotos';
+  const heroStyle = immersive || profilePhotos;
+  const imageHeight = heroStyle ? IMAGE_HEIGHT_IMMERSIVE : IMAGE_HEIGHT;
+  const [cardWidth, setCardWidth] = useState(() => Dimensions.get('window').width - 40);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const onCardLayout = useCallback((e: LayoutChangeEvent) => {
@@ -54,7 +64,7 @@ export default function PublicProfileCard({
 
   const renderImage = useCallback(
     ({ item }: ListRenderItemInfo<string>) => (
-      <View style={{ width: cardWidth, height: IMAGE_HEIGHT }}>
+      <View style={{ width: cardWidth, height: imageHeight }}>
         <Image
           source={{ uri: item }}
           style={styles.coverImage}
@@ -62,7 +72,7 @@ export default function PublicProfileCard({
         />
       </View>
     ),
-    [cardWidth]
+    [cardWidth, imageHeight]
   );
 
   const displayName = name.trim() || 'Your name';
@@ -88,24 +98,58 @@ export default function PublicProfileCard({
     </>
   );
 
+  const overlayMeta = immersive ? (
+    <View style={styles.immersiveOverlay} pointerEvents="none">
+      <Text style={styles.immersiveName} numberOfLines={2}>
+        {displayName}
+      </Text>
+      {metaLine ? (
+        <Text style={styles.immersiveMeta} numberOfLines={2}>
+          {metaLine}
+        </Text>
+      ) : null}
+    </View>
+  ) : null;
+
   if (imageUrls.length === 0) {
     return (
-      <View style={[styles.card, styles.cardOuter]} onLayout={onCardLayout}>
-        <View style={[styles.emptyCover, { width: cardWidth }]}>
-          <Text style={styles.emptyCoverText}>Add photos to see your card</Text>
+      <View
+        style={[
+          styles.card,
+          heroStyle ? styles.cardOuterImmersive : styles.cardOuter,
+          (immersive || profilePhotos) && styles.cardImmersive,
+          style,
+        ]}
+        onLayout={onCardLayout}
+      >
+        <View style={heroStyle ? styles.emptyHeroWrap : undefined}>
+          <View style={[styles.emptyCover, { width: cardWidth, height: imageHeight }]}>
+            <Text style={styles.emptyCoverText}>Add photos to see your card</Text>
+          </View>
+          {immersive ? overlayMeta : null}
         </View>
-        <View style={styles.infoBlock}>
-          <Text style={styles.name}>{displayName}</Text>
-          {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
-          {detailsSection}
-        </View>
+        {!heroStyle ? (
+          <View style={styles.infoBlock}>
+            <Text style={styles.name}>{displayName}</Text>
+            {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
+            {detailsSection}
+          </View>
+        ) : null}
       </View>
     );
   }
 
   return (
-    <View style={[styles.card, styles.cardOuter]} onLayout={onCardLayout}>
-      <View style={styles.imageWrap}>
+    <View
+      style={[
+        styles.card,
+        heroStyle ? styles.cardOuterImmersive : styles.cardOuter,
+        (immersive || profilePhotos) && styles.cardImmersive,
+        style,
+      ]}
+      onLayout={onCardLayout}
+    >
+      <View style={[styles.imageWrap, heroStyle && styles.imageWrapImmersive]}>
         <FlatList
           data={imageUrls}
           keyExtractor={(_, index) => `photo-${index}`}
@@ -121,9 +165,18 @@ export default function PublicProfileCard({
             index,
           })}
         />
-        <View style={styles.bottomScrim} pointerEvents="none" />
+        {!profilePhotos ? (
+          <View
+            style={[styles.bottomScrim, immersive && styles.bottomScrimImmersive]}
+            pointerEvents="none"
+          />
+        ) : null}
+        {immersive ? overlayMeta : null}
         {imageUrls.length > 1 ? (
-          <View style={styles.dots} pointerEvents="none">
+          <View
+            style={[styles.dots, immersive && styles.dotsImmersive]}
+            pointerEvents="none"
+          >
             {imageUrls.map((_, i) => (
               <View
                 key={i}
@@ -137,17 +190,21 @@ export default function PublicProfileCard({
         ) : null}
       </View>
 
-      <View style={styles.infoBlock}>
-        <Text style={styles.name} numberOfLines={2}>
-          {displayName}
-        </Text>
-        {metaLine ? (
-          <Text style={styles.meta} numberOfLines={2}>
-            {metaLine}
+      {!heroStyle ? (
+        <View style={styles.infoBlock}>
+          <Text style={styles.name} numberOfLines={2}>
+            {displayName}
           </Text>
-        ) : null}
-        {detailsSection}
-      </View>
+          {metaLine ? (
+            <Text style={styles.meta} numberOfLines={2}>
+              {metaLine}
+            </Text>
+          ) : null}
+          {detailsSection}
+        </View>
+      ) : detailsSection && !profilePhotos ? (
+        <View style={styles.infoBlockCompact}>{detailsSection}</View>
+      ) : null}
     </View>
   );
 }
@@ -158,15 +215,29 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
   },
+  cardOuterImmersive: {
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  emptyHeroWrap: {
+    position: 'relative',
+    width: '100%',
+    alignSelf: 'stretch',
+  },
   card: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
     borderRadius: CARD_RADIUS,
     overflow: 'hidden',
-    shadowColor: '#0C5389',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.10,
     shadowRadius: 20,
     elevation: 8,
+  },
+  cardImmersive: {
+    borderRadius: 22,
+    shadowOpacity: 0.14,
+    shadowRadius: 28,
   },
   imageWrap: {
     borderTopLeftRadius: CARD_RADIUS,
@@ -174,10 +245,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
+  imageWrapImmersive: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
   coverImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#D9E1E6',
+    backgroundColor: '#E8E8E8',
   },
   bottomScrim: {
     position: 'absolute',
@@ -185,7 +260,39 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 88,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  bottomScrimImmersive: {
+    height: 140,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  immersiveOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 22,
+    paddingTop: 48,
+    zIndex: 2,
+  },
+  immersiveName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  immersiveMeta: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.90)',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   dots: {
     position: 'absolute',
@@ -196,6 +303,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  dotsImmersive: {
+    bottom: 108,
+    zIndex: 3,
+  },
   dot: {
     marginHorizontal: 3,
     width: 6,
@@ -203,35 +314,39 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   dotActive: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: '#FFFFFF',
     width: 18,
   },
   dotInactive: {
-    backgroundColor: 'rgba(253,253,253,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.45)',
   },
   infoBlock: {
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 22,
   },
+  infoBlockCompact: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
   name: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#0C5389',
+    color: '#1A2C24',
     letterSpacing: -0.3,
   },
   meta: {
     marginTop: 6,
     fontSize: 16,
-    color: '#189AA2',
+    color: '#717182',
     fontWeight: '500',
   },
   bio: {
     marginTop: 14,
     fontSize: 15,
     lineHeight: 22,
-    color: '#0C5389',
-    opacity: 0.92,
+    color: '#717182',
   },
   hobbiesRow: {
     flexDirection: 'row',
@@ -241,7 +356,7 @@ const styles = StyleSheet.create({
     marginBottom: -8,
   },
   hobbyChip: {
-    backgroundColor: 'rgba(24, 154, 162, 0.14)',
+    backgroundColor: 'rgba(26,44,36,0.08)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -251,19 +366,18 @@ const styles = StyleSheet.create({
   hobbyChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#189AA2',
+    color: '#1A2C24',
   },
   emptyCover: {
     height: IMAGE_HEIGHT,
-    backgroundColor: '#D9E1E6',
+    backgroundColor: '#E8E8E8',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
   },
   emptyCoverText: {
     fontSize: 15,
-    color: '#0C5389',
+    color: '#717182',
     textAlign: 'center',
-    opacity: 0.85,
   },
 });
