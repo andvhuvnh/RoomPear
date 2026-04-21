@@ -319,6 +319,22 @@ export default function DiscoverScreen() {
                 {expandedProfile.bio ? (
                   <Text style={styles.profileBio}>{expandedProfile.bio}</Text>
                 ) : null}
+
+                {expandedProfile.prompts && expandedProfile.prompts.length > 0 && (
+                  <>
+                    <Text style={styles.profileSectionLabel}>Prompts</Text>
+                    {expandedProfile.prompts.map((p, i) => (
+                      <View key={i} style={styles.promptCard}>
+                        <View style={styles.promptAccent} />
+                        <View style={styles.promptContent}>
+                          <Text style={styles.promptQuestion}>{p.question}</Text>
+                          <Text style={styles.promptAnswer}>{p.answer}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+
                 {expandedProfile.hobbies && expandedProfile.hobbies.length > 0 && (
                   <>
                     <Text style={styles.profileSectionLabel}>Interests</Text>
@@ -515,6 +531,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50,
   },
   profileChipText: { fontSize: 13, fontWeight: '600', color: '#2D6A4F' },
+  promptCard: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(45,106,79,0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  promptAccent: {
+    width: 3,
+    backgroundColor: '#2D6A4F',
+  },
+  promptContent: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  promptQuestion: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#A0A0B0',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 5,
+  },
+  promptAnswer: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.text,
+    lineHeight: 22,
+  },
   modalActions: {
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
     gap: 20, paddingVertical: 20, paddingBottom: 36,
