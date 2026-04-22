@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LikesScreen from '../screens/LikesScreen';
 import PublicUserProfileScreen from '../screens/PublicUserProfileScreen';
+import { CHATS_SCREEN_BG } from '../theme/chatsAmbient';
 
 export type LikesStackParamList = {
   LikesHome: undefined;
@@ -19,7 +20,7 @@ export default function LikesStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#F4F7F9' },
+        contentStyle: { backgroundColor: CHATS_SCREEN_BG },
       }}
     >
       <Stack.Screen name="LikesHome" component={LikesScreen} />

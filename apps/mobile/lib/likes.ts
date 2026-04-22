@@ -8,6 +8,8 @@ export type Liker = {
   location: string;
   photoUrls: string[];
   likedAt: string;
+  /** True when their swipe toward you was a top pick (not a standard like). */
+  usedTopPick: boolean;
 };
 
 /**
@@ -17,7 +19,7 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
   // Who liked me
   const { data: likeRows } = await supabase
     .from('swipes')
-    .select('swiper_id, created_at')
+    .select('swiper_id, created_at, direction')
     .eq('swiped_id', userId)
     .in('direction', ['like', 'top_pick']);
 
@@ -35,6 +37,17 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
   if (pending.length === 0) return [];
 
   const likerIds = pending.map((r: any) => r.swiper_id);
+
+  /** If someone has multiple swipe rows, prefer top_pick; else most recent. */
+  function swipeRowForSwiper(swiperId: string) {
+    const forUser = pending.filter((r: any) => r.swiper_id === swiperId);
+    if (forUser.length === 0) return undefined;
+    const top = forUser.find((r: any) => r.direction === 'top_pick');
+    if (top) return top;
+    return [...forUser].sort((a: any, b: any) =>
+      String(b.created_at).localeCompare(String(a.created_at))
+    )[0];
+  }
 
   const { data: profiles } = await supabase
     .from('profiles')
@@ -57,7 +70,7 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
     const state = prefs?.state?.trim() ?? '';
     const location = city && state ? `${city}, ${state}` : city || state;
 
-    const row = pending.find((r: any) => r.swiper_id === profile.id);
+    const row = swipeRowForSwiper(profile.id);
 
     result.push({
       id: profile.id,
@@ -66,6 +79,7 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
       location,
       photoUrls: urls,
       likedAt: row?.created_at ?? '',
+      usedTopPick: row?.direction === 'top_pick',
     });
   }
 
