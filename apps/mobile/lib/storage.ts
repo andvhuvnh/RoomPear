@@ -14,6 +14,37 @@ const PROFILE_IMAGES_BUCKET = 'profile-images';
 const SIGNED_URL_EXPIRY = 31536000;
 
 /**
+ * Stable key for image caches (expo-image `cacheKey`). Supabase `createSignedUrl` returns a new
+ * query string each call, so caching by full URI misses; use storage path instead.
+ */
+export function profilePhotoPrimaryCacheKey(
+  profilePhotoUrl: string | null | undefined
+): string | null {
+  if (!profilePhotoUrl?.trim()) return null;
+  const raw = profilePhotoUrl.trim();
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+      return parsed[0].split('?')[0] || null;
+    }
+  } catch {
+    // not JSON — single path or URL
+  }
+  if (raw.startsWith('http')) {
+    const urlParts = raw.split('/');
+    const bucketIndex = urlParts.findIndex((part) => part === PROFILE_IMAGES_BUCKET);
+    if (bucketIndex !== -1 && bucketIndex < urlParts.length - 1) {
+      return urlParts.slice(bucketIndex + 1).join('/').split('?')[0];
+    }
+    const lastTwo = urlParts.slice(-2);
+    if (lastTwo.length === 2) {
+      return lastTwo.join('/').split('?')[0];
+    }
+  }
+  return raw.split('?')[0];
+}
+
+/**
  * Verify that the storage bucket exists and is accessible
  * This is a helper function for debugging
  */

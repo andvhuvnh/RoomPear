@@ -2,15 +2,26 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import {
+  useFonts,
+  Nunito_400Regular,
+  Nunito_500Medium,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+} from '@expo-google-fonts/nunito';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
+import { registerForPushNotifications } from './lib/notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
+import { PurchasesProvider } from './context/PurchasesContext';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -18,6 +29,14 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [appState, setAppState] = useState<AppState>('loading');
   const [loading, setLoading] = useState(true);
+
+  const [fontsLoaded, fontError] = useFonts({
+    Nunito_400Regular,
+    Nunito_500Medium,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+  });
 
   useEffect(() => {
     const mapboxToken = Constants.expoConfig?.extra?.mapboxAccessToken as string | undefined;
@@ -73,33 +92,40 @@ export default function App() {
 
     const hasPrefs = await hasPreferences(session.user.id);
     setAppState(hasPrefs ? 'home' : 'onboarding');
+    registerForPushNotifications(session.user.id);
   };
 
   const handleOnboardingComplete = () => setAppState('home');
 
-  if (loading || appState === 'loading') {
+  if ((!fontsLoaded && !fontError) || loading || appState === 'loading') {
     return (
-      <SafeAreaProvider>
-        <View style={styles.loadingRoot}>
-          <ActivityIndicator size="large" color="#0C5389" />
-        </View>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <View style={styles.loadingRoot}>
+            <ActivityIndicator size="large" color="#0C5389" />
+          </View>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
-      {appState === 'auth' && <AuthScreen />}
-      {appState === 'onboarding' && (
-        <OnboardingScreen onComplete={handleOnboardingComplete} />
-      )}
-      {appState === 'home' && (
-        <NavigationContainer>
-          <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-        </NavigationContainer>
-      )}
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        {appState === 'auth' && <AuthScreen />}
+        {appState === 'onboarding' && (
+          <OnboardingScreen onComplete={handleOnboardingComplete} />
+        )}
+        {appState === 'home' && session?.user && (
+          <PurchasesProvider userId={session.user.id}>
+            <NavigationContainer>
+              <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
+            </NavigationContainer>
+          </PurchasesProvider>
+        )}
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

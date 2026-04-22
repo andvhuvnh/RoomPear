@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,12 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
+  Keyboard,
+  type KeyboardEvent,
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import { supabase } from '../lib/supabase';
@@ -18,12 +20,93 @@ import {
   markConversationRead,
   sendMessage,
   ensureMatchConversation,
+  clearConversationHiddenFromList,
   type ChatMessageRow,
 } from '../lib/messaging';
+import {
+  CHATS_SCREEN_BG,
+  CHATS_CARD,
+  CHATS_GREEN,
+  CHATS_GREEN_BORDER,
+} from '../theme/chatsAmbient';
+import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 
 type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
 
+/** Extra space between the composer and the top of the keyboard (iOS). */
+const KEYBOARD_TOP_GAP = 10;
+
+const C = {
+  text: '#1A2C24',
+  gray: '#717182',
+  /** Outgoing bubble — dark gray-green, white type. */
+  mineBubble: '#5A6560',
+  mineTextOnBubble: '#FAFBFA',
+  white: '#FFFFFF',
+  surface: CHATS_CARD,
+  surfaceBorder: CHATS_GREEN_BORDER,
+  cta: '#030213',
+};
+
+type ChatListItem =
+  | { kind: 'date'; id: string; label: string }
+  | { kind: 'msg'; id: string; msg: ChatMessageRow };
+
+function isSameLocalCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Today / yesterday / short date for older days (year if not current year). */
+function formatDateSeparatorLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  if (isSameLocalCalendarDay(d, today)) return 'Today';
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameLocalCalendarDay(d, yesterday)) return 'Yesterday';
+
+  const sameYear = d.getFullYear() === today.getFullYear();
+  if (sameYear) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function buildChatListItems(rows: ChatMessageRow[]): ChatListItem[] {
+  const out: ChatListItem[] = [];
+  let prevDayKey: string | null = null;
+
+  for (const msg of rows) {
+    const dayKey = localDayKey(msg.created_at);
+    if (dayKey !== prevDayKey) {
+      out.push({
+        kind: 'date',
+        id: `date-${dayKey}`,
+        label: formatDateSeparatorLabel(msg.created_at),
+      });
+      prevDayKey = dayKey;
+    }
+    out.push({ kind: 'msg', id: msg.id, msg });
+  }
+  return out;
+}
+
+function Background({ children }: { children: React.ReactNode }) {
+  return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
+}
+
 export default function ChatScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { conversationId: initialConversationId, otherUserId, title } = route.params;
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
@@ -31,11 +114,13 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(!!initialConversationId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const listRef = useRef<FlatList<ChatMessageRow>>(null);
+  /** Bottom inset for keyboard — avoids KeyboardAvoidingView fighting FlatList (jitter). */
+  const [keyboardBottom, setKeyboardBottom] = useState(0);
+  const listRef = useRef<FlatList<ChatListItem>>(null);
+  const messageCountRef = useRef(0);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ title });
-  }, [navigation, title]);
+  /** Space for floating top bar (safe area + row + padding). */
+  const topPad = insets.top + 56 + 12;
 
   const appendUnique = useCallback((row: ChatMessageRow) => {
     setMessages((prev) => {
@@ -62,7 +147,6 @@ export default function ChatScreen({ navigation, route }: Props) {
       } else {
         setMessages(data);
       }
-      // Mark read when the thread is opened.
       markConversationRead(conversationId).then(({ error: rErr }) => {
         if (rErr) console.warn('markConversationRead', rErr.message);
       });
@@ -83,7 +167,6 @@ export default function ChatScreen({ navigation, route }: Props) {
           const row = payload.new as ChatMessageRow;
           if (row?.conversation_id === conversationId) {
             appendUnique(row);
-            // If we receive a message while the chat is open, treat it as read.
             if (myUserId && row.sender_id && row.sender_id !== myUserId) {
               markConversationRead(conversationId).then(({ error: rErr }) => {
                 if (rErr) console.warn('markConversationRead', rErr.message);
@@ -100,11 +183,49 @@ export default function ChatScreen({ navigation, route }: Props) {
     };
   }, [conversationId, appendUnique, myUserId]);
 
+  useEffect(() => {
+    if (!conversationId) return;
+    clearConversationHiddenFromList(conversationId).then(({ error }) => {
+      if (error) console.warn('clearConversationHiddenFromList', error.message);
+    });
+  }, [conversationId]);
+
+  // iOS: window doesn’t resize for the keyboard — pad the composer by keyboard height.
+  // Android: rely on adjustResize + flex layout; extra padding here doubles the shift and jitters.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const onShow = (e: KeyboardEvent) => setKeyboardBottom(e.endCoordinates.height);
+    const onHide = () => setKeyboardBottom(0);
+
+    const subShow = Keyboard.addListener('keyboardDidShow', onShow);
+    const subHide = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  // Scroll only when the message list changes — not on every layout/content-size change
+  // (keyboard + KeyboardAvoidingView resize was retriggering scrollToEnd and causing jitter).
+  useEffect(() => {
+    if (messages.length === 0) {
+      messageCountRef.current = 0;
+      return;
+    }
+    if (messages.length === messageCountRef.current) return;
+    messageCountRef.current = messages.length;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: messages.length > 1 });
+    });
+  }, [messages.length]);
+
+  const listItems = useMemo(() => buildChatListItems(messages), [messages]);
+
   const onSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
 
-    // If no conversation yet, create it now (first message)
     let convId = conversationId;
     if (!convId && otherUserId) {
       const { data: newConvId, error: convErr } = await ensureMatchConversation(otherUserId);
@@ -134,86 +255,147 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0C5389" />
-      </View>
+      <Background>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <ChatStyleTopBar
+            title={title}
+            onBack={() => navigation.goBack()}
+            topInset={insets.top}
+            backAccessibilityLabel="Back to chats"
+          />
+        </View>
+        <View style={[styles.centered, { paddingTop: insets.top + 56 }]}>
+          <ActivityIndicator size="large" color={CHATS_GREEN} />
+        </View>
+      </Background>
     );
   }
 
+  const composerBottomPad =
+    Platform.OS === 'ios'
+      ? keyboardBottom > 0
+        ? keyboardBottom + KEYBOARD_TOP_GAP
+        : Math.max(insets.bottom, 10)
+      : Math.max(insets.bottom, 10);
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        onContentSizeChange={() =>
-          listRef.current?.scrollToEnd({ animated: true })
-        }
-        renderItem={({ item }) => {
-          const mine = myUserId != null && item.sender_id === myUserId;
-          return (
-            <View
-              style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}
-            >
-              <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-                  {item.body}
-                </Text>
-                <Text style={[styles.time, mine && styles.timeMine]}>
-                  {new Date(item.created_at).toLocaleTimeString(undefined, {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </View>
-            </View>
-          );
-        }}
-      />
-      <View style={styles.composer}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Message…"
-          placeholderTextColor="#889"
-          multiline
-          maxLength={4000}
-          editable={!sending}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
-          onPress={onSend}
-          disabled={!draft.trim() || sending}
-          accessibilityLabel="Send message"
-        >
-          <Text style={styles.sendBtnText}>Send</Text>
-        </TouchableOpacity>
+    <Background>
+      <View style={styles.root}>
+        <View style={styles.flex}>
+          <FlatList
+            ref={listRef}
+            data={listItems}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingTop: topPad },
+            ]}
+            renderItem={({ item }) => {
+              if (item.kind === 'date') {
+                return (
+                  <View style={styles.dateSeparatorRow} accessibilityRole="header">
+                    <View style={styles.dateSeparatorPill}>
+                      <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                    </View>
+                  </View>
+                );
+              }
+
+              const m = item.msg;
+              const mine = myUserId != null && m.sender_id === myUserId;
+              return (
+                <View
+                  style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}
+                >
+                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                    <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{m.body}</Text>
+                    <Text style={[styles.time, mine && styles.timeMine]}>
+                      {new Date(m.created_at).toLocaleTimeString(undefined, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
+          />
+
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <ChatStyleTopBar
+              title={title}
+              onBack={() => navigation.goBack()}
+              topInset={insets.top}
+              backAccessibilityLabel="Back to chats"
+            />
+          </View>
+        </View>
+
+        <View style={[styles.composer, { paddingBottom: composerBottomPad }]}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Message…"
+            placeholderTextColor={C.gray}
+            multiline
+            maxLength={4000}
+            editable={!sending}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+            onPress={onSend}
+            disabled={!draft.trim() || sending}
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendBtnText}>Send</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </KeyboardAvoidingView>
+    </Background>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   root: {
     flex: 1,
-    backgroundColor: '#E8EEF2',
+    backgroundColor: 'transparent',
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E8EEF2',
+    backgroundColor: 'transparent',
   },
   listContent: {
     paddingHorizontal: 12,
     paddingVertical: 12,
     flexGrow: 1,
+  },
+  dateSeparatorRow: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  dateSeparatorPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(45, 106, 79, 0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: CHATS_GREEN_BORDER,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.gray,
+    letterSpacing: 0.3,
   },
   bubbleRow: {
     marginBottom: 10,
@@ -232,64 +414,66 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   bubbleMine: {
-    backgroundColor: '#189AA2',
+    backgroundColor: C.mineBubble,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.12)',
   },
   bubbleTheirs: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#D9E1E6',
+    borderColor: C.surfaceBorder,
   },
   bubbleText: {
     fontSize: 16,
     lineHeight: 22,
-    color: '#0C5389',
+    color: C.text,
   },
   bubbleTextMine: {
-    color: '#FDFDFD',
+    color: C.mineTextOnBubble,
   },
   time: {
     marginTop: 4,
     fontSize: 11,
-    color: '#189AA2',
+    color: C.gray,
     alignSelf: 'flex-end',
   },
   timeMine: {
-    color: 'rgba(253,253,253,0.85)',
+    color: 'rgba(250, 251, 250, 0.82)',
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    backgroundColor: '#FDFDFD',
+    backgroundColor: CHATS_CARD,
     borderTopWidth: 1,
-    borderTopColor: '#D9E1E6',
+    borderTopColor: CHATS_GREEN_BORDER,
   },
   input: {
     flex: 1,
     minHeight: 40,
     maxHeight: 120,
     borderWidth: 1,
-    borderColor: '#D9E1E6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: CHATS_GREEN_BORDER,
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#0C5389',
+    color: C.text,
+    backgroundColor: C.surface,
   },
   sendBtn: {
     marginLeft: 8,
-    backgroundColor: '#0C5389',
-    paddingHorizontal: 16,
+    backgroundColor: C.cta,
+    paddingHorizontal: 18,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   sendBtnDisabled: {
     opacity: 0.45,
   },
   sendBtnText: {
-    color: '#FDFDFD',
+    color: C.white,
     fontWeight: '600',
     fontSize: 16,
   },

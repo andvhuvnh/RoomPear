@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { getProfileImageUrls } from './storage';
+import { getProfileImageUrls, profilePhotoPrimaryCacheKey } from './storage';
+import { sendPushNotification } from './pushNotifications';
 
 export type ConversationSummary = {
   conversationId: string;
@@ -12,6 +13,8 @@ export type ConversationSummary = {
   otherDisplayName: string;
   /** First profile photo URL (same as PublicProfileCard cover / index 0). */
   otherAvatarUrl: string | null;
+  /** Stable cache key for `otherAvatarUrl` (storage path); signed URL query string changes each fetch. */
+  otherAvatarCacheKey: string | null;
 };
 
 export type ChatMessageRow = {
@@ -46,7 +49,8 @@ export async function fetchConversationSummaries(): Promise<{
   const { data: myParts, error: pErr } = await supabase
     .from('conversation_participants')
     .select('conversation_id')
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .is('hidden_from_list_at', null);
 
   if (pErr) {
     return { data: [], error: new Error(pErr.message) };
@@ -107,6 +111,7 @@ export async function fetchConversationSummaries(): Promise<{
   const otherIds = [...new Set(otherIdsByConv.values())];
   const namesById = new Map<string, string>();
   const avatarUrlById = new Map<string, string | null>();
+  const avatarCacheKeyById = new Map<string, string | null>();
   if (otherIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
@@ -114,6 +119,7 @@ export async function fetchConversationSummaries(): Promise<{
       .in('id', otherIds);
     for (const p of profiles ?? []) {
       namesById.set(p.id, displayNameFromProfile(p.name, p.id));
+      avatarCacheKeyById.set(p.id, profilePhotoPrimaryCacheKey(p.profile_photo_url));
       const urls = p.profile_photo_url
         ? (await getProfileImageUrls(p.profile_photo_url)) ?? []
         : [];
@@ -132,6 +138,7 @@ export async function fetchConversationSummaries(): Promise<{
       otherUserId: otherId,
       otherDisplayName: namesById.get(otherId) ?? (otherId ? `User ${otherId.slice(0, 6)}` : 'Chat'),
       otherAvatarUrl: otherId ? avatarUrlById.get(otherId) ?? null : null,
+      otherAvatarCacheKey: otherId ? avatarCacheKeyById.get(otherId) ?? null : null,
     };
   });
 
@@ -142,6 +149,57 @@ export async function fetchConversationSummaries(): Promise<{
   summaries.sort((a, b) => activityMs(b) - activityMs(a));
 
   return { data: summaries, error: null };
+}
+
+/**
+ * Hides the thread from the current user's Messages list only (sets hidden_from_list_at).
+ * Does not delete messages or remove the other participant's view.
+ */
+export async function hideConversationFromList(
+  conversationId: string
+): Promise<{ error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: new Error('Not signed in') };
+  }
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ hidden_from_list_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
+}
+
+/**
+ * Clears list hide when the user opens the chat (thread shows in Messages again).
+ */
+export async function clearConversationHiddenFromList(
+  conversationId: string
+): Promise<{ error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: new Error('Not signed in') };
+  }
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ hidden_from_list_at: null })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
 }
 
 export async function markConversationRead(
@@ -210,6 +268,26 @@ export async function sendMessage(
   if (error) {
     return { data: null, error: new Error(error.message) };
   }
+
+  // Notify the other participant
+  const { data: parts } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .neq('user_id', user.id);
+
+  const recipientId = parts?.[0]?.user_id;
+  if (recipientId) {
+    const { data: sender } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user.id)
+      .single();
+    const senderName = sender?.name?.trim() || 'Someone';
+    const preview = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+    sendPushNotification(recipientId, `${senderName}`, preview);
+  }
+
   return { data: data as ChatMessageRow, error: null };
 }
 

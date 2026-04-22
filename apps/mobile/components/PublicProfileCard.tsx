@@ -26,6 +26,8 @@ export type PublicProfileCardProps = {
   /** Short intro shown under age / location */
   bio?: string | null;
   hobbies?: string[] | null;
+  /** Shown above hobby chips when present (e.g. "Interests") */
+  chipsSectionTitle?: string | null;
   /** default: standard card. immersive: hero + name on image. profilePhotos: photos + dots only (e.g. own profile tab). */
   variant?: 'default' | 'immersive' | 'profilePhotos';
   style?: StyleProp<ViewStyle>;
@@ -38,6 +40,7 @@ export default function PublicProfileCard({
   location,
   bio,
   hobbies,
+  chipsSectionTitle,
   variant = 'default',
   style,
 }: PublicProfileCardProps) {
@@ -87,13 +90,18 @@ export default function PublicProfileCard({
     <>
       {bioText ? <Text style={styles.bio}>{bioText}</Text> : null}
       {hobbyList.length > 0 ? (
-        <View style={styles.hobbiesRow}>
-          {hobbyList.map((h, i) => (
-            <View key={`${h}-${i}`} style={styles.hobbyChip}>
-              <Text style={styles.hobbyChipText}>{h.trim()}</Text>
-            </View>
-          ))}
-        </View>
+        <>
+          {chipsSectionTitle ? (
+            <Text style={[styles.sectionLabel, !bioText && styles.sectionLabelFirst]}>{chipsSectionTitle}</Text>
+          ) : null}
+          <View style={styles.hobbiesRow}>
+            {hobbyList.map((h, i) => (
+              <View key={`${h}-${i}`} style={styles.hobbyChip}>
+                <Text style={styles.hobbyChipText}>{h.trim()}</Text>
+              </View>
+            ))}
+          </View>
+        </>
       ) : null}
     </>
   );
@@ -347,6 +355,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: '#717182',
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#A0A0B0',
+    marginTop: 18,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionLabelFirst: {
+    marginTop: 14,
   },
   hobbiesRow: {
     flexDirection: 'row',

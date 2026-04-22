@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -21,6 +22,9 @@ import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
+import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsage';
+import { FREE_TIER_LIMITS } from '../lib/freeTierLimits';
+import { usePurchases } from '../context/PurchasesContext';
 import SwipeCard from '../components/SwipeCard';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
@@ -79,6 +83,7 @@ function Background({ children }: { children: React.ReactNode }) {
 
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const { isRoomPearPlus, presentPaywall } = usePurchases();
   const [userId, setUserId] = useState<string | null>(null);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | null>(null);
   const [myHobbies, setMyHobbies] = useState<string[]>([]);
@@ -88,10 +93,16 @@ export default function DiscoverScreen() {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [expandedProfile, setExpandedProfile] = useState<DiscoverProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
 
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
+
+  const refreshDailyUsage = useCallback(async (uid: string) => {
+    const u = await getDiscoverUsage(uid);
+    setDailyUsage(u);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -120,9 +131,16 @@ export default function DiscoverScreen() {
         setMyHobbies(
           interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : [])
         );
+        refreshDailyUsage(uid);
       }
     });
-  }, []);
+  }, [refreshDailyUsage]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) refreshDailyUsage(userId);
+    }, [userId, refreshDailyUsage])
+  );
 
   async function loadProfiles(uid: string) {
     setLoading(true);
@@ -155,6 +173,24 @@ export default function DiscoverScreen() {
 
   async function handleAction(direction: Action) {
     if (actionDisabled) return;
+    if (!userId) return;
+
+    if (!isRoomPearPlus) {
+      const usage = await getDiscoverUsage(userId);
+      if (direction === 'top_pick') {
+        if (
+          usage.swipes >= FREE_TIER_LIMITS.swipesPerDay ||
+          usage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay
+        ) {
+          await presentPaywall();
+          return;
+        }
+      } else if (usage.swipes >= FREE_TIER_LIMITS.swipesPerDay) {
+        await presentPaywall();
+        return;
+      }
+    }
+
     setActionDisabled(true);
     const current = profiles[currentIndex];
     animateOut(direction, async () => {
@@ -170,14 +206,20 @@ export default function DiscoverScreen() {
             sharedInterests,
           });
         }
+        await recordDiscoverAction(userId, direction);
+        await refreshDailyUsage(userId);
       }
       setCurrentIndex(prev => prev + 1);
       setActionDisabled(false);
     });
   }
 
-  function handleUndo() {
+  async function handleUndo() {
     if (actionDisabled || currentIndex === 0) return;
+    if (!isRoomPearPlus) {
+      await presentPaywall();
+      return;
+    }
     setActionDisabled(true);
     cardOpacity.setValue(0);
     setCurrentIndex(prev => prev - 1);
@@ -219,7 +261,18 @@ export default function DiscoverScreen() {
 
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.pearLogo}>🍐</Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.pearLogo}>🍐</Text>
+            {isRoomPearPlus ? (
+              <Text style={styles.headerMetricsPremium}>RoomPear+ · Unlimited swipes & Top Picks</Text>
+            ) : (
+              <Text style={styles.headerMetrics}>
+                {Math.max(0, FREE_TIER_LIMITS.swipesPerDay - dailyUsage.swipes)}/
+                {FREE_TIER_LIMITS.swipesPerDay} swipes today ·{' '}
+                {dailyUsage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay ? 'Top Pick used' : 'Top Pick ready'}
+              </Text>
+            )}
+          </View>
           <View style={styles.headerRight}>
             <Text style={styles.nearbyPill}>{remaining} nearby</Text>
             <TouchableOpacity style={styles.headerIconBtn}>
@@ -255,7 +308,12 @@ export default function DiscoverScreen() {
           <View style={styles.floatingActions} pointerEvents="box-none">
             {/* Undo — small, top-left of group */}
             <TouchableOpacity
-              style={[styles.btn, styles.btnUndo, (actionDisabled || currentIndex === 0) && styles.btnDisabled]}
+              style={[
+                styles.btn,
+                styles.btnUndo,
+                (actionDisabled || currentIndex === 0) && styles.btnDisabled,
+                !isRoomPearPlus && styles.btnUndoLocked,
+              ]}
               onPress={handleUndo}
               disabled={actionDisabled || currentIndex === 0}
             >
@@ -448,7 +506,24 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 10,
   },
+  headerLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
   pearLogo: { fontSize: 32 },
+  headerMetrics: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  headerMetricsPremium: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '700',
+  },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   nearbyPill: {
     fontSize: 12,
@@ -510,6 +585,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   btnDisabled: { opacity: 0.3 },
+  btnUndoLocked: { opacity: 0.55 },
   btnUndo: { width: 48, height: 48 },
   btnPass: { width: 62, height: 62, borderColor: 'rgba(212,24,61,0.30)' },
   btnTop:  { width: 62, height: 62, borderColor: 'rgba(255,149,0,0.30)' },
