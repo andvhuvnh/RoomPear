@@ -20,6 +20,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { usePurchases } from '../context/PurchasesContext';
+import { formatPlanLabel, SUBSCRIPTION_TIER_PREMIUM } from '../lib/purchasesConfig';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getProfileImageUrls, getProfileImageUrl, pickImage, uploadListingPhoto, pickListingImage } from '../lib/storage';
@@ -106,6 +109,13 @@ type Props = BottomTabScreenProps<MainTabParamList, 'Profile'>;
 export default function UserProfileScreen({ route }: Props) {
   const onDevShowOnboarding = route.params?.onDevShowOnboarding;
   const insets = useSafeAreaInsets();
+  const {
+    isRoomPearPlus,
+    refreshCustomerInfo,
+    presentPaywall,
+    presentCustomerCenter,
+    logoutPurchases,
+  } = usePurchases();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -366,6 +376,12 @@ export default function UserProfileScreen({ route }: Props) {
     return () => subscription.unsubscribe();
   }, [loadProfile, loadListing]);
 
+  useFocusEffect(
+    useCallback(() => {
+      refreshCustomerInfo().catch(() => {});
+    }, [refreshCustomerInfo])
+  );
+
   const openEditName = () => {
     if (!profile) return;
     setEditName(profile.name?.trim() ?? '');
@@ -491,6 +507,7 @@ export default function UserProfileScreen({ route }: Props) {
   };
 
   const handleSignOut = async () => {
+    await logoutPurchases();
     const { error } = await supabase.auth.signOut();
     if (error) Alert.alert('Error', error.message);
   };
@@ -538,6 +555,10 @@ export default function UserProfileScreen({ route }: Props) {
     typeof profile?.age === 'number' && !Number.isNaN(profile.age)
       ? profile.age
       : null;
+
+  const profileSaysPremium =
+    String(profile?.subscription_tier || '').toLowerCase() === SUBSCRIPTION_TIER_PREMIUM;
+  const showRoomPearPlus = isRoomPearPlus || profileSaysPremium;
 
   return (
     <View style={styles.container}>
@@ -1115,9 +1136,31 @@ export default function UserProfileScreen({ route }: Props) {
               <View style={styles.settingsInfoRow}>
                 <Text style={styles.settingsInfoLabel}>Plan</Text>
                 <Text style={styles.settingsInfoValue}>
-                  {(profile?.subscription_tier as string) || 'free'}
+                  {showRoomPearPlus
+                    ? 'RoomPear+'
+                    : formatPlanLabel(profile?.subscription_tier as string)}
                 </Text>
               </View>
+              <TouchableOpacity
+                style={styles.upgradeButton}
+                onPress={() => presentPaywall()}
+                accessibilityRole="button"
+                accessibilityLabel="Upgrade to RoomPear plus"
+              >
+                <Text style={styles.upgradeButtonText}>
+                  {showRoomPearPlus ? 'View plans' : 'Upgrade to RoomPear+'}
+                </Text>
+              </TouchableOpacity>
+              {showRoomPearPlus ? (
+                <TouchableOpacity
+                  style={styles.manageSubButton}
+                  onPress={() => presentCustomerCenter()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage subscription"
+                >
+                  <Text style={styles.manageSubButtonText}>Manage subscription</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             <Text style={styles.settingsSectionLabel}>More</Text>
@@ -1775,6 +1818,30 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMd,
     paddingVertical: 14,
     alignItems: 'center',
+  },
+  upgradeButton: {
+    marginTop: 4,
+    backgroundColor: '#FDFDFD',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#46BD7F',
+  },
+  upgradeButtonText: {
+    color: '#189AA2',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  manageSubButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  manageSubButtonText: {
+    color: '#0C5389',
+    fontSize: 15,
+    fontWeight: '600',
   },
   referralApplyBtnDim: {
     opacity: 0.65,

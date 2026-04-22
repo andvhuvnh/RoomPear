@@ -12,6 +12,7 @@ import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
+import { PurchasesProvider } from './context/PurchasesContext';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -96,10 +97,12 @@ export default function App() {
       {appState === 'onboarding' && (
         <OnboardingScreen onComplete={handleOnboardingComplete} />
       )}
-      {appState === 'home' && (
-        <NavigationContainer>
-          <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-        </NavigationContainer>
+      {appState === 'home' && session?.user && (
+        <PurchasesProvider userId={session.user.id}>
+          <NavigationContainer>
+            <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
+          </NavigationContainer>
+        </PurchasesProvider>
       )}
     </SafeAreaProvider>
   );
