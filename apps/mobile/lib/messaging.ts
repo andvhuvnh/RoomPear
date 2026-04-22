@@ -48,7 +48,8 @@ export async function fetchConversationSummaries(): Promise<{
   const { data: myParts, error: pErr } = await supabase
     .from('conversation_participants')
     .select('conversation_id')
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .is('hidden_from_list_at', null);
 
   if (pErr) {
     return { data: [], error: new Error(pErr.message) };
@@ -147,6 +148,57 @@ export async function fetchConversationSummaries(): Promise<{
   summaries.sort((a, b) => activityMs(b) - activityMs(a));
 
   return { data: summaries, error: null };
+}
+
+/**
+ * Hides the thread from the current user's Messages list only (sets hidden_from_list_at).
+ * Does not delete messages or remove the other participant's view.
+ */
+export async function hideConversationFromList(
+  conversationId: string
+): Promise<{ error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: new Error('Not signed in') };
+  }
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ hidden_from_list_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
+}
+
+/**
+ * Clears list hide when the user opens the chat (thread shows in Messages again).
+ */
+export async function clearConversationHiddenFromList(
+  conversationId: string
+): Promise<{ error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: new Error('Not signed in') };
+  }
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ hidden_from_list_at: null })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
 }
 
 export async function markConversationRead(

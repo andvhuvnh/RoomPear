@@ -6,7 +6,14 @@ import PublicUserProfileScreen from '../screens/PublicUserProfileScreen';
 export type ChatsStackParamList = {
   ChatsHome: undefined;
   Chat: { conversationId?: string; otherUserId?: string; title: string };
-  ProfileView: { userId: string; name: string };
+  ProfileView: {
+    userId: string;
+    name: string;
+    /** When opened from Messages — opens existing thread in Chat. */
+    conversationId?: string;
+    /** Default chats; use `likes` when opened from Likes stack (cross-tab navigate). */
+    profileSource?: 'chats' | 'likes';
+  };
 };
 
 const Stack = createNativeStackNavigator<ChatsStackParamList>();

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -9,19 +9,28 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
+  Alert,
+  TextInput,
 } from 'react-native';
+import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import { fetchMatches, type Match } from '../lib/matches';
-import { fetchConversationSummaries, type ConversationSummary } from '../lib/messaging';
+import {
+  fetchConversationSummaries,
+  hideConversationFromList,
+  type ConversationSummary,
+} from '../lib/messaging';
 import { supabase } from '../lib/supabase';
 import {
   CHATS_SCREEN_BG,
   CHATS_CARD,
   CHATS_GREEN,
   CHATS_GREEN_BORDER,
+  CHATS_GREEN_BORDER_STRONG,
   CHATS_GREEN_SOFT_BG,
 } from '../theme/chatsAmbient';
 
@@ -74,6 +83,7 @@ export default function ChatsScreen({ navigation }: Props) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [messagesSearchQuery, setMessagesSearchQuery] = useState('');
   /** Avoid full-screen spinner + list remount on every tab focus — keeps expo-image cache warm. */
   const initialLoadDoneRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
@@ -128,12 +138,52 @@ export default function ChatsScreen({ navigation }: Props) {
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
 
+  const filteredConversations = useMemo(() => {
+    const q = messagesSearchQuery.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter(
+      (c) =>
+        c.otherDisplayName.toLowerCase().includes(q) ||
+        (c.lastMessagePreview ?? '').toLowerCase().includes(q)
+    );
+  }, [conversations, messagesSearchQuery]);
+
+  const confirmRemoveConversation = useCallback((item: ConversationSummary) => {
+    Alert.alert(
+      'Do you wish to delete this conversation?',
+      'It will be removed from your Messages list only. The other person still has the thread; messages are not deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const { error } = await hideConversationFromList(item.conversationId);
+              if (error) {
+                Alert.alert('Could not remove', error.message);
+                return;
+              }
+              setConversations((prev) => prev.filter((c) => c.conversationId !== item.conversationId));
+            })();
+          },
+        },
+      ]
+    );
+  }, []);
+
   function renderMatchItem({ item }: { item: Match }) {
     return (
       <View style={styles.gridCard}>
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => navigation.navigate('ProfileView', { userId: item.id, name: item.name })}
+          onPress={() =>
+            navigation.navigate('ProfileView', {
+              userId: item.id,
+              name: item.name,
+              profileSource: 'chats',
+            })
+          }
         >
           {item.photoUrls.length > 0 ? (
             <Image
@@ -172,61 +222,84 @@ export default function ChatsScreen({ navigation }: Props) {
 
   function renderConvItem({ item }: { item: ConversationSummary }) {
     return (
-      <TouchableOpacity
-        style={styles.convRow}
-        activeOpacity={0.7}
-        onPress={() =>
-          navigation.navigate('Chat', {
-            conversationId: item.conversationId,
-            title: item.otherDisplayName,
-          })
-        }
+      <Swipeable
+        friction={2}
+        overshootRight={false}
+        renderRightActions={() => (
+          <View style={styles.swipeActionsRight}>
+            <RectButton
+              style={styles.swipeDeleteBtn}
+              onPress={() => confirmRemoveConversation(item)}
+              accessibilityLabel="Remove conversation from list"
+            >
+              <Ionicons name="trash-outline" size={22} color={C.gray} />
+            </RectButton>
+          </View>
+        )}
       >
         <TouchableOpacity
-          onPress={() => navigation.navigate('ProfileView', { userId: item.otherUserId, name: item.otherDisplayName })}
-          activeOpacity={0.8}
+          style={styles.convRow}
+          activeOpacity={0.7}
+          onPress={() =>
+            navigation.navigate('Chat', {
+              conversationId: item.conversationId,
+              title: item.otherDisplayName,
+            })
+          }
         >
-          <View style={styles.convAvatar}>
-            {item.otherAvatarUrl ? (
-              <Image
-                source={{
-                  uri: item.otherAvatarUrl,
-                  cacheKey: item.otherAvatarCacheKey ?? item.otherAvatarUrl,
-                }}
-                style={styles.convAvatarImg}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                recyclingKey={item.otherAvatarCacheKey ?? item.otherAvatarUrl}
-                transition={0}
-              />
-            ) : (
-              <Text style={styles.convAvatarText}>
-                {item.otherDisplayName.slice(0, 1).toUpperCase()}
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('ProfileView', {
+                userId: item.otherUserId,
+                name: item.otherDisplayName,
+                conversationId: item.conversationId,
+                profileSource: 'chats',
+              })
+            }
+            activeOpacity={0.8}
+          >
+            <View style={styles.convAvatar}>
+              {item.otherAvatarUrl ? (
+                <Image
+                  source={{
+                    uri: item.otherAvatarUrl,
+                    cacheKey: item.otherAvatarCacheKey ?? item.otherAvatarUrl,
+                  }}
+                  style={styles.convAvatarImg}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  recyclingKey={item.otherAvatarCacheKey ?? item.otherAvatarUrl}
+                  transition={0}
+                />
+              ) : (
+                <Text style={styles.convAvatarText}>
+                  {item.otherDisplayName.slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
+          <View style={styles.convBody}>
+            <View style={styles.convTop}>
+              <Text style={styles.convName} numberOfLines={1}>{item.otherDisplayName}</Text>
+              <Text style={styles.convTime}>
+                {formatConvTime(item.lastMessageAt ?? item.conversationCreatedAt)}
               </Text>
-            )}
+            </View>
+            <View style={styles.convPreviewRow}>
+              <Text style={styles.convPreview} numberOfLines={1}>
+                {item.lastMessagePreview ?? 'No messages yet'}
+              </Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
-        <View style={styles.convBody}>
-          <View style={styles.convTop}>
-            <Text style={styles.convName} numberOfLines={1}>{item.otherDisplayName}</Text>
-            <Text style={styles.convTime}>
-              {formatConvTime(item.lastMessageAt ?? item.conversationCreatedAt)}
-            </Text>
-          </View>
-          <View style={styles.convPreviewRow}>
-            <Text style={styles.convPreview} numberOfLines={1}>
-              {item.lastMessagePreview ?? 'No messages yet'}
-            </Text>
-            {item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadBadgeText}>
-                  {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
+      </Swipeable>
     );
   }
 
@@ -238,30 +311,60 @@ export default function ChatsScreen({ navigation }: Props) {
           <Text style={styles.heroTagline}>Matches and messages in one place</Text>
         </View>
 
-        <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tabPill, subTab === 'matched' && styles.tabPillActive]}
-            onPress={() => setSubTab('matched')}
-          >
-            <Text style={[styles.tabPillText, subTab === 'matched' && styles.tabPillTextActive]}>
-              Matched{matches.length > 0 ? ` (${matches.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabPill, subTab === 'messages' && styles.tabPillActive]}
-            onPress={() => setSubTab('messages')}
-          >
-            <Text style={[styles.tabPillText, subTab === 'messages' && styles.tabPillTextActive]}>
-              Messages
-            </Text>
-            {totalUnread > 0 && subTab !== 'messages' && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>
-                  {totalUnread > 99 ? '99+' : String(totalUnread)}
-                </Text>
+        <View style={styles.tabSection}>
+          <View style={styles.tabRow}>
+            <TouchableOpacity
+              style={[styles.tabPill, subTab === 'matched' && styles.tabPillActive]}
+              onPress={() => setSubTab('matched')}
+            >
+              <Text style={[styles.tabPillText, subTab === 'matched' && styles.tabPillTextActive]}>
+                Matched{matches.length > 0 ? ` (${matches.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabPill, subTab === 'messages' && styles.tabPillActive]}
+              onPress={() => setSubTab('messages')}
+            >
+              <Text style={[styles.tabPillText, subTab === 'messages' && styles.tabPillTextActive]}>
+                Messages
+              </Text>
+              {totalUnread > 0 && subTab !== 'messages' && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>
+                    {totalUnread > 99 ? '99+' : String(totalUnread)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+          <View style={styles.tabDivider} />
+          {subTab === 'messages' && !loading && (
+            <View style={styles.searchRow}>
+              <View style={styles.searchField}>
+                <Ionicons name="search-outline" size={18} color={C.gray} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search conversations"
+                  placeholderTextColor={C.grayDim}
+                  value={messagesSearchQuery}
+                  onChangeText={setMessagesSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  selectionColor={CHATS_GREEN}
+                  accessibilityLabel="Search conversations"
+                />
+                {messagesSearchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setMessagesSearchQuery('')}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    accessibilityLabel="Clear search"
+                  >
+                    <Ionicons name="close-circle-outline" size={22} color={C.grayDim} />
+                  </TouchableOpacity>
+                )}
               </View>
-            )}
-          </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {loading ? (
@@ -313,22 +416,30 @@ export default function ChatsScreen({ navigation }: Props) {
           </>
         ) : (
           <FlatList
-            data={conversations}
+            data={filteredConversations}
             keyExtractor={(item) => item.conversationId}
             contentContainerStyle={
               conversations.length === 0 ? styles.gridContent : styles.msgListContent
             }
+            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={CHATS_GREEN} />
             }
             ListEmptyComponent={
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>💬</Text>
-                <Text style={styles.emptyTitle}>No messages yet</Text>
-                <Text style={styles.emptyText}>
-                  Match with someone and send them the first message!
-                </Text>
-              </View>
+              conversations.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyEmoji}>💬</Text>
+                  <Text style={styles.emptyTitle}>No messages yet</Text>
+                  <Text style={styles.emptyText}>
+                    Match with someone and send them the first message!
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyTitle}>No results</Text>
+                  <Text style={styles.emptyText}>Try a different name or keyword.</Text>
+                </View>
+              )
             }
             renderItem={renderConvItem}
           />
@@ -364,11 +475,43 @@ const styles = StyleSheet.create({
     color: C.gray,
     marginTop: 2,
   },
+  tabSection: {
+    marginBottom: 4,
+  },
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    marginBottom: 14,
+    marginBottom: 12,
     gap: 8,
+  },
+  tabDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: CHATS_GREEN_BORDER_STRONG,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  searchRow: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: CHATS_CARD,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: CHATS_GREEN_BORDER,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: C.text,
+    paddingVertical: 0,
+    minHeight: 22,
   },
   tabPill: {
     flexDirection: 'row',
@@ -513,6 +656,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+  },
+  swipeActionsRight: {
+    justifyContent: 'center',
+    marginBottom: 10,
+    marginLeft: 8,
+  },
+  swipeDeleteBtn: {
+    backgroundColor: CHATS_CARD,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 56,
+    minHeight: 78,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: CHATS_GREEN_BORDER,
   },
   convAvatar: {
     width: 52,

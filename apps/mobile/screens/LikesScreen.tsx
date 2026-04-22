@@ -157,7 +157,13 @@ export default function LikesScreen() {
         style={styles.card}
         activeOpacity={isRevealed ? 0.85 : 1}
         onPress={() => {
-          if (isRevealed) navigation.navigate('ProfileView', { userId: item.id, name: item.name });
+          if (isRevealed) {
+            navigation.navigate('ProfileView', {
+              userId: item.id,
+              name: item.name,
+              profileSource: 'likes',
+            });
+          }
         }}
       >
         {/* Photo — blurred unless revealed */}

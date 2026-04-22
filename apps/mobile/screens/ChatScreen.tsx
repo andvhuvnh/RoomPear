@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   markConversationRead,
   sendMessage,
   ensureMatchConversation,
+  clearConversationHiddenFromList,
   type ChatMessageRow,
 } from '../lib/messaging';
 import {
@@ -38,11 +39,67 @@ const KEYBOARD_TOP_GAP = 10;
 const C = {
   text: '#1A2C24',
   gray: '#717182',
+  /** Outgoing bubble — dark gray-green, white type. */
+  mineBubble: '#5A6560',
+  mineTextOnBubble: '#FAFBFA',
   white: '#FFFFFF',
   surface: CHATS_CARD,
   surfaceBorder: CHATS_GREEN_BORDER,
   cta: '#030213',
 };
+
+type ChatListItem =
+  | { kind: 'date'; id: string; label: string }
+  | { kind: 'msg'; id: string; msg: ChatMessageRow };
+
+function isSameLocalCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function localDayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Today / yesterday / short date for older days (year if not current year). */
+function formatDateSeparatorLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  if (isSameLocalCalendarDay(d, today)) return 'Today';
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameLocalCalendarDay(d, yesterday)) return 'Yesterday';
+
+  const sameYear = d.getFullYear() === today.getFullYear();
+  if (sameYear) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function buildChatListItems(rows: ChatMessageRow[]): ChatListItem[] {
+  const out: ChatListItem[] = [];
+  let prevDayKey: string | null = null;
+
+  for (const msg of rows) {
+    const dayKey = localDayKey(msg.created_at);
+    if (dayKey !== prevDayKey) {
+      out.push({
+        kind: 'date',
+        id: `date-${dayKey}`,
+        label: formatDateSeparatorLabel(msg.created_at),
+      });
+      prevDayKey = dayKey;
+    }
+    out.push({ kind: 'msg', id: msg.id, msg });
+  }
+  return out;
+}
 
 function Background({ children }: { children: React.ReactNode }) {
   return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
@@ -59,7 +116,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   /** Bottom inset for keyboard — avoids KeyboardAvoidingView fighting FlatList (jitter). */
   const [keyboardBottom, setKeyboardBottom] = useState(0);
-  const listRef = useRef<FlatList<ChatMessageRow>>(null);
+  const listRef = useRef<FlatList<ChatListItem>>(null);
   const messageCountRef = useRef(0);
 
   /** Space for floating top bar (safe area + row + padding). */
@@ -126,6 +183,13 @@ export default function ChatScreen({ navigation, route }: Props) {
     };
   }, [conversationId, appendUnique, myUserId]);
 
+  useEffect(() => {
+    if (!conversationId) return;
+    clearConversationHiddenFromList(conversationId).then(({ error }) => {
+      if (error) console.warn('clearConversationHiddenFromList', error.message);
+    });
+  }, [conversationId]);
+
   // iOS: window doesn’t resize for the keyboard — pad the composer by keyboard height.
   // Android: rely on adjustResize + flex layout; extra padding here doubles the shift and jitters.
   useEffect(() => {
@@ -155,6 +219,8 @@ export default function ChatScreen({ navigation, route }: Props) {
       listRef.current?.scrollToEnd({ animated: messages.length > 1 });
     });
   }, [messages.length]);
+
+  const listItems = useMemo(() => buildChatListItems(messages), [messages]);
 
   const onSend = async () => {
     if (!draft.trim() || sending) return;
@@ -218,7 +284,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         <View style={styles.flex}>
           <FlatList
             ref={listRef}
-            data={messages}
+            data={listItems}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -227,17 +293,26 @@ export default function ChatScreen({ navigation, route }: Props) {
               { paddingTop: topPad },
             ]}
             renderItem={({ item }) => {
-              const mine = myUserId != null && item.sender_id === myUserId;
+              if (item.kind === 'date') {
+                return (
+                  <View style={styles.dateSeparatorRow} accessibilityRole="header">
+                    <View style={styles.dateSeparatorPill}>
+                      <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                    </View>
+                  </View>
+                );
+              }
+
+              const m = item.msg;
+              const mine = myUserId != null && m.sender_id === myUserId;
               return (
                 <View
                   style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}
                 >
                   <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                    <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-                      {item.body}
-                    </Text>
+                    <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{m.body}</Text>
                     <Text style={[styles.time, mine && styles.timeMine]}>
-                      {new Date(item.created_at).toLocaleTimeString(undefined, {
+                      {new Date(m.created_at).toLocaleTimeString(undefined, {
                         hour: 'numeric',
                         minute: '2-digit',
                       })}
@@ -302,6 +377,26 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     flexGrow: 1,
   },
+  dateSeparatorRow: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  dateSeparatorPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(45, 106, 79, 0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: CHATS_GREEN_BORDER,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.gray,
+    letterSpacing: 0.3,
+  },
   bubbleRow: {
     marginBottom: 10,
     flexDirection: 'row',
@@ -319,7 +414,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   bubbleMine: {
-    backgroundColor: C.cta,
+    backgroundColor: C.mineBubble,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.12)',
   },
   bubbleTheirs: {
     backgroundColor: C.surface,
@@ -332,7 +429,7 @@ const styles = StyleSheet.create({
     color: C.text,
   },
   bubbleTextMine: {
-    color: '#FDFDFD',
+    color: C.mineTextOnBubble,
   },
   time: {
     marginTop: 4,
@@ -341,7 +438,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   timeMine: {
-    color: 'rgba(253,253,253,0.85)',
+    color: 'rgba(250, 251, 250, 0.82)',
   },
   composer: {
     flexDirection: 'row',

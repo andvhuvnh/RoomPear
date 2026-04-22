@@ -1,22 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import type { LikesStackParamList } from '../navigation/LikesStack';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { supabase } from '../lib/supabase';
 import { getProfileImageUrls } from '../lib/storage';
 import { getPreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import PublicProfileCard from '../components/PublicProfileCard';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
-import { CHATS_SCREEN_BG } from '../theme/chatsAmbient';
+import { CHATS_SCREEN_BG, CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
 
 type PromptEntry = { question: string; answer: string };
 
@@ -62,9 +66,16 @@ function normalizePrompts(raw: unknown): PromptEntry[] {
   return out.slice(0, 6);
 }
 
+type ProfileRouteParams = {
+  userId: string;
+  name: string;
+  conversationId?: string;
+  profileSource?: 'chats' | 'likes';
+};
+
 export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { userId } = route.params as { userId: string; name: string };
+  const { userId, conversationId, profileSource = 'chats' } = route.params as ProfileRouteParams;
   const initialName = route.params.name ?? '';
 
   const [loading, setLoading] = useState(true);
@@ -122,6 +133,21 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
     };
   }, [userId, initialName]);
 
+  const openChat = useCallback(() => {
+    const title = name || initialName || 'Chat';
+    const params = conversationId
+      ? { conversationId, title }
+      : { otherUserId: userId, title };
+
+    if (profileSource === 'likes') {
+      const tabNav = navigation.getParent() as BottomTabNavigationProp<MainTabParamList> | undefined;
+      tabNav?.navigate('Chats', { screen: 'Chat', params });
+      return;
+    }
+
+    (navigation as NativeStackNavigationProp<ChatsStackParamList>).navigate('Chat', params);
+  }, [conversationId, initialName, name, navigation, profileSource, userId]);
+
   /** Space below floating bubbles so the card sits on the canvas, not under the pills. */
   const contentTopPad = insets.top + 56 + 12;
 
@@ -150,7 +176,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           {
             paddingTop: contentTopPad,
             paddingHorizontal: 20,
-            paddingBottom: insets.bottom + 28,
+            paddingBottom: insets.bottom + 96,
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -189,6 +215,21 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           topInset={insets.top}
         />
       </View>
+
+      <View
+        style={[styles.messageFabWrap, { bottom: Math.max(insets.bottom, 12) + 8 }]}
+        pointerEvents="box-none"
+      >
+        <TouchableOpacity
+          style={styles.messageFab}
+          onPress={openChat}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${name || initialName || 'user'}`}
+        >
+          <Ionicons name="chatbubbles" size={26} color={CHATS_GREEN} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -200,6 +241,26 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+  },
+  messageFabWrap: {
+    position: 'absolute',
+    right: 18,
+    alignItems: 'flex-end',
+  },
+  messageFab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: CHATS_CARD,
+    borderWidth: 1,
+    borderColor: CHATS_GREEN_BORDER,
+    shadowColor: '#1A3329',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 5,
   },
   centered: {
     flex: 1,

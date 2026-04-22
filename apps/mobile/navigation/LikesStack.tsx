@@ -4,7 +4,12 @@ import PublicUserProfileScreen from '../screens/PublicUserProfileScreen';
 
 export type LikesStackParamList = {
   LikesHome: undefined;
-  ProfileView: { userId: string; name: string };
+  ProfileView: {
+    userId: string;
+    name: string;
+    conversationId?: string;
+    profileSource?: 'chats' | 'likes';
+  };
 };
 
 const Stack = createNativeStackNavigator<LikesStackParamList>();
