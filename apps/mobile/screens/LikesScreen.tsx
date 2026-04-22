@@ -166,7 +166,13 @@ export default function LikesScreen() {
         style={styles.card}
         activeOpacity={photoClear ? 0.85 : 1}
         onPress={() => {
-          if (photoClear) navigation.navigate('ProfileView', { userId: item.id, name: item.name });
+          if (photoClear) {
+            navigation.navigate('ProfileView', {
+              userId: item.id,
+              name: item.name,
+              profileSource: 'likes',
+            });
+          }
         }}
       >
         {/* Photo — blurred for free users until revealed; RoomPear+ sees all */}

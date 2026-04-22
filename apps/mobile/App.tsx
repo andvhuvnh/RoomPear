@@ -8,6 +8,7 @@ import { hasPreferences } from './lib/preferences';
 import { registerForPushNotifications } from './lib/notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
@@ -82,29 +83,33 @@ export default function App() {
 
   if (loading || appState === 'loading') {
     return (
-      <SafeAreaProvider>
-        <View style={styles.loadingRoot}>
-          <ActivityIndicator size="large" color="#0C5389" />
-        </View>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <View style={styles.loadingRoot}>
+            <ActivityIndicator size="large" color="#0C5389" />
+          </View>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
-      {appState === 'auth' && <AuthScreen />}
-      {appState === 'onboarding' && (
-        <OnboardingScreen onComplete={handleOnboardingComplete} />
-      )}
-      {appState === 'home' && session?.user && (
-        <PurchasesProvider userId={session.user.id}>
-          <NavigationContainer>
-            <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-          </NavigationContainer>
-        </PurchasesProvider>
-      )}
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        {appState === 'auth' && <AuthScreen />}
+        {appState === 'onboarding' && (
+          <OnboardingScreen onComplete={handleOnboardingComplete} />
+        )}
+        {appState === 'home' && session?.user && (
+          <PurchasesProvider userId={session.user.id}>
+            <NavigationContainer>
+              <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
+            </NavigationContainer>
+          </PurchasesProvider>
+        )}
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
