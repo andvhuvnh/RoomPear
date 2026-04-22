@@ -4,6 +4,7 @@ import {
   Text,
   Image,
   FlatList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
@@ -12,7 +13,7 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin } from 'phosphor-react-native';
+import { MapPin, ArrowCounterClockwise, X, Star, Heart } from 'phosphor-react-native';
 import type { DiscoverProfile } from '../lib/discover';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -20,16 +21,25 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 export const CARD_WIDTH = SCREEN_WIDTH - 32;
 export const CARD_HEIGHT = SCREEN_HEIGHT * 0.70;
 const TAB_HEIGHT = 48;
-const PHOTO_HEIGHT = Math.round(CARD_HEIGHT * 0.57);
+const PHOTO_HEIGHT = Math.round(CARD_HEIGHT * 0.55);
 
 type PhotoTab = 'profile' | 'place';
 
 interface Props {
   profile: DiscoverProfile;
-  onPress: () => void;
+  onPass?: () => void;
+  onLike?: () => void;
+  onTopPick?: () => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
+  actionDisabled?: boolean;
 }
 
-export default function SwipeCard({ profile, onPress }: Props) {
+export default function SwipeCard({
+  profile,
+  onPass, onLike, onTopPick, onUndo,
+  canUndo = false, actionDisabled = false,
+}: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
   const listRef = useRef<FlatList<string>>(null);
@@ -66,12 +76,11 @@ export default function SwipeCard({ profile, onPress }: Props) {
   const firstName = profile.name.split(' ')[0];
 
   return (
-    <TouchableOpacity activeOpacity={0.97} onPress={onPress} style={styles.card}>
+    <View style={styles.card}>
 
       {/* ── Photo section ── */}
       <View style={[styles.photoSection, { height: PHOTO_HEIGHT }]}>
         {photoTab === 'place' && !hasListingPhotos ? (
-          /* No listing placeholder */
           <View style={styles.noListingWrap}>
             <Text style={styles.noListingIcon}>🏠</Text>
             <Text style={styles.noListingTitle}>
@@ -104,7 +113,6 @@ export default function SwipeCard({ profile, onPress }: Props) {
               scrollEventThrottle={16}
             />
 
-            {/* Progress bars */}
             {activePhotos.length > 1 && (
               <View style={styles.progressBars} pointerEvents="none">
                 {activePhotos.map((_, i) => (
@@ -115,7 +123,6 @@ export default function SwipeCard({ profile, onPress }: Props) {
               </View>
             )}
 
-            {/* Gradient scrim */}
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.68)']}
               locations={[0.4, 0.68, 1]}
@@ -123,7 +130,6 @@ export default function SwipeCard({ profile, onPress }: Props) {
               pointerEvents="none"
             />
 
-            {/* Overlay — name/location on profile tab only */}
             {photoTab === 'profile' && (
               <View style={styles.overlay} pointerEvents="none">
                 <View style={styles.nameRow}>
@@ -136,6 +142,19 @@ export default function SwipeCard({ profile, onPress }: Props) {
                   <View style={styles.locationRow}>
                     <MapPin size={13} color="rgba(255,255,255,0.85)" weight="fill" />
                     <Text style={styles.overlayLocation}>{profile.location}</Text>
+                  </View>
+                )}
+                {(!!profile.roomType || profile.maxBudget != null) && (
+                  <View style={styles.budgetRow}>
+                    {!!profile.roomType && (
+                      <Text style={styles.overlayBudget}>{profile.roomType}</Text>
+                    )}
+                    {!!profile.roomType && profile.maxBudget != null && (
+                      <Text style={styles.overlayBudgetDot}>·</Text>
+                    )}
+                    {profile.maxBudget != null && (
+                      <Text style={styles.overlayBudget}>Up to ${profile.maxBudget.toLocaleString()}/mo</Text>
+                    )}
                   </View>
                 )}
               </View>
@@ -171,40 +190,100 @@ export default function SwipeCard({ profile, onPress }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Info section ── */}
-      <View style={styles.infoSection}>
-        {/* Prompts — shown first, most personal content */}
+      {/* ── Info section — scrollable ── */}
+      <ScrollView
+        style={styles.infoScroll}
+        contentContainerStyle={styles.infoContent}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+      >
         {profile.prompts.length > 0 ? (
-          <View style={styles.promptCard}>
-            <View style={styles.promptAccent} />
-            <View style={styles.promptContent}>
-              <Text style={styles.promptQuestion} numberOfLines={2}>
-                {profile.prompts[0].question}
-              </Text>
-              <Text style={styles.promptAnswer} numberOfLines={3}>
-                {profile.prompts[0].answer}
-              </Text>
-            </View>
-          </View>
+          <>
+            {profile.prompts.map((p, i) => (
+              <View key={i} style={styles.promptCard}>
+                <View style={styles.promptAccent} />
+                <View style={styles.promptContent}>
+                  <Text style={styles.promptQuestion} numberOfLines={2}>
+                    {p.question}
+                  </Text>
+                  <Text style={styles.promptAnswer} numberOfLines={3}>
+                    {p.answer}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </>
         ) : !!profile.bio ? (
-          <Text style={styles.bio} numberOfLines={3}>{profile.bio}</Text>
+          <Text style={styles.bio}>{profile.bio}</Text>
         ) : null}
 
-        {profile.hobbies && profile.hobbies.length > 0 && (
+        {Object.keys(profile.interests).length > 0 ? (
+          Object.entries(profile.interests).map(([cat, chips]) =>
+            chips.length > 0 ? (
+              <View key={cat} style={styles.categoryBlock}>
+                <Text style={styles.categoryLabel}>{cat}</Text>
+                <View style={styles.chipsRow}>
+                  {chips.map((h, i) => (
+                    <View key={i} style={styles.chip}>
+                      <Text style={styles.chipText}>{h}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null
+          )
+        ) : profile.hobbies && profile.hobbies.length > 0 ? (
           <>
             <Text style={styles.interestsLabel}>Interests</Text>
             <View style={styles.chipsRow}>
-              {profile.hobbies.slice(0, 5).map((h, i) => (
+              {profile.hobbies.map((h, i) => (
                 <View key={i} style={styles.chip}>
                   <Text style={styles.chipText}>{h}</Text>
                 </View>
               ))}
             </View>
           </>
-        )}
-      </View>
+        ) : null}
+      </ScrollView>
 
-    </TouchableOpacity>
+      {/* ── Vertical action column (bottom-right, absolutely positioned) ── */}
+      {onPass && (
+        <View style={[styles.actionColumn, actionDisabled && styles.actionBarDisabled]}>
+          <TouchableOpacity
+            style={styles.actionCircle}
+            onPress={onLike}
+            disabled={actionDisabled}
+          >
+            <Heart size={22} color="#2D6A4F" weight="fill" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionCircle}
+            onPress={onTopPick}
+            disabled={actionDisabled}
+          >
+            <Star size={20} color="#FF9500" weight="fill" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionCircle}
+            onPress={onPass}
+            disabled={actionDisabled}
+          >
+            <X size={20} color="#D4183D" weight="bold" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionCircle, (!canUndo || actionDisabled) && styles.actionBtnDimmed]}
+            onPress={onUndo}
+            disabled={!canUndo || actionDisabled}
+          >
+            <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+    </View>
   );
 }
 
@@ -295,6 +374,21 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: 'rgba(255,255,255,0.85)',
   },
+  budgetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3,
+  },
+  overlayBudget: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.78)',
+  },
+  overlayBudgetDot: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+  },
 
   // ── No listing placeholder ──
   noListingWrap: {
@@ -351,14 +445,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  // ── Info ──
-  infoSection: {
+  // ── Info (scrollable) ──
+  infoScroll: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  infoContent: {
     paddingHorizontal: 18,
     paddingTop: 12,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
+    paddingBottom: 16,
   },
   bio: {
     fontSize: 14,
@@ -373,6 +468,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: 7,
+  },
+  categoryBlock: {
+    marginBottom: 10,
+  },
+  categoryLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#A0A0B0',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 5,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -426,4 +532,24 @@ const styles = StyleSheet.create({
     color: '#1A2C24',
     lineHeight: 20,
   },
+
+  // ── Action column (bottom-right, absolutely positioned) ──
+  actionColumn: {
+    position: 'absolute',
+    right: 12,
+    bottom: 16,
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 10,
+  },
+  actionBarDisabled: { opacity: 0.4 },
+  actionCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnDimmed: { opacity: 0.3 },
 });

@@ -11,11 +11,14 @@ export type DiscoverProfile = {
   age: number | null;
   bio: string | null;
   hobbies: string[] | null;
+  interests: Record<string, string[]>;  // grouped by category e.g. { fitness: ['Gym', 'Yoga'] }
   prompts: PromptEntry[];
   photoUrls: string[];         // profile photos + listing photos combined
   profilePhotoCount: number;   // split point: photoUrls[0..n-1] are profile, rest are listing
   location: string;
   hasListing: boolean;
+  roomType: string | null;
+  maxBudget: number | null;
 };
 
 export async function fetchDiscoverProfiles(
@@ -100,9 +103,9 @@ export async function fetchDiscoverProfiles(
     const state = prefs?.state?.trim() ?? '';
     const location = city && state ? `${city}, ${state}` : city || state;
 
-    // Prefer flattened preferences.interests over legacy profiles.hobbies
-    const interestChips = Object.values(prefs?.interests ?? {}).flat() as string[];
-    const hobbies = interestChips.length > 0 ? interestChips : (row.hobbies ?? null);
+    const interests: Record<string, string[]> = prefs?.interests ?? {};
+    const interestChips = Object.values(interests).flat() as string[];
+    const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
     // Fetch listing photos if this user has a place listed
     let listingPhotoUrls: string[] = [];
@@ -131,11 +134,14 @@ export async function fetchDiscoverProfiles(
       age: row.age ?? null,
       bio: row.bio ?? null,
       hobbies,
+      interests,
       prompts,
       photoUrls: [...urls, ...listingPhotoUrls],
       profilePhotoCount: urls.length,
       hasListing: row.has_listing === true,
       location,
+      roomType: prefs?.room_type ?? null,
+      maxBudget: prefs?.max_budget ?? null,
     });
   }
 
