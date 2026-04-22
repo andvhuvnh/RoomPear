@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
 import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
+import { sendPushNotification } from './pushNotifications';
 
 export type PromptEntry = { question: string; answer: string };
 
@@ -166,8 +167,24 @@ export async function recordSwipe(
     .maybeSingle();
 
   const isMatch = !!data;
-  // Do not create a DM here — Matches stays visible until someone opens chat from Matches
-  // (ensureMatchConversation). Messages list only shows threads after at least one message.
+
+  if (isMatch) {
+    // Fetch both names for the match notification
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', [swiperId, swipedId]);
+
+    const swiperName = profiles?.find((p: any) => p.id === swiperId)?.name ?? 'Someone';
+    const swipedName = profiles?.find((p: any) => p.id === swipedId)?.name ?? 'Someone';
+
+    // Notify both users simultaneously
+    sendPushNotification(swiperId, "It's a Match! 🍐", `You and ${swipedName} both want to be roommates!`);
+    sendPushNotification(swipedId, "It's a Match! 🍐", `You and ${swiperName} both want to be roommates!`);
+  } else {
+    // Notify the person who was liked (don't reveal who liked them)
+    sendPushNotification(swipedId, 'Someone liked your profile! 💚', 'Open RoomPear to see who it is.');
+  }
 
   return { isMatch };
 }

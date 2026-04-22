@@ -5,6 +5,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
+import { registerForPushNotifications } from './lib/notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from './screens/AuthScreen';
@@ -73,6 +74,7 @@ export default function App() {
 
     const hasPrefs = await hasPreferences(session.user.id);
     setAppState(hasPrefs ? 'home' : 'onboarding');
+    registerForPushNotifications(session.user.id);
   };
 
   const handleOnboardingComplete = () => setAppState('home');

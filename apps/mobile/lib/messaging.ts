@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getProfileImageUrls } from './storage';
+import { sendPushNotification } from './pushNotifications';
 
 export type ConversationSummary = {
   conversationId: string;
@@ -210,6 +211,26 @@ export async function sendMessage(
   if (error) {
     return { data: null, error: new Error(error.message) };
   }
+
+  // Notify the other participant
+  const { data: parts } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .neq('user_id', user.id);
+
+  const recipientId = parts?.[0]?.user_id;
+  if (recipientId) {
+    const { data: sender } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user.id)
+      .single();
+    const senderName = sender?.name?.trim() || 'Someone';
+    const preview = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
+    sendPushNotification(recipientId, `${senderName}`, preview);
+  }
+
   return { data: data as ChatMessageRow, error: null };
 }
 
