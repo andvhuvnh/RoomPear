@@ -4,6 +4,50 @@
 
 import { supabase } from './supabase';
 
+/**
+ * preferences.user_id FK → profiles.id. If the auth trigger didn't create a row,
+ * inserts would fail with 23503. Ensures a minimal profile exists before first preferences insert.
+ */
+async function ensureProfileExists(userId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: existing, error: selErr } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (selErr) {
+    return { ok: false, error: selErr.message };
+  }
+  if (existing) {
+    return { ok: true };
+  }
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr || !user || user.id !== userId) {
+    return { ok: false, error: 'Not signed in' };
+  }
+
+  const { error: insErr } = await supabase.from('profiles').insert({
+    id: userId,
+    email: user.email ?? '',
+    name: (user.user_metadata?.name as string | undefined) ?? user.email ?? 'User',
+    phone: (user.user_metadata?.phone as string | undefined) ?? '000-000-0000',
+  });
+
+  if (insErr) {
+    // Race with handle_new_user or retry after concurrent create
+    if (insErr.code === '23505') {
+      return { ok: true };
+    }
+    return { ok: false, error: insErr.message };
+  }
+
+  return { ok: true };
+}
+
 export interface Preferences {
   user_id: string;
   location?: string;
@@ -134,7 +178,12 @@ export async function savePreferences(
         return { success: false, error: error.message };
       }
     } else {
-      // Insert new preferences
+      const ensured = await ensureProfileExists(userId);
+      if (!ensured.ok) {
+        console.error('Error ensuring profile before preferences:', ensured.error);
+        return { success: false, error: ensured.error ?? 'Could not create profile' };
+      }
+
       const { error } = await supabase
         .from('preferences')
         .insert({

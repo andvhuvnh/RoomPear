@@ -15,9 +15,11 @@ export default function ChatsStack() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerTintColor: '#0C5389',
-        headerTitleStyle: { fontWeight: '600' },
-        contentStyle: { backgroundColor: '#E8EEF2' },
+        headerTintColor: '#1A2C24',
+        headerTitleStyle: { fontWeight: '600', color: '#1A2C24' },
+        headerStyle: { backgroundColor: '#F5FAF7' },
+        headerShadowVisible: false,
+        contentStyle: { backgroundColor: 'transparent' },
       }}
     >
       <Stack.Screen
@@ -28,7 +30,10 @@ export default function ChatsStack() {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ headerBackTitle: 'Chats' }}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+        }}
       />
       <Stack.Screen
         name="ProfileView"

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getProfileImageUrls } from './storage';
+import { getProfileImageUrls, profilePhotoPrimaryCacheKey } from './storage';
 
 export type Match = {
   id: string;
@@ -7,6 +7,8 @@ export type Match = {
   age: number | null;
   location: string;
   photoUrls: string[];
+  /** First photo; use with expo-image `cacheKey` when showing `photoUrls[0]`. */
+  primaryPhotoCacheKey: string | null;
   matchedAt: string;
 };
 
@@ -60,6 +62,7 @@ export async function fetchMatches(userId: string): Promise<Match[]> {
       age: profile.age ?? null,
       location,
       photoUrls: urls,
+      primaryPhotoCacheKey: profilePhotoPrimaryCacheKey(profile.profile_photo_url),
       matchedAt,
     });
   }

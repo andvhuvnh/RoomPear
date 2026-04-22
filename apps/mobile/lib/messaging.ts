@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getProfileImageUrls } from './storage';
+import { getProfileImageUrls, profilePhotoPrimaryCacheKey } from './storage';
 
 export type ConversationSummary = {
   conversationId: string;
@@ -12,6 +12,8 @@ export type ConversationSummary = {
   otherDisplayName: string;
   /** First profile photo URL (same as PublicProfileCard cover / index 0). */
   otherAvatarUrl: string | null;
+  /** Stable cache key for `otherAvatarUrl` (storage path); signed URL query string changes each fetch. */
+  otherAvatarCacheKey: string | null;
 };
 
 export type ChatMessageRow = {
@@ -107,6 +109,7 @@ export async function fetchConversationSummaries(): Promise<{
   const otherIds = [...new Set(otherIdsByConv.values())];
   const namesById = new Map<string, string>();
   const avatarUrlById = new Map<string, string | null>();
+  const avatarCacheKeyById = new Map<string, string | null>();
   if (otherIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
@@ -114,6 +117,7 @@ export async function fetchConversationSummaries(): Promise<{
       .in('id', otherIds);
     for (const p of profiles ?? []) {
       namesById.set(p.id, displayNameFromProfile(p.name, p.id));
+      avatarCacheKeyById.set(p.id, profilePhotoPrimaryCacheKey(p.profile_photo_url));
       const urls = p.profile_photo_url
         ? (await getProfileImageUrls(p.profile_photo_url)) ?? []
         : [];
@@ -132,6 +136,7 @@ export async function fetchConversationSummaries(): Promise<{
       otherUserId: otherId,
       otherDisplayName: namesById.get(otherId) ?? (otherId ? `User ${otherId.slice(0, 6)}` : 'Chat'),
       otherAvatarUrl: otherId ? avatarUrlById.get(otherId) ?? null : null,
+      otherAvatarCacheKey: otherId ? avatarCacheKeyById.get(otherId) ?? null : null,
     };
   });
 

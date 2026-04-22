@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,12 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
+  Keyboard,
+  type KeyboardEvent,
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import { supabase } from '../lib/supabase';
@@ -20,10 +22,34 @@ import {
   ensureMatchConversation,
   type ChatMessageRow,
 } from '../lib/messaging';
+import {
+  CHATS_SCREEN_BG,
+  CHATS_CARD,
+  CHATS_GREEN,
+  CHATS_GREEN_BORDER,
+} from '../theme/chatsAmbient';
+import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 
 type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
 
+/** Extra space between the composer and the top of the keyboard (iOS). */
+const KEYBOARD_TOP_GAP = 10;
+
+const C = {
+  text: '#1A2C24',
+  gray: '#717182',
+  white: '#FFFFFF',
+  surface: CHATS_CARD,
+  surfaceBorder: CHATS_GREEN_BORDER,
+  cta: '#030213',
+};
+
+function Background({ children }: { children: React.ReactNode }) {
+  return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
+}
+
 export default function ChatScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { conversationId: initialConversationId, otherUserId, title } = route.params;
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
@@ -31,11 +57,13 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(!!initialConversationId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  /** Bottom inset for keyboard — avoids KeyboardAvoidingView fighting FlatList (jitter). */
+  const [keyboardBottom, setKeyboardBottom] = useState(0);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
+  const messageCountRef = useRef(0);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ title });
-  }, [navigation, title]);
+  /** Space for floating top bar (safe area + row + padding). */
+  const topPad = insets.top + 56 + 12;
 
   const appendUnique = useCallback((row: ChatMessageRow) => {
     setMessages((prev) => {
@@ -62,7 +90,6 @@ export default function ChatScreen({ navigation, route }: Props) {
       } else {
         setMessages(data);
       }
-      // Mark read when the thread is opened.
       markConversationRead(conversationId).then(({ error: rErr }) => {
         if (rErr) console.warn('markConversationRead', rErr.message);
       });
@@ -83,7 +110,6 @@ export default function ChatScreen({ navigation, route }: Props) {
           const row = payload.new as ChatMessageRow;
           if (row?.conversation_id === conversationId) {
             appendUnique(row);
-            // If we receive a message while the chat is open, treat it as read.
             if (myUserId && row.sender_id && row.sender_id !== myUserId) {
               markConversationRead(conversationId).then(({ error: rErr }) => {
                 if (rErr) console.warn('markConversationRead', rErr.message);
@@ -100,11 +126,40 @@ export default function ChatScreen({ navigation, route }: Props) {
     };
   }, [conversationId, appendUnique, myUserId]);
 
+  // iOS: window doesn’t resize for the keyboard — pad the composer by keyboard height.
+  // Android: rely on adjustResize + flex layout; extra padding here doubles the shift and jitters.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const onShow = (e: KeyboardEvent) => setKeyboardBottom(e.endCoordinates.height);
+    const onHide = () => setKeyboardBottom(0);
+
+    const subShow = Keyboard.addListener('keyboardDidShow', onShow);
+    const subHide = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  // Scroll only when the message list changes — not on every layout/content-size change
+  // (keyboard + KeyboardAvoidingView resize was retriggering scrollToEnd and causing jitter).
+  useEffect(() => {
+    if (messages.length === 0) {
+      messageCountRef.current = 0;
+      return;
+    }
+    if (messages.length === messageCountRef.current) return;
+    messageCountRef.current = messages.length;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: messages.length > 1 });
+    });
+  }, [messages.length]);
+
   const onSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
 
-    // If no conversation yet, create it now (first message)
     let convId = conversationId;
     if (!convId && otherUserId) {
       const { data: newConvId, error: convErr } = await ensureMatchConversation(otherUserId);
@@ -134,81 +189,113 @@ export default function ChatScreen({ navigation, route }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0C5389" />
-      </View>
+      <Background>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <ChatStyleTopBar
+            title={title}
+            onBack={() => navigation.goBack()}
+            topInset={insets.top}
+            backAccessibilityLabel="Back to chats"
+          />
+        </View>
+        <View style={[styles.centered, { paddingTop: insets.top + 56 }]}>
+          <ActivityIndicator size="large" color={CHATS_GREEN} />
+        </View>
+      </Background>
     );
   }
 
+  const composerBottomPad =
+    Platform.OS === 'ios'
+      ? keyboardBottom > 0
+        ? keyboardBottom + KEYBOARD_TOP_GAP
+        : Math.max(insets.bottom, 10)
+      : Math.max(insets.bottom, 10);
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        onContentSizeChange={() =>
-          listRef.current?.scrollToEnd({ animated: true })
-        }
-        renderItem={({ item }) => {
-          const mine = myUserId != null && item.sender_id === myUserId;
-          return (
-            <View
-              style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}
-            >
-              <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-                  {item.body}
-                </Text>
-                <Text style={[styles.time, mine && styles.timeMine]}>
-                  {new Date(item.created_at).toLocaleTimeString(undefined, {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </View>
-            </View>
-          );
-        }}
-      />
-      <View style={styles.composer}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Message…"
-          placeholderTextColor="#889"
-          multiline
-          maxLength={4000}
-          editable={!sending}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
-          onPress={onSend}
-          disabled={!draft.trim() || sending}
-          accessibilityLabel="Send message"
-        >
-          <Text style={styles.sendBtnText}>Send</Text>
-        </TouchableOpacity>
+    <Background>
+      <View style={styles.root}>
+        <View style={styles.flex}>
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingTop: topPad },
+            ]}
+            renderItem={({ item }) => {
+              const mine = myUserId != null && item.sender_id === myUserId;
+              return (
+                <View
+                  style={[styles.bubbleRow, mine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}
+                >
+                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                    <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
+                      {item.body}
+                    </Text>
+                    <Text style={[styles.time, mine && styles.timeMine]}>
+                      {new Date(item.created_at).toLocaleTimeString(undefined, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
+          />
+
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <ChatStyleTopBar
+              title={title}
+              onBack={() => navigation.goBack()}
+              topInset={insets.top}
+              backAccessibilityLabel="Back to chats"
+            />
+          </View>
+        </View>
+
+        <View style={[styles.composer, { paddingBottom: composerBottomPad }]}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Message…"
+            placeholderTextColor={C.gray}
+            multiline
+            maxLength={4000}
+            editable={!sending}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+            onPress={onSend}
+            disabled={!draft.trim() || sending}
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendBtnText}>Send</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </KeyboardAvoidingView>
+    </Background>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   root: {
     flex: 1,
-    backgroundColor: '#E8EEF2',
+    backgroundColor: 'transparent',
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E8EEF2',
+    backgroundColor: 'transparent',
   },
   listContent: {
     paddingHorizontal: 12,
@@ -232,17 +319,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   bubbleMine: {
-    backgroundColor: '#189AA2',
+    backgroundColor: C.cta,
   },
   bubbleTheirs: {
-    backgroundColor: '#FDFDFD',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#D9E1E6',
+    borderColor: C.surfaceBorder,
   },
   bubbleText: {
     fontSize: 16,
     lineHeight: 22,
-    color: '#0C5389',
+    color: C.text,
   },
   bubbleTextMine: {
     color: '#FDFDFD',
@@ -250,7 +337,7 @@ const styles = StyleSheet.create({
   time: {
     marginTop: 4,
     fontSize: 11,
-    color: '#189AA2',
+    color: C.gray,
     alignSelf: 'flex-end',
   },
   timeMine: {
@@ -259,37 +346,37 @@ const styles = StyleSheet.create({
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    backgroundColor: '#FDFDFD',
+    backgroundColor: CHATS_CARD,
     borderTopWidth: 1,
-    borderTopColor: '#D9E1E6',
+    borderTopColor: CHATS_GREEN_BORDER,
   },
   input: {
     flex: 1,
     minHeight: 40,
     maxHeight: 120,
     borderWidth: 1,
-    borderColor: '#D9E1E6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: CHATS_GREEN_BORDER,
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#0C5389',
+    color: C.text,
+    backgroundColor: C.surface,
   },
   sendBtn: {
     marginLeft: 8,
-    backgroundColor: '#0C5389',
-    paddingHorizontal: 16,
+    backgroundColor: C.cta,
+    paddingHorizontal: 18,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   sendBtnDisabled: {
     opacity: 0.45,
   },
   sendBtnText: {
-    color: '#FDFDFD',
+    color: C.white,
     fontWeight: '600',
     fontSize: 16,
   },
