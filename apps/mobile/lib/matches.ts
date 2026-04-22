@@ -28,7 +28,7 @@ export async function fetchMatches(userId: string): Promise<Match[]> {
     .from('swipes')
     .select('swiper_id, created_at')
     .eq('swiped_id', userId)
-    .eq('direction', 'like')
+    .in('direction', ['like', 'top_pick'])
     .in('swiper_id', matchedUserIds);
 
   // Fetch their profiles

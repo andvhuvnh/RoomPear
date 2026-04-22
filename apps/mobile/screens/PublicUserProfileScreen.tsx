@@ -20,7 +20,7 @@ import { getPreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import PublicProfileCard from '../components/PublicProfileCard';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
-import { CHATS_SCREEN_BG, CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
+import { CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
 
 type PromptEntry = { question: string; answer: string };
 
@@ -237,7 +237,8 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: CHATS_SCREEN_BG,
+    /** Match card surface so safe-area padding above the card is not a visible “gray bar”. */
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flexGrow: 1,

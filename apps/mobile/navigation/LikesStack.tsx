@@ -24,7 +24,11 @@ export default function LikesStack() {
       }}
     >
       <Stack.Screen name="LikesHome" component={LikesScreen} />
-      <Stack.Screen name="ProfileView" component={PublicUserProfileScreen} />
+      <Stack.Screen
+        name="ProfileView"
+        component={PublicUserProfileScreen}
+        options={{ contentStyle: { backgroundColor: '#FFFFFF' } }}
+      />
     </Stack.Navigator>
   );
 }

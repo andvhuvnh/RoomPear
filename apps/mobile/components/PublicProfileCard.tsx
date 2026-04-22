@@ -173,9 +173,9 @@ export default function PublicProfileCard({
             index,
           })}
         />
-        {!profilePhotos ? (
+        {immersive ? (
           <View
-            style={[styles.bottomScrim, immersive && styles.bottomScrimImmersive]}
+            style={[styles.bottomScrim, styles.bottomScrimImmersive]}
             pointerEvents="none"
           />
         ) : null}
@@ -185,15 +185,29 @@ export default function PublicProfileCard({
             style={[styles.dots, immersive && styles.dotsImmersive]}
             pointerEvents="none"
           >
-            {imageUrls.map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  i === activeIndex ? styles.dotActive : styles.dotInactive,
-                ]}
-              />
-            ))}
+            {immersive ? (
+              imageUrls.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    i === activeIndex ? styles.dotActive : styles.dotInactive,
+                  ]}
+                />
+              ))
+            ) : (
+              <View style={styles.dotsPill}>
+                {imageUrls.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.dot,
+                      i === activeIndex ? styles.dotActive : styles.dotInactive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         ) : null}
       </View>
@@ -314,6 +328,15 @@ const styles = StyleSheet.create({
   dotsImmersive: {
     bottom: 108,
     zIndex: 3,
+  },
+  /** Compact backdrop for dots only (default / profilePhotos) — avoids a full-width dim bar on the photo. */
+  dotsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   dot: {
     marginHorizontal: 3,

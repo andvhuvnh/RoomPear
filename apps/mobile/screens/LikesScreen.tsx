@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -48,6 +48,9 @@ type NavProp = CompositeNavigationProp<
 >;
 
 type SortBy = 'recent' | 'name';
+
+/** Skip silent refetch on tab refocus if data was loaded recently (pull-to-refresh always bypasses). */
+const FOCUS_STALE_MS = 90_000;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_PADDING = 16;
@@ -118,17 +121,53 @@ export default function LikesScreen() {
   const [matchName, setMatchName] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('recent');
 
-  const load = useCallback(async (isRefresh = false) => {
+  /** Same pattern as Chats: no full-screen spinner on every tab focus; optional stale skip avoids redundant fetches. */
+  const initialLoadDoneRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
+  const lastFetchedAtRef = useRef(0);
+
+  const load = useCallback(async (isRefresh = false, skipIfFresh = false) => {
     if (isRefresh) setRefreshing(true);
-    else setLoading(true);
 
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user.id;
     if (!uid) {
+      setUserId(null);
+      setLikers([]);
+      setRevealedIds(new Set());
+      setLikedBackIds(new Set());
       setLoading(false);
+      setRefreshing(false);
+      initialLoadDoneRef.current = false;
+      lastUserIdRef.current = null;
+      lastFetchedAtRef.current = 0;
+      return;
+    }
+
+    if (lastUserIdRef.current !== uid) {
+      if (lastUserIdRef.current !== null) {
+        setLikers([]);
+        setRevealedIds(new Set());
+        setLikedBackIds(new Set());
+      }
+      initialLoadDoneRef.current = false;
+      lastUserIdRef.current = uid;
+      lastFetchedAtRef.current = 0;
+    }
+
+    if (
+      skipIfFresh &&
+      initialLoadDoneRef.current &&
+      !isRefresh &&
+      Date.now() - lastFetchedAtRef.current < FOCUS_STALE_MS
+    ) {
       setRefreshing(false);
       return;
     }
+
+    const firstLoadForUser = !initialLoadDoneRef.current;
+    if (!isRefresh && firstLoadForUser) setLoading(true);
+
     setUserId(uid);
 
     const { data: profile } = await supabase
@@ -151,13 +190,15 @@ export default function LikesScreen() {
       [...persistedRevealed].filter((likerId) => pendingIds.has(likerId))
     );
     setRevealedIds(filteredRevealed);
+    initialLoadDoneRef.current = true;
+    lastFetchedAtRef.current = Date.now();
     setLoading(false);
     setRefreshing(false);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load(false, true);
     }, [load])
   );
 
