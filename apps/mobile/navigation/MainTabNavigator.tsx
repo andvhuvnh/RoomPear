@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { fonts } from '../lib/typography';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import DiscoverScreen from '../screens/DiscoverScreen';
@@ -83,6 +84,10 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: TAB_ACTIVE,
         tabBarInactiveTintColor: '#888',
+        tabBarLabelStyle: {
+          fontFamily: fonts.semiBold,
+          fontSize: 11,
+        },
         tabBarStyle: {
           borderTopColor: '#D9E1E6',
           backgroundColor: '#FDFDFD',

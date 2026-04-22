@@ -15,6 +15,7 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -33,47 +34,28 @@ import PublicProfileCard from '../components/PublicProfileCard';
 import * as Clipboard from 'expo-clipboard';
 import { redeemReferralCode, redeemErrorMessage } from '../lib/referrals';
 import { getListing, saveListing, deleteListing, type Listing } from '../lib/listings';
+import ProfileOverviewSection from './profile/ProfileOverviewSection';
+import ListingModal from './profile/ListingModal';
+import SettingsModal from './profile/SettingsModal';
+import EditNameModal from './profile/EditNameModal';
+import {
+  DEALBREAKER_ITEMS,
+  FILM_STRIP_GAP,
+  FILM_STRIP_HEIGHT_FACTOR,
+  INTEREST_CATEGORIES,
+  MAX_LISTING_PHOTOS,
+  PROMPTS,
+} from './profile/userProfileConstants';
+import {
+  formatMoveInDateForInput,
+  normalizeCity,
+  normalizeMoveInDate,
+  normalizeState,
+  normalizeZip,
+  validateListingLocation,
+  validateMoveInDate,
+} from './profile/listingFormUtils';
 
-// ─── Shared constants ────────────────────────────────────────────────────────
-
-const DEALBREAKER_ITEMS = [
-  { key: 'smoking',    label: 'Smoking indoors' },
-  { key: 'pets',       label: 'Pets in the unit' },
-  { key: 'parties',    label: 'Frequent parties' },
-  { key: 'early_bird', label: 'Noise before 8 am' },
-  { key: 'night_owl',  label: 'Noise after 11 pm' },
-  { key: 'guests',     label: 'Overnight guests' },
-  { key: 'messy',      label: 'Messy common areas' },
-];
-
-const INTEREST_CATEGORIES = [
-  { key: 'fitness', label: '🏃 Fitness', options: ['Running', 'Yoga', 'Gym', 'Hiking', 'Swimming', 'Cycling', 'Rock Climbing'] },
-  { key: 'food',    label: '🍕 Food & Drink', options: ['Cooking', 'Baking', 'Coffee', 'Wine & Cocktails', 'Foodie Adventures', 'Meal Prep'] },
-  { key: 'arts',    label: '🎨 Arts & Culture', options: ['Movies', 'Music', 'Reading', 'Photography', 'Art Galleries', 'Theater'] },
-  { key: 'outdoors', label: '🌿 Outdoors', options: ['Camping', 'Travel', 'Beach', 'Gardening', 'Road Trips', 'Surfing'] },
-  { key: 'tech',    label: '🎮 Tech & Gaming', options: ['Gaming', 'Coding', 'Podcasts', 'Anime', 'Board Games', 'VR / AR'] },
-];
-
-const PROMPTS = [
-  'My ideal Saturday morning looks like…',
-  "I'm looking for a roommate who…",
-  "Don't room with me if you hate…",
-  'My morning routine is…',
-  "On weeknights you'll find me…",
-  'Weekends are for…',
-  'I clean the apartment…',
-  'My noise level is…',
-  'Overnight guests are…',
-  'My kitchen rule is…',
-  'My sleep schedule is…',
-  "I've lived with roommates before and learned…",
-  'A quirk about living with me…',
-  'My ideal apartment vibe…',
-  'After work I usually…',
-  'The best thing about me as a roommate…',
-];
-
-const MAX_LISTING_PHOTOS = 6;
 type ListingPhotoItem = { kind: 'path'; path: string; url: string } | { kind: 'local'; uri: string };
 
 /** Light theme: shadcn-style neutrals + RoomPear pear green accents. */
@@ -96,6 +78,8 @@ const theme = {
   pearMuted: '#E4EDE6',
   pearDark: '#5A6B5D',
   pearForeground: '#FFFFFF',
+  /** Light veil on top of the sheet BlurView — keeps text readable while staying glassy. */
+  sheetGlassOverlay: 'rgba(242, 244, 248, 0.44)',
 };
 
 type DealbreakerLevel = 'hard' | 'soft' | 'none';
@@ -116,6 +100,18 @@ export default function UserProfileScreen({ route }: Props) {
     presentCustomerCenter,
     logoutPurchases,
   } = usePurchases();
+  /** Pull dock flush with tab bar — tab scenes often leave a gap above the bar. */
+  const profileSheetDockBottom = -Math.min(insets.bottom + 18, 36);
+  const { width: windowWidth } = useWindowDimensions();
+  /** Overlapping strip: portrait width + height (not square). */
+  const { filmThumbWidth, filmThumbHeight } = useMemo(() => {
+    const scrollPad = 14 * 2;
+    const accordionPad = 2 * 2;
+    const inner = windowWidth - scrollPad - accordionPad;
+    const w = Math.max(76, Math.min(102, Math.floor(inner * 0.27)));
+    const h = Math.round(w * FILM_STRIP_HEIGHT_FACTOR);
+    return { filmThumbWidth: w, filmThumbHeight: h };
+  }, [windowWidth]);
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -146,6 +142,7 @@ export default function UserProfileScreen({ route }: Props) {
 
   // Listing state
   const [listing, setListing] = useState<Listing | null>(null);
+  const [listingPhotoUrls, setListingPhotoUrls] = useState<string[]>([]);
   const [listingOpen, setListingOpen] = useState(false);
   const [savingListing, setSavingListing] = useState(false);
   const [editRent, setEditRent] = useState('');
@@ -162,12 +159,24 @@ export default function UserProfileScreen({ route }: Props) {
   const windowDims = Dimensions.get('window');
   /** Expanded sheet height when swiped up (peek stays small). */
   const SHEET_EXPANDED_HEIGHT = Math.round(windowDims.height * 0.7);
-  const SHEET_PEEK_HEIGHT = 76;
+  /** Collapsed strip height — solid header only (no blur), so the card photo doesn’t bleed through. */
+  const SHEET_PEEK_HEIGHT = 88;
   const SHEET_COLLAPSED_OFFSET = Math.max(0, SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT);
 
   const sheetTranslateY = useRef(new Animated.Value(SHEET_COLLAPSED_OFFSET)).current;
   const sheetDragStart = useRef(SHEET_COLLAPSED_OFFSET);
   const sheetYCurrent = useRef(SHEET_COLLAPSED_OFFSET);
+
+  /** Accordion intro + body only make sense when the sheet is expanded (not the collapsed grab strip). */
+  const [profileSheetExpanded, setProfileSheetExpanded] = useState(false);
+  useEffect(() => {
+    const id = sheetTranslateY.addListener(({ value }) => {
+      setProfileSheetExpanded(value < SHEET_COLLAPSED_OFFSET / 2);
+    });
+    return () => {
+      sheetTranslateY.removeListener(id);
+    };
+  }, [SHEET_COLLAPSED_OFFSET, sheetTranslateY]);
 
   const snapSheetTarget = useCallback(
     (y: number, velocityY: number) => {
@@ -254,16 +263,23 @@ export default function UserProfileScreen({ route }: Props) {
   const loadListing = useCallback(async (userId: string) => {
     const l = await getListing(userId);
     setListing(l);
+    const paths = l?.listing_photos ?? [];
+    if (paths.length === 0) {
+      setListingPhotoUrls([]);
+      return;
+    }
+    const urls = await Promise.all(paths.map((path) => getProfileImageUrl(path)));
+    setListingPhotoUrls(urls.filter((u): u is string => Boolean(u)));
   }, []);
 
   const openListingModal = async () => {
     setEditRent(listing?.rent != null ? String(listing.rent) : '');
     setEditRoomType(listing?.room_type ?? '');
     setEditAddress(listing?.address ?? '');
-    setEditListingCity(listing?.city ?? '');
-    setEditListingState(listing?.state ?? '');
-    setEditListingZip(listing?.zip_code ?? '');
-    setEditMoveInDate(listing?.move_in_date ?? '');
+    setEditListingCity(String(listing?.city ?? prefs?.city ?? '').trim());
+    setEditListingState(String(listing?.state ?? prefs?.state ?? '').trim());
+    setEditListingZip(String(listing?.zip_code ?? prefs?.zip_code ?? '').trim());
+    setEditMoveInDate(formatMoveInDateForInput(listing?.move_in_date));
     const paths = listing?.listing_photos ?? [];
     const items: ListingPhotoItem[] = await Promise.all(
       paths.map(async (path) => {
@@ -284,6 +300,25 @@ export default function UserProfileScreen({ route }: Props) {
 
   const handleSaveListing = async () => {
     if (!user) return;
+    let normalizedCity = normalizeCity(editListingCity);
+    let normalizedState = normalizeState(editListingState);
+    let normalizedZip = normalizeZip(editListingZip.trim());
+    if (!normalizedCity && prefs?.city) normalizedCity = normalizeCity(String(prefs.city));
+    if (!normalizedState && prefs?.state) normalizedState = normalizeState(String(prefs.state));
+    if (!normalizedZip && prefs?.zip_code) normalizedZip = normalizeZip(String(prefs.zip_code));
+
+    const locationError = validateListingLocation(normalizedCity, normalizedState, normalizedZip);
+    if (locationError) {
+      Alert.alert('Invalid location', locationError);
+      return;
+    }
+    const normalizedMoveInDate = normalizeMoveInDate(editMoveInDate.trim());
+    const moveInDateError = validateMoveInDate(normalizedMoveInDate);
+    if (moveInDateError) {
+      Alert.alert('Invalid date', moveInDateError);
+      return;
+    }
+
     setSavingListing(true);
     try {
       const photoPaths: string[] = [];
@@ -300,13 +335,17 @@ export default function UserProfileScreen({ route }: Props) {
         rent: editRent ? parseFloat(editRent) : null,
         room_type: editRoomType.trim() || null,
         address: editAddress.trim() || null,
-        city: editListingCity.trim() || null,
-        state: editListingState.trim() || null,
-        zip_code: editListingZip.trim() || null,
-        move_in_date: editMoveInDate.trim() || null,
+        city: normalizedCity || null,
+        state: normalizedState || null,
+        zip_code: normalizedZip || null,
+        move_in_date: normalizedMoveInDate || null,
         listing_photos: photoPaths,
       });
       if (!result.ok) { Alert.alert('Error', result.error); return; }
+      setEditListingCity(normalizedCity);
+      setEditListingState(normalizedState);
+      setEditListingZip(normalizedZip);
+      setEditMoveInDate(normalizedMoveInDate);
       setListingOpen(false);
       await loadListing(user.id);
       await loadProfile(user.id);
@@ -555,6 +594,58 @@ export default function UserProfileScreen({ route }: Props) {
     typeof profile?.age === 'number' && !Number.isNaN(profile.age)
       ? profile.age
       : null;
+  const profileInterests = useMemo(() => {
+    const grouped = prefs?.interests;
+    if (!grouped || typeof grouped !== 'object') return [] as string[];
+    const values = Object.values(grouped).flatMap((entry) =>
+      Array.isArray(entry) ? entry.filter((v): v is string => typeof v === 'string') : []
+    );
+    return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).slice(0, 12);
+  }, [prefs?.interests]);
+  const profileHobbies = useMemo(() => {
+    const raw = profile?.hobbies;
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+    }
+    if (typeof raw === 'string') {
+      return raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+    }
+    return [] as string[];
+  }, [profile?.hobbies]);
+  const listingSearchLocationLine = useMemo(() => {
+    const fromPrefs = formatLocationLine(prefs);
+    if (fromPrefs) return fromPrefs;
+    if (!listing) return '';
+    const city = listing.city?.trim();
+    const state = listing.state?.trim();
+    if (city && state) return `${city}, ${state}`;
+    return city || state || '';
+  }, [prefs, listing]);
+  const profilePromptsForOverview = useMemo(() => {
+    const raw = profile?.prompts;
+    if (!Array.isArray(raw)) return [] as { question: string; answer: string }[];
+    return raw
+      .filter(
+        (p): p is { question: string; answer: string } =>
+          p != null &&
+          typeof p === 'object' &&
+          typeof (p as { question?: unknown }).question === 'string' &&
+          typeof (p as { answer?: unknown }).answer === 'string'
+      )
+      .map((p) => ({
+        question: (p as { question: string }).question.trim(),
+        answer: (p as { answer: string }).answer.trim(),
+      }))
+      .filter((p) => p.question && p.answer);
+  }, [profile?.prompts]);
 
   const profileSaysPremium =
     String(profile?.subscription_tier || '').toLowerCase() === SUBSCRIPTION_TIER_PREMIUM;
@@ -594,71 +685,109 @@ export default function UserProfileScreen({ route }: Props) {
             keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
           >
             <View style={styles.profileStage}>
-              <View style={styles.headerRow}>
-                <View style={styles.headerTitleBlock}>
-                  <Text style={styles.titleOnGreen}>Profile</Text>
-                  <Text style={styles.taglineOnGreen}>
-                    Swipe up on the panel for photos & personality
-                  </Text>
+              <ScrollView
+                style={styles.profileScroll}
+                contentContainerStyle={[
+                  styles.profileScrollContent,
+                  { paddingBottom: SHEET_PEEK_HEIGHT + Math.max(insets.bottom, 16) + 16 },
+                ]}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.headerRow}>
+                  <View style={styles.headerTitleBlock}>
+                    <Text style={styles.titleOnGreen}>Profile</Text>
+                    <Text style={styles.taglineOnGreen}>Swipe up to adjust your profile</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open settings"
+                    onPress={() => setSettingsOpen(true)}
+                    style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
+                  >
+                    <Ionicons name="settings-outline" size={24} color="rgba(255,255,255,0.95)" />
+                  </Pressable>
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Open settings"
-                  onPress={() => setSettingsOpen(true)}
-                  style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
-                >
-                  <Ionicons name="settings-outline" size={24} color="rgba(255,255,255,0.95)" />
-                </Pressable>
-              </View>
 
-              <View style={styles.profilePhotoStage}>
-                <View style={styles.profileHeroWrap}>
-                  <PublicProfileCard
-                    variant="profilePhotos"
-                    imageUrls={imageUrls}
-                    name={displayName}
-                    age={displayAge}
-                    location={formatLocationLine(prefs)}
-                    bio=""
-                    hobbies={[]}
-                  />
+                <View style={styles.profilePhotoStage}>
+                  <View style={styles.profileHeroWrap}>
+                    <PublicProfileCard
+                      variant="profilePhotos"
+                      imageUrls={imageUrls}
+                      name={displayName}
+                      age={displayAge}
+                      location={formatLocationLine(prefs)}
+                      bio=""
+                      hobbies={[]}
+                    />
+                  </View>
                 </View>
-              </View>
+
+                <ProfileOverviewSection
+                  displayName={displayName}
+                  displayAge={displayAge}
+                  profileHobbies={profileHobbies}
+                  profileInterests={profileInterests}
+                  listing={listing}
+                  searchLocationLine={listingSearchLocationLine}
+                  listingPhotoUrls={listingPhotoUrls}
+                  prompts={profilePromptsForOverview}
+                />
+              </ScrollView>
 
               <Animated.View
                 style={[
                   styles.personalitySheet,
                   {
                     height: SHEET_EXPANDED_HEIGHT + Math.max(insets.bottom, 10),
+                    bottom: profileSheetDockBottom,
                     transform: [{ translateY: sheetTranslateY }],
                   },
                 ]}
               >
                 <BlurView
-                  intensity={Platform.OS === 'ios' ? 38 : 28}
+                  intensity={Platform.OS === 'ios' ? 52 : 32}
                   tint={Platform.OS === 'ios' ? 'systemThinMaterialLight' : 'light'}
-                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-                  style={styles.personalitySheetBlur}
+                  {...(Platform.OS === 'android'
+                    ? { experimentalBlurMethod: 'dimezisBlurView' as const }
+                    : {})}
+                  style={styles.sheetBlur}
+                  pointerEvents="none"
+                />
+                <View style={styles.sheetGlassTint} pointerEvents="none" />
+                {/* Handle fills the peek height so ScrollView content never shows when collapsed */}
+                <View
+                  style={[styles.sheetHandleSolid, { minHeight: SHEET_PEEK_HEIGHT }]}
+                  {...sheetHandlePan.panHandlers}
                 >
-                  <View style={styles.sheetHandleZone} {...sheetHandlePan.panHandlers}>
-                    <Pressable
-                      onPress={togglePersonalitySheet}
-                      accessibilityRole="button"
-                      accessibilityLabel="Expand or collapse Photos and personality"
-                      style={({ pressed }) => [styles.sheetGrabRow, pressed && { opacity: 0.9 }]}
-                    >
-                      <View style={styles.sheetHandlePill} />
-                      <Text style={styles.sheetGrabTitle}>Photos & personality</Text>
-                      <Ionicons name="chevron-up" size={18} color='rgba(26, 26, 30, 0.72)' />
-                    </Pressable>
-                  </View>
+                  <Pressable
+                    onPress={togglePersonalitySheet}
+                    accessibilityRole="button"
+                    accessibilityLabel="Expand or collapse Adjust profile"
+                    style={({ pressed }) => [styles.sheetGrabRow, pressed && { opacity: 0.92 }]}
+                  >
+                    <View style={styles.sheetHandlePill} />
+                    <Text style={styles.sheetGrabTitle}>Adjust profile</Text>
+                    <Ionicons
+                      name={profileSheetExpanded ? 'chevron-down' : 'chevron-up'}
+                      size={18}
+                      color="rgba(26, 26, 30, 0.72)"
+                    />
+                  </Pressable>
+                </View>
+                <View style={styles.personalitySheetBody}>
                   <ScrollView
                     style={styles.personalitySheetScroll}
-                    contentContainerStyle={styles.personalitySheetScrollContent}
+                    contentContainerStyle={[
+                      styles.personalitySheetScrollContent,
+                      { paddingBottom: 52 + Math.max(insets.bottom, 12) },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled
                   >
+                    {profileSheetExpanded ? (
+                      <>
                     <Text style={styles.accordionHint}>Tap a row — sections drop down below</Text>
 
                     <TouchableOpacity
@@ -681,44 +810,96 @@ export default function UserProfileScreen({ route }: Props) {
                 </TouchableOpacity>
                 {profileEditorSection === 'photos' ? (
                   <View style={styles.accordionBody}>
-                    <Text style={styles.photosHelp}>
-                      First photo is your cover. Swipe on your profile card to see the rest. Keep 3–5 photos.
-                    </Text>
                     {savingPhotos ? (
                       <ActivityIndicator style={{ marginVertical: 16 }} color={theme.primary} />
                     ) : null}
-                    <View style={styles.photoList}>
-                      {imageUrls.map((url, index) => (
-                        <View key={url + index} style={styles.photoRow}>
-                          <Image source={{ uri: url }} style={styles.photoRowImage} />
-                          <View style={styles.photoRowMeta}>
-                            <Text style={styles.photoRowLabel}>
-                              {index === 0 ? 'Cover photo' : `Photo ${index + 1}`}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => handleRemovePhoto(index)}
-                              disabled={savingPhotos}
-                            >
-                              <Text style={styles.photoRemoveLink}>Remove</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
+                    <View style={styles.photoEditLayout}>
+                      {imageUrls.length === 0 ? (
+                        <TouchableOpacity
+                          style={styles.coverEmpty}
+                          onPress={handleAddPhoto}
+                          disabled={savingPhotos}
+                          activeOpacity={0.88}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add main photo"
+                        >
+                          <Ionicons name="image-outline" size={40} color={theme.mutedForeground} />
+                          <Text style={styles.coverEmptyTitle}>Add main photo</Text>
+                          <Text style={styles.coverEmptyHint}>
+                            Up to {MAX_PROFILE_PHOTOS} photos — extras overlap below
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.coverHero,
+                              pressed && styles.coverHeroPressed,
+                            ]}
+                            onPress={() => handleRemovePhoto(0)}
+                            disabled={savingPhotos}
+                            accessibilityRole="button"
+                            accessibilityLabel="Main photo, tap to edit"
+                          >
+                            <Image source={{ uri: imageUrls[0] }} style={styles.coverImage} />
+                            <View style={styles.mainPhotoPill} pointerEvents="none">
+                              <Text style={styles.mainPhotoPillText}>Main</Text>
+                            </View>
+                          </Pressable>
+
+                          <ScrollView
+                            horizontal
+                            nestedScrollEnabled
+                            showsHorizontalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            style={styles.photoFilmScroll}
+                            contentContainerStyle={styles.photoFilmScrollContent}
+                          >
+                            {imageUrls.slice(1).map((url, index) => {
+                              const realIndex = index + 1;
+                              return (
+                                <Pressable
+                                  key={`film-${realIndex}-${url}`}
+                                  style={({ pressed }) => [
+                                    styles.photoFilmCell,
+                                    {
+                                      width: filmThumbWidth,
+                                      height: filmThumbHeight,
+                                    },
+                                    pressed && styles.photoFilmCellPressed,
+                                  ]}
+                                  onPress={() => handleRemovePhoto(realIndex)}
+                                  disabled={savingPhotos}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Photo ${realIndex + 1}, tap to edit`}
+                                >
+                                  <Image source={{ uri: url }} style={styles.photoFilmImage} />
+                                </Pressable>
+                              );
+                            })}
+                            {photoPaths.length < MAX_PROFILE_PHOTOS ? (
+                              <TouchableOpacity
+                                style={[
+                                  styles.photoFilmCell,
+                                  styles.photoFilmAdd,
+                                  {
+                                    width: filmThumbWidth,
+                                    height: filmThumbHeight,
+                                  },
+                                ]}
+                                onPress={handleAddPhoto}
+                                disabled={savingPhotos}
+                                activeOpacity={0.85}
+                                accessibilityRole="button"
+                                accessibilityLabel="Add photo"
+                              >
+                                <Ionicons name="add" size={28} color={theme.pearDark} />
+                              </TouchableOpacity>
+                            ) : null}
+                          </ScrollView>
+                        </>
+                      )}
                     </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.addPhotoBtn,
-                        photoPaths.length >= MAX_PROFILE_PHOTOS && styles.addPhotoBtnDisabled,
-                      ]}
-                      onPress={handleAddPhoto}
-                      disabled={savingPhotos || photoPaths.length >= MAX_PROFILE_PHOTOS}
-                    >
-                      <Text style={styles.addPhotoBtnText}>
-                        {photoPaths.length >= MAX_PROFILE_PHOTOS
-                          ? `Maximum ${MAX_PROFILE_PHOTOS} photos`
-                          : '+ Add photo'}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 ) : null}
 
@@ -972,404 +1153,77 @@ export default function UserProfileScreen({ route }: Props) {
                     </TouchableOpacity>
                   </View>
                 ) : null}
+                      </>
+                    ) : null}
                   </ScrollView>
-                </BlurView>
+                </View>
               </Animated.View>
             </View>
           </KeyboardAvoidingView>
         )}
       </View>
 
-      {/* Settings hub: deep links into existing flows + future sections */}
-      <Modal
+      <SettingsModal
         visible={settingsOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setSettingsOpen(false)}
-      >
-        <View style={styles.settingsModalRoot}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setSettingsOpen(false)}>
-              <Text style={styles.modalCancel}>Done</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Settings</Text>
-            <View style={{ width: 56 }} />
-          </View>
-          <ScrollView
-            style={styles.settingsScroll}
-            contentContainerStyle={styles.settingsScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.settingsSectionLabel}>Basics</Text>
-            <View style={styles.settingsGroup}>
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => afterCloseSettings(() => openEditName())}
-              >
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="person-outline" size={20} color={theme.foreground} />
-                  <Text style={styles.settingsRowTitle}>Display name</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-              </TouchableOpacity>
-            </View>
+        listing={listing}
+        searchLocationLine={listingSearchLocationLine}
+        profile={profile}
+        user={user}
+        referralDraft={referralDraft}
+        referralBusy={referralBusy}
+        setReferralDraft={setReferralDraft}
+        onClose={() => setSettingsOpen(false)}
+        onOpenEditName={() => afterCloseSettings(() => openEditName())}
+        onOpenListing={() => afterCloseSettings(() => openListingModal())}
+        onDeleteListing={handleDeleteListing}
+        onCopyReferralCode={handleCopyReferralCode}
+        onApplyReferralCode={handleApplyReferralCode}
+        onSignOut={handleSignOut}
+        onDevShowOnboarding={onDevShowOnboarding}
+        styles={styles}
+        theme={theme}
+      />
 
-            <Text style={styles.settingsHelp}>
-              Edit photos, interests, and prompts from the profile tab — not here.
-            </Text>
-
-            <Text style={styles.settingsSectionLabel}>Your place</Text>
-            <View style={styles.settingsGroup}>
-              {listing ? (
-                <>
-                  <View style={styles.settingsListingSummary}>
-                    <Text style={styles.settingsListingTitle}>
-                      {listing.room_type ?? 'Room'}
-                      {listing.city ? ` · ${listing.city}${listing.state ? `, ${listing.state}` : ''}` : ''}
-                    </Text>
-                    {listing.rent != null && (
-                      <Text style={styles.settingsListingMeta}>${listing.rent}/mo</Text>
-                    )}
-                    {listing.move_in_date ? (
-                      <Text style={styles.settingsListingSub}>Available {listing.move_in_date}</Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.settingsRowDivider} />
-                  <TouchableOpacity
-                    style={styles.settingsRow}
-                    onPress={() => afterCloseSettings(() => openListingModal())}
-                  >
-                    <View style={styles.settingsRowLeft}>
-                      <Ionicons name="create-outline" size={20} color={theme.foreground} />
-                      <Text style={styles.settingsRowTitle}>Edit listing</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-                  </TouchableOpacity>
-                  <View style={styles.settingsRowDivider} />
-                  <TouchableOpacity style={styles.settingsRow} onPress={handleDeleteListing}>
-                    <View style={styles.settingsRowLeft}>
-                      <Ionicons name="trash-outline" size={20} color={theme.destructive} />
-                      <Text style={[styles.settingsRowTitle, { color: theme.destructive }]}>Remove listing</Text>
-                    </View>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <TouchableOpacity
-                  style={styles.settingsRow}
-                  onPress={() => afterCloseSettings(() => openListingModal())}
-                >
-                  <View style={styles.settingsRowLeft}>
-                    <Ionicons name="home-outline" size={20} color={theme.foreground} />
-                    <Text style={styles.settingsRowTitle}>Add a place listing</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <Text style={styles.settingsSectionLabel}>Invite friends</Text>
-            <View style={styles.settingsGroup}>
-              <Text style={styles.settingsInviteHelp}>
-                Share your code. When a friend joins and applies it, you both get +1 bonus reveal on Likes.
-              </Text>
-              {profile?.referral_code ? (
-                <View style={styles.referralCodeRow}>
-                  <Text style={styles.referralCodeText}>{profile.referral_code}</Text>
-                  <TouchableOpacity
-                    style={styles.referralCopyBtn}
-                    onPress={() => handleCopyReferralCode(profile.referral_code as string)}
-                  >
-                    <Text style={styles.referralCopyBtnText}>Copy</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-              {!profile?.referred_by_user_id ? (
-                <>
-                  <Text style={styles.inviteLabel}>Have a friend&apos;s code?</Text>
-                  <TextInput
-                    style={styles.referralInput}
-                    placeholder="Enter code"
-                    placeholderTextColor={theme.mutedForeground}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    value={referralDraft}
-                    onChangeText={(t) => setReferralDraft(t.toUpperCase())}
-                    editable={!referralBusy}
-                  />
-                  <TouchableOpacity
-                    style={[styles.referralApplyBtn, referralBusy && styles.referralApplyBtnDim]}
-                    onPress={handleApplyReferralCode}
-                    disabled={referralBusy}
-                  >
-                    {referralBusy ? (
-                      <ActivityIndicator color={theme.primaryForeground} />
-                    ) : (
-                      <Text style={styles.referralApplyBtnText}>Apply code</Text>
-                    )}
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <Text style={styles.inviteLinked}>You joined with a friend&apos;s referral.</Text>
-              )}
-            </View>
-
-            <Text style={styles.settingsSectionLabel}>Account</Text>
-            <View style={styles.settingsGroup}>
-              {user?.email ? (
-                <>
-                  <View style={styles.settingsInfoRow}>
-                    <Text style={styles.settingsInfoLabel}>Email</Text>
-                    <Text style={styles.settingsInfoValue}>{user.email}</Text>
-                  </View>
-                  <View style={styles.settingsRowDivider} />
-                </>
-              ) : null}
-              {profile?.phone ? (
-                <>
-                  <View style={styles.settingsInfoRow}>
-                    <Text style={styles.settingsInfoLabel}>Phone</Text>
-                    <Text style={styles.settingsInfoValue}>{profile.phone}</Text>
-                  </View>
-                  <View style={styles.settingsRowDivider} />
-                </>
-              ) : null}
-              <View style={styles.settingsInfoRow}>
-                <Text style={styles.settingsInfoLabel}>Plan</Text>
-                <Text style={styles.settingsInfoValue}>
-                  {showRoomPearPlus
-                    ? 'RoomPear+'
-                    : formatPlanLabel(profile?.subscription_tier as string)}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.upgradeButton}
-                onPress={() => presentPaywall()}
-                accessibilityRole="button"
-                accessibilityLabel="Upgrade to RoomPear plus"
-              >
-                <Text style={styles.upgradeButtonText}>
-                  {showRoomPearPlus ? 'View plans' : 'Upgrade to RoomPear+'}
-                </Text>
-              </TouchableOpacity>
-              {showRoomPearPlus ? (
-                <TouchableOpacity
-                  style={styles.manageSubButton}
-                  onPress={() => presentCustomerCenter()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Manage subscription"
-                >
-                  <Text style={styles.manageSubButtonText}>Manage subscription</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            <Text style={styles.settingsSectionLabel}>More</Text>
-            <View style={styles.settingsGroup}>
-              <View style={styles.settingsPlaceholderRow}>
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="notifications-outline" size={20} color={theme.mutedForeground} />
-                  <Text style={styles.settingsPlaceholderTitle}>Notifications</Text>
-                </View>
-                <Text style={styles.soonBadge}>Soon</Text>
-              </View>
-              <View style={styles.settingsRowDivider} />
-              <View style={styles.settingsPlaceholderRow}>
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="shield-checkmark-outline" size={20} color={theme.mutedForeground} />
-                  <Text style={styles.settingsPlaceholderTitle}>Privacy & safety</Text>
-                </View>
-                <Text style={styles.soonBadge}>Soon</Text>
-              </View>
-              <View style={styles.settingsRowDivider} />
-              <View style={styles.settingsPlaceholderRow}>
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="card-outline" size={20} color={theme.mutedForeground} />
-                  <Text style={styles.settingsPlaceholderTitle}>Subscription & billing</Text>
-                </View>
-                <Text style={styles.soonBadge}>Soon</Text>
-              </View>
-              <View style={styles.settingsRowDivider} />
-              <View style={styles.settingsPlaceholderRow}>
-                <View style={styles.settingsRowLeft}>
-                  <Ionicons name="help-circle-outline" size={20} color={theme.mutedForeground} />
-                  <Text style={styles.settingsPlaceholderTitle}>Help & support</Text>
-                </View>
-                <Text style={styles.soonBadge}>Soon</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-              <Text style={styles.signOutButtonText}>Sign out</Text>
-            </TouchableOpacity>
-            {__DEV__ && onDevShowOnboarding && (
-              <TouchableOpacity style={styles.devButton} onPress={onDevShowOnboarding}>
-                <Text style={styles.devButtonText}>DEV: Preview Onboarding</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal
+      <EditNameModal
         visible={editNameOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setEditNameOpen(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalRoot}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditNameOpen(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Display name</Text>
-            <TouchableOpacity onPress={handleSaveName} disabled={savingProfile}>
-              {savingProfile ? (
-                <ActivityIndicator color={theme.primary} />
-              ) : (
-                <Text style={styles.modalSave}>Save</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalScrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.nameFieldLabel}>Name</Text>
-            <TextInput
-              style={styles.nameInput}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Your name"
-              placeholderTextColor={theme.mutedForeground}
-              autoCapitalize="words"
-            />
-            <Text style={styles.nameFieldHint}>
-              City and location come from onboarding.
-            </Text>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
+        savingProfile={savingProfile}
+        editName={editName}
+        setEditName={setEditName}
+        onClose={() => setEditNameOpen(false)}
+        onSave={handleSaveName}
+        styles={styles}
+        theme={theme}
+      />
 
       {/* ── Listing modal ── */}
-      <Modal
+      <ListingModal
         visible={listingOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setListingOpen(false)}
-      >
-        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setListingOpen(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>{listing ? 'Edit Listing' : 'Add Listing'}</Text>
-            <TouchableOpacity onPress={handleSaveListing} disabled={savingListing}>
-              {savingListing ? <ActivityIndicator color={theme.primary} /> : <Text style={styles.modalSave}>Save</Text>}
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-
-            <Text style={styles.listingFieldLabel}>Photos ({editListingPhotos.length}/{MAX_LISTING_PHOTOS})</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-                {editListingPhotos.map((item, idx) => (
-                  <View key={idx} style={{ position: 'relative' }}>
-                    <Image
-                      source={{ uri: item.kind === 'path' ? item.url : item.uri }}
-                      style={{ width: 110, height: 82, borderRadius: 8, backgroundColor: '#ddd' }}
-                    />
-                    <TouchableOpacity
-                      style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
-                      onPress={() => setEditListingPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                    >
-                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18 }}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                {editListingPhotos.length < MAX_LISTING_PHOTOS && (
-                  <TouchableOpacity
-                    style={{ width: 110, height: 82, borderRadius: 8, borderWidth: 1.5, borderColor: theme.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}
-                    onPress={handleAddListingPhoto}
-                  >
-                    <Text style={{ color: theme.mutedForeground, fontSize: 26, lineHeight: 30 }}>+</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </ScrollView>
-
-            <Text style={styles.listingFieldLabel}>Monthly Rent ($)</Text>
-            <TextInput
-              style={styles.listingInput}
-              value={editRent}
-              onChangeText={setEditRent}
-              placeholder="e.g. 1200"
-              placeholderTextColor="#9AA"
-              keyboardType="numeric"
-            />
-
-            <Text style={styles.listingFieldLabel}>Room Type</Text>
-            <View style={styles.chipsWrap}>
-              {[
-                { label: 'Private room', value: 'private' },
-                { label: 'Shared room', value: 'shared' },
-                { label: 'Studio', value: 'studio' },
-                { label: 'Entire place', value: 'entire' },
-              ].map((t) => (
-                <TouchableOpacity
-                  key={t.value}
-                  style={[styles.chip, editRoomType === t.value && styles.chipOn]}
-                  onPress={() => setEditRoomType(t.value)}
-                >
-                  <Text style={[styles.chipText, editRoomType === t.value && styles.chipTextOn]}>{t.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.listingFieldLabel}>City</Text>
-            <TextInput
-              style={styles.listingInput}
-              value={editListingCity}
-              onChangeText={setEditListingCity}
-              placeholder="e.g. Riverside"
-              placeholderTextColor="#9AA"
-            />
-
-            <Text style={styles.listingFieldLabel}>State</Text>
-            <TextInput
-              style={styles.listingInput}
-              value={editListingState}
-              onChangeText={setEditListingState}
-              placeholder="e.g. CA"
-              placeholderTextColor="#9AA"
-              autoCapitalize="characters"
-              maxLength={2}
-            />
-
-            <Text style={styles.listingFieldLabel}>Address (optional)</Text>
-            <TextInput
-              style={styles.listingInput}
-              value={editAddress}
-              onChangeText={setEditAddress}
-              placeholder="Street address"
-              placeholderTextColor="#9AA"
-            />
-
-            <Text style={styles.listingFieldLabel}>Available From</Text>
-            <TextInput
-              style={styles.listingInput}
-              value={editMoveInDate}
-              onChangeText={setEditMoveInDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#9AA"
-            />
-
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
+        listingExists={Boolean(listing)}
+        savingListing={savingListing}
+        editListingPhotos={editListingPhotos}
+        maxListingPhotos={MAX_LISTING_PHOTOS}
+        editRent={editRent}
+        editRoomType={editRoomType}
+        editListingCity={editListingCity}
+        editListingState={editListingState}
+        editListingZip={editListingZip}
+        editAddress={editAddress}
+        editMoveInDate={editMoveInDate}
+        setEditRent={setEditRent}
+        setEditRoomType={setEditRoomType}
+        setEditListingCity={setEditListingCity}
+        setEditListingState={setEditListingState}
+        setEditListingZip={setEditListingZip}
+        setEditAddress={setEditAddress}
+        setEditMoveInDate={setEditMoveInDate}
+        setEditListingPhotos={setEditListingPhotos}
+        onClose={() => setListingOpen(false)}
+        onSave={handleSaveListing}
+        onAddListingPhoto={handleAddListingPhoto}
+        styles={styles}
+        theme={theme}
+        bottomInset={insets.bottom}
+      />
 
     </View>
   );
@@ -1451,39 +1305,164 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: 'relative',
   },
-  profilePhotoStage: {
+  profileScroll: {
     flex: 1,
-    minHeight: 0,
+  },
+  profileScrollContent: {
+    paddingTop: 0,
+  },
+  profilePhotoStage: {
     paddingHorizontal: 16,
     paddingBottom: 4,
   },
+  profileIdentitySection: {
+    marginTop: 14,
+    marginHorizontal: 16,
+    paddingHorizontal: 2,
+  },
+  profileNameHeader: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: theme.foreground,
+    letterSpacing: -0.4,
+  },
+  profileAgeHeader: {
+    marginTop: 2,
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.mutedForeground,
+  },
+  profileMetaSection: {
+    marginTop: 10,
+    marginHorizontal: 16,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  profileMetaName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: theme.foreground,
+  },
+  profileCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.foreground,
+    marginBottom: 8,
+  },
+  profileCategoryLabel: {
+    marginTop: 2,
+    marginBottom: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.mutedForeground,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  profileMetaHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: theme.mutedForeground,
+    lineHeight: 18,
+  },
+  profileInterestsWrap: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  profileInterestChip: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  profileInterestText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.foreground,
+  },
+  profileListingSection: {
+    marginTop: 12,
+    marginHorizontal: 16,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  profileListingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  profileListingTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.foreground,
+  },
+  profileListingRent: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.foreground,
+  },
+  profileListingMeta: {
+    marginTop: 4,
+    fontSize: 13,
+    color: theme.mutedForeground,
+  },
+  profileListingPhotosRow: {
+    marginTop: 10,
+    gap: 8,
+    paddingRight: 4,
+  },
+  profileListingPhoto: {
+    width: 114,
+    height: 86,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  sheetBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  sheetGlassTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: theme.sheetGlassOverlay,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
   personalitySheet: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 0,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    left: 0,
+    right: 0,
+    flexDirection: 'column',
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.55)',
     shadowColor: '#1A2C24',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 18,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 12,
     zIndex: 10,
   },
-  personalitySheetBlur: {
+  personalitySheetBody: {
     flex: 1,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    overflow: 'hidden',
+    minHeight: 0,
+    backgroundColor: 'transparent',
   },
-  sheetHandleZone: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0, 0, 0, 0.06)',
+  sheetHandleSolid: {
+    backgroundColor: 'transparent',
+    zIndex: 3,
   },
   sheetGrabRow: {
     alignItems: 'center',
@@ -1511,7 +1490,6 @@ const styles = StyleSheet.create({
   personalitySheetScrollContent: {
     paddingHorizontal: 14,
     paddingTop: 6,
-    paddingBottom: 20,
   },
   accordionHint: {
     fontSize: 13,
@@ -1564,8 +1542,8 @@ const styles = StyleSheet.create({
     color: theme.primaryForeground,
   },
   profileHeroWrap: {
-    flex: 1,
     justifyContent: 'flex-start',
+    minHeight: 430,
   },
   headerRow: {
     flexDirection: 'row',
@@ -1912,61 +1890,108 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
-  photosHelp: {
-    fontSize: 14,
-    color: theme.mutedForeground,
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  photoList: {
+  photoEditLayout: {
     width: '100%',
   },
-  photoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    backgroundColor: theme.inputBackground,
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+  coverEmpty: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: theme.radiusLg,
+    borderWidth: 1.5,
     borderColor: theme.border,
-  },
-  photoRowImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 10,
-    backgroundColor: '#D9E1E6',
-  },
-  photoRowMeta: {
-    flex: 1,
-    marginLeft: 14,
-    justifyContent: 'center',
-  },
-  photoRowLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.foreground,
-    marginBottom: 6,
-  },
-  photoRemoveLink: {
-    fontSize: 15,
-    color: '#E85D4C',
-    fontWeight: '600',
-  },
-  addPhotoBtn: {
-    marginTop: 20,
-    backgroundColor: theme.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderStyle: 'dashed',
+    backgroundColor: theme.inputBackground,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginBottom: 4,
   },
-  addPhotoBtnDisabled: {
-    opacity: 0.5,
-  },
-  addPhotoBtnText: {
-    color: theme.primaryForeground,
+  coverEmptyTitle: {
+    marginTop: 10,
     fontSize: 16,
     fontWeight: '600',
+    color: theme.foreground,
+  },
+  coverEmptyHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: theme.mutedForeground,
+    textAlign: 'center',
+  },
+  coverHero: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: 16 / 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: theme.muted,
+    marginBottom: 4,
+    shadowColor: '#1A2C24',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  coverHeroPressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.995 }],
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoFilmScroll: {
+    marginTop: 8,
+    flexGrow: 0,
+  },
+  photoFilmScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: FILM_STRIP_GAP,
+    paddingBottom: 2,
+    paddingRight: 4,
+  },
+  photoFilmCell: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: theme.muted,
+    borderWidth: 0,
+    shadowColor: '#1A2C24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  photoFilmCellPressed: {
+    opacity: 0.88,
+  },
+  photoFilmImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoFilmAdd: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(90, 107, 93, 0.38)',
+    backgroundColor: 'rgba(232, 240, 234, 0.55)',
+  },
+  mainPhotoPill: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  mainPhotoPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   devButton: {
     marginTop: 12,
@@ -2078,8 +2103,9 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   dbBtnNone: {
-    backgroundColor: theme.muted,
-    borderColor: theme.border,
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(37, 37, 37, 0.55)',
+    borderWidth: 2,
   },
   dbBtnText: {
     fontSize: 13,
@@ -2088,6 +2114,7 @@ const styles = StyleSheet.create({
   },
   dbBtnTextActive: {
     color: theme.foreground,
+    fontWeight: '700',
   },
 
   // ── Prompts modal ────────────────────────────────────────────────────────────

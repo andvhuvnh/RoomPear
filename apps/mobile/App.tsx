@@ -2,6 +2,14 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import {
+  useFonts,
+  Nunito_400Regular,
+  Nunito_500Medium,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+} from '@expo-google-fonts/nunito';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { hasPreferences } from './lib/preferences';
@@ -21,6 +29,14 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [appState, setAppState] = useState<AppState>('loading');
   const [loading, setLoading] = useState(true);
+
+  const [fontsLoaded, fontError] = useFonts({
+    Nunito_400Regular,
+    Nunito_500Medium,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+  });
 
   useEffect(() => {
     const mapboxToken = Constants.expoConfig?.extra?.mapboxAccessToken as string | undefined;
@@ -81,7 +97,7 @@ export default function App() {
 
   const handleOnboardingComplete = () => setAppState('home');
 
-  if (loading || appState === 'loading') {
+  if ((!fontsLoaded && !fontError) || loading || appState === 'loading') {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>

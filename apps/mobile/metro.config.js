@@ -16,6 +16,8 @@ config.resolver.nodeModulesPaths = [
 ];
 
 // Stub out mapbox on web — the app is mobile-only, web is dev-only
+// App source imports `react-native` -> shim that wraps Text/TextInput with Nunito.
+// `react-native-internal` bypasses the shim so the shim can require the real package.
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && (
     moduleName === 'mapbox-gl' ||
@@ -23,6 +25,20 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     moduleName.startsWith('@rnmapbox/maps')
   )) {
     return { type: 'empty' };
+  }
+  if (moduleName === 'react-native-internal') {
+    return context.resolveRequest(context, 'react-native', platform);
+  }
+  if (moduleName === 'react-native') {
+    const origin = context.originModulePath ?? '';
+    const inNodeModules = origin.includes('node_modules');
+    const fromFontShim = origin.includes('reactNativeWithAppFont');
+    if (!inNodeModules && !fromFontShim) {
+      return {
+        filePath: path.join(projectRoot, 'lib/reactNativeWithAppFont.js'),
+        type: 'sourceFile',
+      };
+    }
   }
   return context.resolveRequest(context, moduleName, platform);
 };

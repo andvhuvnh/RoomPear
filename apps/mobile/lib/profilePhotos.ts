@@ -8,7 +8,7 @@ import { uploadProfileImage, deleteProfileImage } from './storage';
 import { profilePhotoPathsFromRow } from './profileDisplay';
 
 export const MIN_PROFILE_PHOTOS = 3;
-export const MAX_PROFILE_PHOTOS = 5;
+export const MAX_PROFILE_PHOTOS = 6;
 
 export async function getPhotoPathsForUser(userId: string): Promise<string[]> {
   const { data } = await supabase

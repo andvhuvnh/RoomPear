@@ -1,5 +1,5 @@
 /**
- * Profile photos onboarding — add 3–5 photos with live profile card preview.
+ * Profile photos onboarding — add 3–6 photos with live profile card preview.
  * Uses shared PublicProfileCard + lib/profilePhotos for uploads.
  */
 
@@ -157,7 +157,8 @@ export default function ProfileCardScreen({ onComplete }: ProfileCardScreenProps
         <View style={styles.content}>
           <Text style={styles.title}>Your profile card</Text>
           <Text style={styles.subtitle}>
-            Add 3–5 photos. This preview updates as you go — same card others see on your profile.
+            Add {MIN_PROFILE_PHOTOS}–{MAX_PROFILE_PHOTOS} photos. This preview updates as you go — same
+            card others see on your profile.
           </Text>
 
           <PublicProfileCard
