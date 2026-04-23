@@ -45,12 +45,20 @@ export function passesHardFilters(mine: Preferences, theirs: Preferences): boole
     if (overlapMax < overlapMin) return false;
   }
 
-  // Hard dealbreakers
+  // My hard dealbreakers vs their self-reported traits
   const myDealbreakers = mine.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(myDealbreakers)) {
     if (severity !== 'hard') continue;
     if (key === 'smoking' && theirs.smoking_allowed === true) return false;
-    if (key === 'pets' && theirs.pets_allowed === true) return false;
+    if (key === 'pets'    && theirs.pets_allowed    === true) return false;
+  }
+
+  // Their hard dealbreakers vs my self-reported traits (avoid wasted swipes)
+  const theirDealbreakers = theirs.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(theirDealbreakers)) {
+    if (severity !== 'hard') continue;
+    if (key === 'smoking' && mine.smoking_allowed === true) return false;
+    if (key === 'pets'    && mine.pets_allowed    === true) return false;
   }
 
   return true;
@@ -124,7 +132,14 @@ export function scoreCompatibility(
   for (const [key, severity] of Object.entries(myDealbreakers)) {
     if (severity !== 'soft') continue;
     if (key === 'smoking' && theirs.smoking_allowed === true) dealScore -= 0.05;
-    if (key === 'pets' && theirs.pets_allowed === true) dealScore -= 0.05;
+    if (key === 'pets'    && theirs.pets_allowed    === true) dealScore -= 0.05;
+  }
+  // Also penalise if their soft dealbreakers conflict with my traits
+  const theirDealbreakers = theirs.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(theirDealbreakers)) {
+    if (severity !== 'soft') continue;
+    if (key === 'smoking' && mine.smoking_allowed === true) dealScore -= 0.05;
+    if (key === 'pets'    && mine.pets_allowed    === true) dealScore -= 0.05;
   }
   score += Math.max(0, dealScore);
 
