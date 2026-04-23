@@ -724,12 +724,12 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 />
               ))}
             </View>
-            <Text style={styles.sectionLabel}>Pets</Text>
+            <Text style={styles.sectionLabel}>Do you have a pet?</Text>
             <View style={styles.chipRow}>
               <Chip label="Yes" selected={petsAllowed === true} onPress={() => setPetsAllowed(petsAllowed === true ? null : true)} />
               <Chip label="No"  selected={petsAllowed === false} onPress={() => setPetsAllowed(petsAllowed === false ? null : false)} />
             </View>
-            <Text style={styles.sectionLabel}>Smoking</Text>
+            <Text style={styles.sectionLabel}>Do you smoke?</Text>
             <View style={styles.chipRow}>
               <Chip label="Yes" selected={smokingAllowed === true} onPress={() => setSmokingAllowed(smokingAllowed === true ? null : true)} />
               <Chip label="No"  selected={smokingAllowed === false} onPress={() => setSmokingAllowed(smokingAllowed === false ? null : false)} />
