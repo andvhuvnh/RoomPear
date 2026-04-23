@@ -1006,31 +1006,33 @@ export default function UserProfileScreen({ route }: Props) {
                 </TouchableOpacity>
                 {profileEditorSection === 'dealbreakers' ? (
                   <View style={styles.accordionBody}>
-                    <Text style={styles.prefSectionSub}>Hard = never · Soft = prefer not · None = fine</Text>
                     {DEALBREAKER_ITEMS.map((item) => {
                       const val = editDealbreakers[item.key] ?? 'none';
                       return (
                         <View key={item.key} style={styles.dbRow}>
                           <Text style={styles.dbLabel}>{item.label}</Text>
                           <View style={styles.dbBtns}>
-                            {(['hard', 'soft', 'none'] as DealbreakerLevel[]).map((lvl) => (
+                            {([
+                              { lvl: 'hard', label: 'Never' },
+                              { lvl: 'soft', label: 'Prefer not' },
+                              { lvl: 'none', label: "Fine" },
+                            ] as { lvl: DealbreakerLevel; label: string }[]).map(({ lvl, label }) => (
                               <TouchableOpacity
                                 key={lvl}
                                 style={[
                                   styles.dbBtn,
-                                  val === lvl &&
-                                    (lvl === 'hard'
-                                      ? styles.dbBtnHard
-                                      : lvl === 'soft'
-                                        ? styles.dbBtnSoft
-                                        : styles.dbBtnNone),
+                                  val === lvl && (
+                                    lvl === 'hard' ? styles.dbBtnHard
+                                    : lvl === 'soft' ? styles.dbBtnSoft
+                                    : styles.dbBtnNone
+                                  ),
                                 ]}
                                 onPress={() =>
                                   setEditDealbreakers((prev) => ({ ...prev, [item.key]: lvl }))
                                 }
                               >
                                 <Text style={[styles.dbBtnText, val === lvl && styles.dbBtnTextActive]}>
-                                  {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                                  {label}
                                 </Text>
                               </TouchableOpacity>
                             ))}
@@ -2073,12 +2075,12 @@ const styles = StyleSheet.create({
     color: theme.primaryForeground,
   },
   dbRow: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   dbLabel: {
     fontSize: 15,
     color: theme.foreground,
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 8,
   },
   dbBtns: {
@@ -2087,7 +2089,7 @@ const styles = StyleSheet.create({
   },
   dbBtn: {
     flex: 1,
-    paddingVertical: 9,
+    paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
     backgroundColor: '#F4F7F9',
@@ -2095,25 +2097,24 @@ const styles = StyleSheet.create({
     borderColor: '#D9E1E6',
   },
   dbBtnHard: {
-    backgroundColor: '#FFF0EE',
-    borderColor: '#E53935',
+    backgroundColor: '#E53E3E',
+    borderColor: '#E53E3E',
   },
   dbBtnSoft: {
-    backgroundColor: '#FFF8E1',
-    borderColor: '#F59E0B',
+    backgroundColor: '#F6AD55',
+    borderColor: '#F6AD55',
   },
   dbBtnNone: {
-    backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(37, 37, 37, 0.55)',
-    borderWidth: 2,
+    backgroundColor: '#189AA2',
+    borderColor: '#189AA2',
   },
   dbBtnText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     color: theme.mutedForeground,
   },
   dbBtnTextActive: {
-    color: theme.foreground,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
 
