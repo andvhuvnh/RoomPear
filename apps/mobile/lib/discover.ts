@@ -3,6 +3,7 @@ import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
 import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
 import { sendPushNotification } from './pushNotifications';
+import { isWithinRadiusMiles } from './distance';
 
 export type PromptEntry = { question: string; answer: string };
 
@@ -22,12 +23,90 @@ export type DiscoverProfile = {
   maxBudget: number | null;
 };
 
+type PreferenceCoordinateRow = {
+  user_id: string;
+  search_lat: number | null;
+  search_lng: number | null;
+};
+
+type NearbyRpcRow = {
+  user_id: string;
+  distance_miles: number;
+};
+
+async function getNearbyCandidateIdsViaRpc(): Promise<string[] | null> {
+  const { data, error } = await supabase.rpc('get_nearby_preference_user_ids');
+
+  if (error || !data) {
+    return null;
+  }
+
+  const nearbyRows = data as NearbyRpcRow[];
+  return nearbyRows.map((row) => row.user_id);
+}
+
+async function getNearbyCandidateIds(
+  viewerId: string,
+  viewerPreferences: Preferences | null
+): Promise<string[] | null> {
+  const centerLat = viewerPreferences?.search_lat;
+  const centerLng = viewerPreferences?.search_lng;
+  const radiusMiles = viewerPreferences?.search_radius_miles;
+
+  // If the viewer has no location/radius configured, skip distance filtering.
+  if (
+    centerLat == null ||
+    centerLng == null ||
+    radiusMiles == null ||
+    !Number.isFinite(radiusMiles) ||
+    radiusMiles <= 0
+  ) {
+    return null;
+  }
+
+  const rpcNearbyIds = await getNearbyCandidateIdsViaRpc();
+  if (Array.isArray(rpcNearbyIds)) {
+    return rpcNearbyIds;
+  }
+
+  const { data, error } = await supabase
+    .from('preferences')
+    .select('user_id, search_lat, search_lng')
+    .neq('user_id', viewerId)
+    .not('search_lat', 'is', null)
+    .not('search_lng', 'is', null);
+
+  if (error || !data) {
+    return null;
+  }
+
+  const center = { lat: centerLat, lng: centerLng };
+  const nearbyIds: string[] = [];
+
+  for (const row of data as PreferenceCoordinateRow[]) {
+    if (row.search_lat == null || row.search_lng == null) continue;
+    const withinRadius = isWithinRadiusMiles(
+      center,
+      { lat: row.search_lat, lng: row.search_lng },
+      radiusMiles
+    );
+    if (withinRadius) nearbyIds.push(row.user_id);
+  }
+
+  return nearbyIds;
+}
+
 export async function fetchDiscoverProfiles(
   userId: string,
   limit = 10
 ): Promise<DiscoverProfile[]> {
   // Fetch viewer's own preferences for filtering + scoring
   const myPrefs = await getPreferences(userId);
+  const nearbyIds = await getNearbyCandidateIds(userId, myPrefs);
+
+  if (Array.isArray(nearbyIds) && nearbyIds.length === 0) {
+    return [];
+  }
 
   // Get IDs the user has already swiped on
   const { data: swipedRows } = await supabase
@@ -43,7 +122,7 @@ export async function fetchDiscoverProfiles(
     .select(
       'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, created_at, updated_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
-      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed)'
+      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, search_lat, search_lng)'
     )
     .neq('id', userId)
     .not('profile_photo_url', 'is', null)
@@ -51,6 +130,10 @@ export async function fetchDiscoverProfiles(
 
   if (swipedIds.length > 0) {
     query = query.not('id', 'in', `(${swipedIds.join(',')})`);
+  }
+
+  if (Array.isArray(nearbyIds)) {
+    query = query.in('id', nearbyIds);
   }
 
   const { data: rows, error } = await query as any;

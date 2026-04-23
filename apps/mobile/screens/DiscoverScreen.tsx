@@ -87,6 +87,7 @@ export default function DiscoverScreen() {
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | null>(null);
   const [myHobbies, setMyHobbies] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<DiscoverProfile[]>([]);
+  const [hasActiveRadiusFilter, setHasActiveRadiusFilter] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [actionDisabled, setActionDisabled] = useState(false);
   const [matchData, setMatchData] = useState<MatchData | null>(null);
@@ -122,9 +123,16 @@ export default function DiscoverScreen() {
         }
         const { data: myPrefs } = await supabase
           .from('preferences')
-          .select('interests')
+          .select('interests, search_lat, search_lng, search_radius_miles')
           .eq('user_id', uid)
           .single();
+        const radiusMiles = myPrefs?.search_radius_miles;
+        const radiusEnabled =
+          myPrefs?.search_lat != null &&
+          myPrefs?.search_lng != null &&
+          Number.isFinite(radiusMiles) &&
+          radiusMiles > 0;
+        setHasActiveRadiusFilter(radiusEnabled);
         const interestChips = Object.values(myPrefs?.interests ?? {}).flat() as string[];
         setMyHobbies(
           interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : [])
@@ -240,11 +248,19 @@ export default function DiscoverScreen() {
   }
 
   if (!currentProfile) {
+    const noNearbyUsers = profiles.length === 0 && hasActiveRadiusFilter;
+
     return (
       <Background>
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>You're all caught up</Text>
-          <Text style={styles.emptyText}>No more profiles right now.{'\n'}Check back later!</Text>
+          <Text style={styles.emptyTitle}>
+            {noNearbyUsers ? 'No nearby roommates yet' : "You're all caught up"}
+          </Text>
+          <Text style={styles.emptyText}>
+            {noNearbyUsers
+              ? 'Try increasing your search radius, then refresh Discover.'
+              : `No more profiles right now.\nCheck back later!`}
+          </Text>
           <TouchableOpacity style={styles.refreshBtn} onPress={() => userId && loadProfiles(userId)}>
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
