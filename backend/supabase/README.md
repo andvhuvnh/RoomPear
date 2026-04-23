@@ -6,10 +6,8 @@ This directory contains the Supabase backend configuration, migrations, and poli
 
 ```
 backend/supabase/
-├── supabase/
-│   ├── config.toml          # Supabase local development configuration
-│   ├── migrations/          # Database migrations (SQL files)
-│   └── seed.sql            # Seed data (optional)
+├── config.toml              # Supabase local development configuration
+├── migrations/              # Database migrations (SQL files)
 └── README.md
 ```
 
