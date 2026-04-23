@@ -45,7 +45,7 @@ export default function ChatsStack() {
       <Stack.Screen
         name="ProfileView"
         component={PublicUserProfileScreen}
-        options={{ headerShown: false }}
+        options={{ headerShown: false, contentStyle: { backgroundColor: '#FFFFFF' } }}
       />
     </Stack.Navigator>
   );
