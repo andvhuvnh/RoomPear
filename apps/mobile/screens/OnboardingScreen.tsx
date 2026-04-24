@@ -36,11 +36,9 @@ import {
   Image,
   Modal,
   FlatList,
-  Dimensions,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   User, Cake, Sparkle, Globe, MapPin, CurrencyDollar,
   Door, CalendarBlank, Broom, Clock, UsersThree, PawPrint,
@@ -53,9 +51,9 @@ import { BlurView } from 'expo-blur';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import Slider from '@react-native-community/slider';
 import { savePreferences } from '../lib/preferences';
 import { uploadStagedPhotosAndMerge } from '../lib/profilePhotos';
-import { uploadProfileImage } from '../lib/storage';
 import PublicProfileCard from '../components/PublicProfileCard';
 import type { SearchAreaValue } from '../lib/searchAreaTypes';
 
@@ -64,8 +62,6 @@ const SearchAreaMapPicker = lazy(() => import('../components/SearchAreaMapPicker
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TOTAL_STEPS = 17;
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PHOTO_THUMB = (SCREEN_WIDTH - 40 - 10) / 2;
 
 const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Other', 'Prefer not to say'];
 
@@ -241,16 +237,16 @@ const STEPS: StepDef[] = [
   { icon: Broom,         question: 'How clean do you keep your space?',subtitle: '1 = relaxed about mess  ·  5 = spotless' },
   { icon: Clock,         question: "What's your work schedule?",      subtitle: 'Helps us find someone on your rhythm.' },
   { icon: UsersThree,    question: "What's your social vibe?",        subtitle: 'How often do you have people over?' },
-  { icon: PawPrint,      question: 'A quick yes or no…',              subtitle: 'These filter out incompatible matches.' },
+  { icon: PawPrint,      question: 'About you…',                      subtitle: 'Helps us find compatible matches.' },
   { icon: ShieldWarning, question: 'Any dealbreakers?',               subtitle: 'Hard = never  ·  Soft = prefer not  ·  None = fine', optional: true },
   { icon: Star,          question: 'What are you into?',              subtitle: 'Select up to 5 per category.', optional: true },
-  { icon: ChatCircleDots,question: 'In your own words…',              subtitle: 'Pick 2–3 prompts to answer.', optional: true },
+  { icon: ChatCircleDots,question: 'In your own words…',              subtitle: 'Answer at least 2 prompts (up to 3).', optional: true },
   { icon: Camera,        question: 'Show yourself off',               subtitle: 'Your first photo is your first impression.' },
   { icon: House,         question: 'Got a place to offer?',           subtitle: 'Optional — skip if you are only looking.', optional: true },
 ];
 
 // Steps that auto-advance when a chip is selected
-const AUTO_ADVANCE_STEPS = new Set([2, 3, 6, 8, 9, 10, 12]);
+const AUTO_ADVANCE_STEPS = new Set([2, 3, 6, 7, 8, 9, 10, 12]);
 
 const US_STATES = [
   { label: 'Alabama', abbr: 'AL' }, { label: 'Alaska', abbr: 'AK' },
@@ -287,10 +283,6 @@ function formatDateYMD(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
-}
-
-function formatDateDisplay(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 // ─── Chip ─────────────────────────────────────────────────────────────────────
@@ -343,14 +335,13 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [stateSearch, setStateSearch] = useState('');
   const [searchArea, setSearchArea] = useState<SearchAreaValue | null>(null);
   // Step 5: Budget
-  const [minBudget, setMinBudget] = useState('');
-  const [maxBudget, setMaxBudget] = useState('');
-  const maxBudgetRef = useRef<TextInput>(null);
+  const [minBudget, setMinBudget] = useState(0);
+  const [maxBudget, setMaxBudget] = useState(2000);
   // Step 6: Room type
   const [roomType, setRoomType] = useState('');
   // Step 7: Move-in date
   const [moveInDate, setMoveInDate] = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [moveInOption, setMoveInOption] = useState<string>('');
   // Step 8: Cleanliness
   const [cleanliness, setCleanliness] = useState<number | null>(null);
   // Step 9: Work schedule
@@ -375,25 +366,18 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [customInputs, setCustomInputs] = useState<Record<string, string>>(
     Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, '']))
   );
-  // Step 14: Prompts (card sub-flow)
+  // Step 14: Prompts
   const [promptAnswers, setPromptAnswers] = useState<PromptEntry[]>([]);
-  const [promptCardIdx, setPromptCardIdx] = useState(0);
-  const [promptMode, setPromptMode] = useState<'browse' | 'answer'>('browse');
   const [promptDraft, setPromptDraft] = useState('');
-  const [promptBrowseAll, setPromptBrowseAll] = useState(false);
-  const promptSlide = useRef(new Animated.Value(0)).current;
-  const promptFade  = useRef(new Animated.Value(1)).current;
+  const [expandedPromptIdx, setExpandedPromptIdx] = useState<number | null>(null);
   // Step 15: Photos
   const [stagingUris, setStagingUris] = useState<string[]>([]);
   // Step 16: Listing
   const [hasListing, setHasListing] = useState(false);
   const [listingRent, setListingRent] = useState('');
   const [listingRoomType, setListingRoomType] = useState('');
-  const [listingAddress, setListingAddress] = useState('');
   const [listingCity, setListingCity] = useState('');
-  const [listingStateVal, setListingStateVal] = useState('');
-  const [listingZip, setListingZip] = useState('');
-  const [listingPhotos, setListingPhotos] = useState<string[]>([]);
+
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -466,21 +450,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
     if (!userId) { Alert.alert('Error', 'Not signed in. Please restart the app.'); setSaving(false); return; }
     try {
       if (hasListing) {
-        const photoPaths: string[] = [];
-        for (const uri of listingPhotos) {
-          const { path, error } = await uploadProfileImage(userId, uri);
-          if (error || !path) { Alert.alert('Upload failed', 'Could not upload a listing photo.'); setSaving(false); return; }
-          photoPaths.push(path);
-        }
         await supabase.from('listings').insert({
           user_id: userId,
           rent: listingRent ? parseFloat(listingRent) : null,
           room_type: listingRoomType || null,
-          address: listingAddress || null,
           city: listingCity || null,
-          state: listingStateVal || null,
-          zip_code: listingZip || null,
-          listing_photos: photoPaths,
         });
         await supabase.from('profiles').update({ has_listing: true }).eq('id', userId);
       }
@@ -500,8 +474,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
         search_lng: searchArea?.longitude,
         search_radius_miles: searchArea?.radiusMiles,
         search_label: searchArea?.searchLabel,
-        min_budget: minBudget ? parseFloat(minBudget) : undefined,
-        max_budget: maxBudget ? parseFloat(maxBudget) : undefined,
+        min_budget: minBudget,
+        max_budget: maxBudget,
         room_type: (['private', 'shared', 'flexible', 'entire'] as const).includes(roomType as any)
           ? (roomType as 'private' | 'shared' | 'flexible' | 'entire') : undefined,
         move_in_date: moveInDate ? formatDateYMD(moveInDate) : undefined,
@@ -527,7 +501,6 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const handleBack = () => {
     if (saving) return;
     if (step === 12 && dbStep > 0) { setDbStep((s) => s - 1); setDbSelected(null); }
-    else if (step === 14 && promptMode === 'answer') { setPromptMode('browse'); setPromptDraft(''); }
     else setStep((s) => Math.max(s - 1, 0));
   };
 
@@ -577,11 +550,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const canAdvance = (): boolean => {
     if (step === 0) return name.trim().length > 0;
     if (step === 1) return age === '' || parseInt(age, 10) >= 18;
-    if (step === 5) {
-      if (!minBudget.trim() || !maxBudget.trim()) return false;
-      return parseFloat(minBudget) <= parseFloat(maxBudget);
-    }
-    if (step === 15) return stagingUris.length >= 1;
+    if (step === 5) return minBudget <= maxBudget;
+    if (step === 14) return promptAnswers.filter((p) => p.answer.trim()).length >= 2;
+    if (step === 15) return stagingUris.length >= 2;
     return true;
   };
 
@@ -595,62 +566,22 @@ export default function OnboardingScreen({ onComplete }: Props) {
     if (!result.canceled && result.assets[0]) setStagingUris((p) => [...p, result.assets[0].uri].slice(0, 4));
   };
 
-  const pickListingPhoto = async () => {
-    if (listingPhotos.length >= 6) return;
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo library access.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.85 });
-    if (!result.canceled && result.assets[0]) setListingPhotos((p) => [...p, result.assets[0].uri].slice(0, 6));
-  };
 
   // ── Prompt helpers ────────────────────────────────────────────────────────────
 
   const isPromptSelected = (q: string) => promptAnswers.some((p) => p.question === q);
 
-  const advancePromptCard = (direction: 'skip' | 'use') => {
-    if (direction === 'use') {
-      setPromptDraft('');
-      setPromptMode('answer');
-      return;
-    }
-    // Slide current card out left, bring next in from right
-    Animated.parallel([
-      Animated.timing(promptSlide, { toValue: -SCREEN_WIDTH, duration: 240, useNativeDriver: true }),
-      Animated.timing(promptFade,  { toValue: 0,             duration: 180, useNativeDriver: true }),
-    ]).start(() => {
-      setPromptCardIdx((i) => {
-        // Skip already-answered prompts
-        let next = (i + 1) % PROMPTS.length;
-        let tries = 0;
-        while (isPromptSelected(PROMPTS[next].question) && tries < PROMPTS.length) {
-          next = (next + 1) % PROMPTS.length;
-          tries++;
-        }
-        return next;
-      });
-      promptSlide.setValue(SCREEN_WIDTH * 0.4);
-      promptFade.setValue(0);
-      Animated.parallel([
-        Animated.timing(promptSlide, { toValue: 0, duration: 240, useNativeDriver: true }),
-        Animated.timing(promptFade,  { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    });
-  };
-
-  const savePromptAnswer = () => {
+  const savePromptAnswer = (question: string) => {
     const answer = promptDraft.trim();
     if (!answer) return;
-    const question = PROMPTS[promptCardIdx].question;
     setPromptAnswers((p) => {
       const exists = p.find((x) => x.question === question);
       if (exists) return p.map((x) => x.question === question ? { ...x, answer } : x);
       if (p.length >= 3) return p;
       return [...p, { question, answer }];
     });
-    setPromptMode('browse');
     setPromptDraft('');
-    // Advance to next unanswered prompt
-    advancePromptCard('skip');
+    setExpandedPromptIdx(null);
   };
 
   // ── Step renders ─────────────────────────────────────────────────────────────
@@ -831,36 +762,80 @@ export default function OnboardingScreen({ onComplete }: Props) {
       }
 
       // 5: Budget
-      case 5: {
-        const budgetError =
-          minBudget && maxBudget && parseFloat(minBudget) > parseFloat(maxBudget)
-            ? 'Max budget must be greater than or equal to min'
-            : '';
-        const kbType = Platform.OS === 'ios' ? 'number-pad' : 'numeric';
+      case 5:
         return (
-          <View style={styles.inputStack}>
-            <TextInput
-              style={styles.input}
-              placeholder="Min / month ($)"
-              placeholderTextColor={D.grayDim}
+          <View style={styles.budgetSliderArea}>
+            <View style={styles.budgetDisplay}>
+              <View style={styles.budgetBadge}>
+                <Text style={styles.budgetBadgeLabel}>Min</Text>
+                <View style={styles.budgetInputRow}>
+                  <Text style={styles.budgetDollar}>$</Text>
+                  <TextInput
+                    style={styles.budgetBadgeValue}
+                    value={minBudget === 0 ? '' : String(minBudget)}
+                    onChangeText={(t) => {
+                      const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                      if (!isNaN(n)) setMinBudget(n);
+                      else if (t === '') setMinBudget(0);
+                    }}
+                    onBlur={() => setMinBudget((v) => Math.min(v, maxBudget - 50))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor="#4A6358"
+                    returnKeyType="done"
+                  />
+                </View>
+              </View>
+              <Text style={styles.budgetDash}>–</Text>
+              <View style={styles.budgetBadge}>
+                <Text style={styles.budgetBadgeLabel}>Max</Text>
+                <View style={styles.budgetInputRow}>
+                  <Text style={styles.budgetDollar}>$</Text>
+                  <TextInput
+                    style={styles.budgetBadgeValue}
+                    value={String(maxBudget)}
+                    onChangeText={(t) => {
+                      const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                      if (!isNaN(n)) setMaxBudget(Math.min(n, 50000));
+                    }}
+                    onBlur={() => setMaxBudget((v) => Math.max(v, minBudget + 50))}
+                    keyboardType="number-pad"
+                    placeholder="2000"
+                    placeholderTextColor="#4A6358"
+                    returnKeyType="done"
+                  />
+                </View>
+              </View>
+            </View>
+            <Text style={styles.budgetSliderLabel}>Minimum</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={50000}
+              step={50}
               value={minBudget}
-              onChangeText={setMinBudget}
-              keyboardType={kbType}
-              autoFocus
+              onValueChange={(v) => setMinBudget(Math.min(v, maxBudget - 50))}
+              minimumTrackTintColor={D.lime}
+              maximumTrackTintColor="rgba(255,255,255,0.2)"
+              thumbTintColor={D.lime}
             />
-            <TextInput
-              ref={maxBudgetRef}
-              style={styles.input}
-              placeholder="Max / month ($)"
-              placeholderTextColor={D.grayDim}
+            <Text style={styles.budgetSliderLabel}>Maximum</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={50000}
+              step={50}
               value={maxBudget}
-              onChangeText={setMaxBudget}
-              keyboardType={kbType}
+              onValueChange={(v) => setMaxBudget(Math.max(v, minBudget + 50))}
+              minimumTrackTintColor={D.lime}
+              maximumTrackTintColor="rgba(255,255,255,0.2)"
+              thumbTintColor={D.lime}
             />
-            {!!budgetError && <Text style={styles.errorText}>{budgetError}</Text>}
+            {maxBudget <= minBudget && (
+              <Text style={styles.errorText}>Max must be greater than min</Text>
+            )}
           </View>
         );
-      }
 
       // 6: Room type (auto-advance)
       case 6:
@@ -884,44 +859,34 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
       // 7: Move-in date
       case 7: {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(0, 0, 0, 0);
+        const moveInOptions = [
+          { label: 'ASAP', months: 0 },
+          { label: '1 month', months: 1 },
+          { label: '2 months', months: 2 },
+          { label: '3 months', months: 3 },
+          { label: '6 months', months: 6 },
+          { label: 'Flexible', months: -1 },
+        ];
         return (
-          <View style={styles.inputStack}>
-            {Platform.OS === 'ios' ? (
-              <View style={styles.datePickerWrap}>
-                <DateTimePicker
-                  value={moveInDate ?? tomorrow}
-                  mode="date"
-                  display="spinner"
-                  minimumDate={tomorrow}
-                  themeVariant="light"
-                  style={{ width: '100%' }}
-                  onChange={(_, date) => { if (date) setMoveInDate(date); }}
-                />
-              </View>
-            ) : (
-              <>
-                <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
-                  <Text style={[styles.dateBtnText, !moveInDate && styles.dateBtnPlaceholder]}>
-                    {moveInDate ? formatDateDisplay(moveInDate) : 'Select a date'}
-                  </Text>
-                </TouchableOpacity>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={moveInDate ?? tomorrow}
-                    mode="date"
-                    display="default"
-                    minimumDate={tomorrow}
-                    onChange={(event, date) => {
-                      setShowDatePicker(false);
-                      if (event.type === 'set' && date) { const d = new Date(date); d.setHours(0,0,0,0); if (d > new Date()) setMoveInDate(date); }
-                    }}
-                  />
-                )}
-              </>
-            )}
+          <View style={styles.chipArea}>
+            {moveInOptions.map(({ label, months }) => (
+              <Chip
+                key={label}
+                label={label}
+                selected={moveInOption === label}
+                onPress={() => {
+                  setMoveInOption(label);
+                  if (months === -1) {
+                    setMoveInDate(null);
+                  } else {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() + months);
+                    d.setHours(0, 0, 0, 0);
+                    setMoveInDate(d);
+                  }
+                }}
+              />
+            ))}
           </View>
         );
       }
@@ -1001,14 +966,14 @@ export default function OnboardingScreen({ onComplete }: Props) {
         return (
           <View style={styles.yesNoArea}>
             <View style={styles.yesNoRow}>
-              <Text style={styles.yesNoLabel}>Pets okay?</Text>
+              <Text style={styles.yesNoLabel}>Do you have pets?</Text>
               <View style={styles.yesNoChips}>
                 <Chip label="Yes" selected={petsAllowed === true}  onPress={() => setPetsAllowed(petsAllowed === true ? null : true)} />
                 <Chip label="No"  selected={petsAllowed === false} onPress={() => setPetsAllowed(petsAllowed === false ? null : false)} />
               </View>
             </View>
             <View style={styles.yesNoRow}>
-              <Text style={styles.yesNoLabel}>Smoking okay?</Text>
+              <Text style={styles.yesNoLabel}>Do you smoke?</Text>
               <View style={styles.yesNoChips}>
                 <Chip label="Yes" selected={smokingAllowed === true}  onPress={() => setSmokingAllowed(smokingAllowed === true ? null : true)} />
                 <Chip label="No"  selected={smokingAllowed === false} onPress={() => setSmokingAllowed(smokingAllowed === false ? null : false)} />
@@ -1112,142 +1077,100 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </ScrollView>
         );
 
-      // 14: Prompts (card sub-flow)
+      // 14: Prompts (scrollable list)
       case 14: {
-        const currentPrompt = PROMPTS[promptCardIdx];
-        const done = promptAnswers.length;
-        const maxDone = done >= 3;
+        const answered = promptAnswers.filter((p) => p.answer.trim()).length;
+        const maxDone = answered >= 3;
+        const counterText = answered === 0
+          ? 'Answer at least 2 prompts'
+          : answered === 1
+          ? '1 answered — need 1 more'
+          : answered === 2
+          ? '2 answered — need 1 more or continue'
+          : '3 / 3 — all done!';
 
-        if (promptMode === 'answer') {
-          return (
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                <Text style={styles.pAnswerQuestion}>{currentPrompt.question}</Text>
+        return (
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.pCounterText}>{counterText}</Text>
+              {PROMPTS.map((p, i) => {
+                const selected = isPromptSelected(p.question);
+                const existingAnswer = promptAnswers.find((a) => a.question === p.question)?.answer ?? '';
+                const isExpanded = expandedPromptIdx === i;
+                const dimmed = !selected && !isExpanded && maxDone;
 
-                {/* Suggestions */}
-                <Text style={styles.pSuggestLabel}>Tap a suggestion or write your own</Text>
-                <View style={styles.pSuggestList}>
-                  {currentPrompt.suggestions.map((s) => (
+                return (
+                  <View key={i} style={[styles.pListItem, selected && styles.pListItemAnswered, dimmed && styles.pListItemDimmed]}>
                     <TouchableOpacity
-                      key={s}
-                      style={[styles.pSuggestChip, promptDraft === s && styles.pSuggestChipActive]}
-                      onPress={() => setPromptDraft(s)}
+                      style={styles.pListRow}
+                      onPress={() => {
+                        if (dimmed) return;
+                        setExpandedPromptIdx(isExpanded ? null : i);
+                        setPromptDraft(existingAnswer);
+                      }}
                       activeOpacity={0.75}
                     >
-                      <Text style={[styles.pSuggestText, promptDraft === s && styles.pSuggestTextActive]}>{s}</Text>
+                      <Text style={[styles.pListQuestion, selected && styles.pListQuestionAnswered]}>{p.question}</Text>
+                      {selected && !isExpanded && (
+                        <Text style={styles.pListAnswerPreview} numberOfLines={1}>{existingAnswer}</Text>
+                      )}
                     </TouchableOpacity>
-                  ))}
-                </View>
 
-                {/* Custom input */}
-                <TextInput
-                  style={styles.pDraftInput}
-                  placeholder="Write your own answer…"
-                  placeholderTextColor={D.grayDim}
-                  value={promptDraft}
-                  onChangeText={setPromptDraft}
-                  multiline
-                  maxLength={300}
-                  autoFocus={currentPrompt.suggestions.length === 1}
-                />
-                <Text style={styles.pCharCount}>{promptDraft.length} / 300</Text>
-
-                {/* Save button */}
-                <TouchableOpacity
-                  style={[styles.pSaveBtn, !promptDraft.trim() && styles.pSaveBtnDisabled]}
-                  onPress={savePromptAnswer}
-                  disabled={!promptDraft.trim()}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.pSaveBtnText}>Save answer</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          );
-        }
-
-        // Browse mode
-        return (
-          <View style={{ flex: 1 }}>
-            {/* Progress */}
-            <View style={styles.pProgressRow}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={[styles.pProgressDot, i < done && styles.pProgressDotDone]} />
-              ))}
-              <Text style={styles.pProgressText}>
-                {done === 0 ? 'Pick up to 3 prompts' : done === 3 ? '3 / 3 — you\'re done!' : `${done} / 3 completed`}
-              </Text>
-            </View>
-
-            {/* Card */}
-            <Animated.View
-              style={[styles.pCard, { opacity: promptFade, transform: [{ translateX: promptSlide }] }]}
-            >
-              <Text style={styles.pCardQuestion}>{currentPrompt.question}</Text>
-              {isPromptSelected(currentPrompt.question) && (
-                <View style={styles.pCardDoneBadge}>
-                  <Text style={styles.pCardDoneBadgeText}>Answered</Text>
-                </View>
-              )}
-            </Animated.View>
-
-            {/* Actions */}
-            <View style={styles.pActions}>
-              <TouchableOpacity style={styles.pSkipBtn} onPress={() => advancePromptCard('skip')} activeOpacity={0.7}>
-                <Text style={styles.pSkipBtnText}>Skip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.pUseBtn, maxDone && styles.pUseBtnDisabled]}
-                onPress={() => !maxDone && advancePromptCard('use')}
-                disabled={maxDone}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.pUseBtnText}>{maxDone ? 'All done!' : 'Use this prompt'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Browse all link */}
-            <TouchableOpacity style={styles.pBrowseAllBtn} onPress={() => setPromptBrowseAll(true)}>
-              <Text style={styles.pBrowseAllText}>Browse all prompts</Text>
-            </TouchableOpacity>
-
-            {/* Browse all modal */}
-            <Modal visible={promptBrowseAll} animationType="slide" transparent onRequestClose={() => setPromptBrowseAll(false)}>
-              <View style={styles.pAllModalRoot}>
-                <View style={styles.pAllModalSheet}>
-                  <View style={styles.pAllModalHeader}>
-                    <Text style={styles.pAllModalTitle}>All prompts</Text>
-                    <TouchableOpacity onPress={() => setPromptBrowseAll(false)}>
-                      <Text style={styles.pAllModalClose}>Done</Text>
-                    </TouchableOpacity>
+                    {isExpanded && (
+                      <View style={styles.pListExpanded}>
+                        {/* Suggestions */}
+                        <View style={styles.pSuggestList}>
+                          {p.suggestions.map((s) => (
+                            <TouchableOpacity
+                              key={s}
+                              style={[styles.pSuggestChip, promptDraft === s && styles.pSuggestChipActive]}
+                              onPress={() => setPromptDraft(s)}
+                              activeOpacity={0.75}
+                            >
+                              <Text style={[styles.pSuggestText, promptDraft === s && styles.pSuggestTextActive]}>{s}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <TextInput
+                          style={styles.pDraftInput}
+                          placeholder="Write your own answer…"
+                          placeholderTextColor={D.grayDim}
+                          value={promptDraft}
+                          onChangeText={setPromptDraft}
+                          multiline
+                          maxLength={150}
+                          autoFocus
+                        />
+                        <Text style={styles.pListSaveHint}>{promptDraft.length} / 150 · Lock in your answer</Text>
+                        <View style={styles.pListActionRow}>
+                          {selected && (
+                            <TouchableOpacity
+                              style={styles.pListRemoveBtn}
+                              onPress={() => {
+                                setPromptAnswers((prev) => prev.filter((a) => a.question !== p.question));
+                                setExpandedPromptIdx(null);
+                                setPromptDraft('');
+                              }}
+                            >
+                              <Text style={styles.pListRemoveBtnText}>Remove</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            style={[styles.pSaveBtn, !promptDraft.trim() && styles.pSaveBtnDisabled]}
+                            onPress={() => savePromptAnswer(p.question)}
+                            disabled={!promptDraft.trim()}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.pSaveBtnText}>Save</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
                   </View>
-                  <ScrollView style={styles.pAllModalScroll} showsVerticalScrollIndicator={false}>
-                    {PROMPTS.map((p, i) => {
-                      const selected = isPromptSelected(p.question);
-                      const disabled = !selected && maxDone;
-                      return (
-                        <TouchableOpacity
-                          key={i}
-                          style={[styles.pAllRow, selected && styles.pAllRowSelected, disabled && styles.pAllRowDisabled]}
-                          onPress={() => {
-                            if (disabled) return;
-                            setPromptCardIdx(i);
-                            setPromptBrowseAll(false);
-                            setPromptDraft('');
-                            setPromptMode('answer');
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.pAllRowText, selected && styles.pAllRowTextSelected]}>{p.question}</Text>
-                          {selected && <Text style={styles.pAllRowCheck}>✓</Text>}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              </View>
-            </Modal>
-          </View>
+                );
+              })}
+            </ScrollView>
+          </KeyboardAvoidingView>
         );
       }
 
@@ -1261,24 +1184,22 @@ export default function OnboardingScreen({ onComplete }: Props) {
               age={age ? parseInt(age, 10) : null}
               location={[city.trim(), locationState.trim()].filter(Boolean).join(', ')}
             />
-            <Text style={[styles.hint, { marginTop: 14 }]}>Add up to 4 photos. Tap + to add.</Text>
-            <View style={styles.photoGrid}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
               {stagingUris.map((uri, i) => (
-                <View key={i} style={[styles.photoThumb, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}>
-                  <Image source={{ uri }} style={styles.photoImg} />
-                  <TouchableOpacity style={styles.photoRemove} onPress={() => setStagingUris((p) => p.filter((_, idx) => idx !== i))}>
-                    <Text style={styles.photoRemoveText}>✕</Text>
+                <View key={i} style={styles.photoStripThumb}>
+                  <Image source={{ uri }} style={styles.photoStripImg} />
+                  <TouchableOpacity style={styles.photoStripRemove} onPress={() => setStagingUris((p) => p.filter((_, idx) => idx !== i))}>
+                    <Text style={styles.photoStripRemoveText}>✕</Text>
                   </TouchableOpacity>
                 </View>
               ))}
               {stagingUris.length < 4 && (
-                <TouchableOpacity style={[styles.photoAdd, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]} onPress={pickProfilePhoto}>
+                <TouchableOpacity style={styles.photoStripAdd} onPress={pickProfilePhoto}>
                   <Text style={styles.photoAddIcon}>+</Text>
-                  <Text style={styles.photoAddLabel}>Add photo</Text>
                 </TouchableOpacity>
               )}
-            </View>
-            <Text style={styles.photoCount}>{stagingUris.length} / 4 photos</Text>
+            </ScrollView>
+            <Text style={styles.photoCount}>{stagingUris.length} / 4 photos added{stagingUris.length < 2 ? ' — add at least 2' : ''}</Text>
           </ScrollView>
         );
 
@@ -1292,33 +1213,14 @@ export default function OnboardingScreen({ onComplete }: Props) {
             {hasListing && (
               <View>
                 <TextInput style={styles.input} placeholder="Monthly rent ($)" placeholderTextColor={D.grayDim} value={listingRent} onChangeText={setListingRent} keyboardType="numeric" />
+                <TextInput style={styles.input} placeholder="City" placeholderTextColor={D.grayDim} value={listingCity} onChangeText={setListingCity} />
                 <Text style={styles.sectionLabel}>Room type</Text>
                 <View style={styles.chipRow}>
                   {[{ val: 'private', label: 'Private Room' }, { val: 'shared', label: 'Shared Room' }, { val: 'entire', label: 'Entire Place' }].map(({ val, label }) => (
                     <Chip key={val} label={label} selected={listingRoomType === val} onPress={() => setListingRoomType(listingRoomType === val ? '' : val)} />
                   ))}
                 </View>
-                <TextInput style={styles.input} placeholder="Address" placeholderTextColor={D.grayDim} value={listingAddress} onChangeText={setListingAddress} />
-                <TextInput style={styles.input} placeholder="City" placeholderTextColor={D.grayDim} value={listingCity} onChangeText={setListingCity} />
-                <TextInput style={styles.input} placeholder="State (e.g. CA)" placeholderTextColor={D.grayDim} value={listingStateVal} onChangeText={setListingStateVal} autoCapitalize="characters" maxLength={2} />
-                <TextInput style={styles.input} placeholder="ZIP code" placeholderTextColor={D.grayDim} value={listingZip} onChangeText={setListingZip} keyboardType="numeric" maxLength={5} />
-                <Text style={styles.sectionLabel}>Photos (up to 6)</Text>
-                <View style={styles.photoGrid}>
-                  {listingPhotos.map((uri, i) => (
-                    <View key={i} style={[styles.photoThumb, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]}>
-                      <Image source={{ uri }} style={styles.photoImg} />
-                      <TouchableOpacity style={styles.photoRemove} onPress={() => setListingPhotos((p) => p.filter((_, idx) => idx !== i))}>
-                        <Text style={styles.photoRemoveText}>✕</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                  {listingPhotos.length < 6 && (
-                    <TouchableOpacity style={[styles.photoAdd, { width: PHOTO_THUMB, height: PHOTO_THUMB * 1.25 }]} onPress={pickListingPhoto}>
-                      <Text style={styles.photoAddIcon}>+</Text>
-                      <Text style={styles.photoAddLabel}>Add photo</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <Text style={styles.hint}>You can add your full address later.</Text>
               </View>
             )}
           </ScrollView>
@@ -1371,13 +1273,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
         </View>
 
         {/* ── Question block — hidden in prompt answer mode ── */}
-        {!(step === 14 && promptMode === 'answer') && (
-          <View style={styles.questionBlock}>
-            {StepIcon && <StepIcon size={52} color={D.lime} weight="duotone" />}
-            <Text style={styles.stepQuestion}>{question}</Text>
-            <Text style={styles.stepSubtitle}>{subtitle}</Text>
-          </View>
-        )}
+        <View style={[styles.questionBlock, step === 14 && { paddingBottom: 8 }]}>
+          {StepIcon && <StepIcon size={52} color={D.lime} weight="duotone" />}
+          <Text style={styles.stepQuestion}>{question}</Text>
+          <Text style={styles.stepSubtitle}>{subtitle}</Text>
+        </View>
 
         {/* ── Step content ── */}
         <View style={isScrollStep ? styles.scrollWrapper : styles.inputWrapper}>
@@ -1385,7 +1285,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         </View>
 
         {/* ── Footer — hidden in prompt answer mode ── */}
-        {!AUTO_ADVANCE_STEPS.has(step) && !(step === 14 && promptMode === 'answer') && (
+        {!AUTO_ADVANCE_STEPS.has(step) && (
           <View style={styles.footer}>
             <TouchableOpacity
               style={[styles.nextBtn, (!canAdvance() || saving) && styles.nextBtnDisabled]}
@@ -1889,18 +1789,13 @@ const styles = StyleSheet.create({
   pCharCount: { fontSize: 12, color: D.grayDim, textAlign: 'right', marginBottom: 20 },
   pSaveBtn: {
     borderRadius: 50,
-    paddingVertical: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
     alignItems: 'center',
     backgroundColor: D.lime,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 24,
   },
-  pSaveBtnDisabled: { opacity: 0.4, shadowOpacity: 0 },
-  pSaveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  pSaveBtnDisabled: { opacity: 0.4 },
+  pSaveBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 
   // Browse-all link + modal
   pBrowseAllBtn: { alignItems: 'center', paddingVertical: 12 },
@@ -1942,4 +1837,33 @@ const styles = StyleSheet.create({
   pAllRowText: { fontSize: 15, color: D.white, flex: 1 },
   pAllRowTextSelected: { fontWeight: '600' },
   pAllRowCheck: { marginLeft: 12 },
+  pCounterText: { fontSize: 13, color: D.lime, fontWeight: '700', marginBottom: 14, textAlign: 'center' },
+  pListItem: { backgroundColor: '#F0F4F0', borderRadius: 14, marginBottom: 10, overflow: 'hidden' },
+  pListItemAnswered: { backgroundColor: '#E6F5E6', borderWidth: 1, borderColor: D.lime },
+  pListItemDimmed: { opacity: 0.35 },
+  pListRow: { padding: 16 },
+  pListQuestion: { fontSize: 15, fontWeight: '600', color: '#1A2C24', lineHeight: 22 },
+  pListQuestionAnswered: { color: D.lime },
+  pListAnswerPreview: { fontSize: 13, color: '#6B8F71', marginTop: 4 },
+  pListExpanded: { paddingHorizontal: 16, paddingBottom: 16 },
+  pListActionRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 10 },
+  pListRemoveBtn: { paddingHorizontal: 14, paddingVertical: 8 },
+  pListRemoveBtnText: { fontSize: 13, color: D.red, fontWeight: '600' },
+  pListSaveHint: { fontSize: 12, color: '#6B8F71', marginTop: 6, marginBottom: 2 },
+  photoStrip: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 8 },
+  photoStripThumb: { width: 64, height: 80, borderRadius: 10, overflow: 'hidden' },
+  photoStripImg: { width: 64, height: 80 },
+  photoStripRemove: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  photoStripRemoveText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  photoStripAdd: { width: 64, height: 80, borderRadius: 10, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  budgetSliderArea: { flex: 1, justifyContent: 'center', paddingHorizontal: 4 },
+  budgetDisplay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 36 },
+  budgetBadge: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 20 },
+  budgetBadgeLabel: { fontSize: 12, color: '#4A6358', fontWeight: '600', marginBottom: 4 },
+  budgetBadgeValue: { fontSize: 26, fontWeight: '800', color: '#1A3329', textAlign: 'center', minWidth: 80 },
+  budgetDash: { fontSize: 22, color: '#4A6358', fontWeight: '300' },
+  budgetSliderLabel: { fontSize: 13, color: '#4A6358', fontWeight: '600', marginBottom: 6, marginTop: 16 },
+  budgetInputRow: { flexDirection: 'row', alignItems: 'center' },
+  budgetDollar: { fontSize: 26, fontWeight: '800', color: '#1A3329' },
+  slider: { width: '100%', height: 40 },
 });
