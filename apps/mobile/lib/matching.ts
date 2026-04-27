@@ -15,11 +15,11 @@ export interface ProfileMeta {
   subscription_tier?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  // profile fields used for completeness scoring
   name?: string | null;
   age?: number | null;
   bio?: string | null;
   hobbies?: string[] | null;
+  ethnicity?: string | null;
 }
 
 // ─── Hard filters ────────────────────────────────────────────────────────────
@@ -142,6 +142,32 @@ export function scoreCompatibility(
     if (key === 'pets'    && mine.pets_allowed    === true) dealScore -= 0.05;
   }
   score += Math.max(0, dealScore);
+
+  // ── Move-in date compatibility (soft boost) ────────────────────────────────
+  if (mine.move_in_date && theirs.move_in_date) {
+    const flexVals = ['flexible', 'Flexible'];
+    const mineFlex = flexVals.includes(mine.move_in_date);
+    const theirsFlex = flexVals.includes(theirs.move_in_date);
+    if (mineFlex || theirsFlex || mine.move_in_date === theirs.move_in_date) {
+      score += 0.04;
+    }
+  }
+
+  // ── Lease duration compatibility (soft boost) ──────────────────────────────
+  if (mine.lease_duration_months != null && theirs.lease_duration_months != null) {
+    const mineFlex = mine.lease_duration_months === 0;
+    const theirsFlex = theirs.lease_duration_months === 0;
+    if (mineFlex || theirsFlex || mine.lease_duration_months === theirs.lease_duration_months) {
+      score += 0.03;
+    }
+  }
+
+  // ── Ethnicity preference (soft boost) ──────────────────────────────────────
+  // Only applied when the viewer has set a preference — never hard-filters.
+  const myEthPref = mine.ethnicity_preference ?? [];
+  if (myEthPref.length > 0 && theirMeta.ethnicity) {
+    if (myEthPref.includes(theirMeta.ethnicity)) score += 0.08;
+  }
 
   // ── City match bonus ────────────────────────────────────────────────────────
   if (

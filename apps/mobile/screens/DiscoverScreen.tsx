@@ -25,6 +25,7 @@ import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsag
 import { FREE_TIER_LIMITS } from '../lib/freeTierLimits';
 import { usePurchases } from '../context/PurchasesContext';
 import SwipeCard from '../components/SwipeCard';
+import DiscoverFiltersModal from '../components/DiscoverFiltersModal';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -93,6 +94,7 @@ export default function DiscoverScreen() {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -289,8 +291,8 @@ export default function DiscoverScreen() {
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.nearbyPill}>{remaining} nearby</Text>
-            <TouchableOpacity style={styles.headerIconBtn}>
-              <DotsThreeVertical size={20} color={C.white} weight="bold" />
+            <TouchableOpacity style={styles.headerIconBtn} onPress={() => setFiltersOpen(true)}>
+              <DotsThreeVertical size={20} color={C.text} weight="bold" />
             </TouchableOpacity>
           </View>
         </View>
@@ -325,6 +327,16 @@ export default function DiscoverScreen() {
         </View>
 
       </SafeAreaView>
+
+      {/* ── Filters modal ── */}
+      {userId ? (
+        <DiscoverFiltersModal
+          visible={filtersOpen}
+          userId={userId}
+          onClose={() => setFiltersOpen(false)}
+          onApply={() => userId && loadProfiles(userId)}
+        />
+      ) : null}
 
       {/* ── Match modal ── */}
       <Modal visible={!!matchData} transparent animationType="fade">
@@ -412,22 +424,22 @@ const styles = StyleSheet.create({
   headerMetrics: {
     marginTop: 4,
     fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(26,44,36,0.65)',
     fontWeight: '600',
     lineHeight: 16,
   },
   headerMetricsPremium: {
     marginTop: 4,
     fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
+    color: '#1A2C24',
     fontWeight: '700',
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   nearbyPill: {
     fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.7)',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    color: '#1A2C24',
+    backgroundColor: 'rgba(26,44,36,0.10)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -435,7 +447,7 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(26,44,36,0.10)',
     alignItems: 'center', justifyContent: 'center',
   },
 

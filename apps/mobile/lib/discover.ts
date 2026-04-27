@@ -120,13 +120,17 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, created_at, updated_at, ' +
+      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
-      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, search_lat, search_lng)'
+      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, move_in_date, lease_duration_months, search_lat, search_lng, ethnicity_preference)'
     )
     .neq('id', userId)
     .not('profile_photo_url', 'is', null)
     .limit(50);
+
+  if (myPrefs?.has_listing_only === true) {
+    query = query.eq('has_listing', true);
+  }
 
   if (swipedIds.length > 0) {
     query = query.not('id', 'in', `(${swipedIds.join(',')})`);
@@ -158,6 +162,7 @@ export async function fetchDiscoverProfiles(
         age: row.age,
         bio: row.bio,
         hobbies: row.hobbies,
+        ethnicity: row.ethnicity,
       });
       scored.push({ row, score });
     } else {

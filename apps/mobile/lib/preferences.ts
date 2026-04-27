@@ -72,6 +72,8 @@ export interface Preferences {
   must_haves?: string[];
   interests?: Record<string, string[]>;
   dealbreakers?: Record<string, 'hard' | 'soft' | 'none'>;
+  ethnicity_preference?: string[];
+  has_listing_only?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -140,25 +142,16 @@ export async function savePreferences(
     const mappedPreferences = { ...preferences };
     const roomTypeValue = mappedPreferences.room_type as string | undefined;
     
-    console.log('🔍 [savePreferences] Original room_type value:', roomTypeValue, 'Type:', typeof roomTypeValue);
-    console.log('🔍 [savePreferences] Full preferences object:', JSON.stringify(preferences, null, 2));
-    
-    // Map any variation of "either" to "flexible"
     if (roomTypeValue) {
       const normalizedValue = roomTypeValue.trim().toLowerCase();
-      if (normalizedValue.includes('either') || 
+      if (normalizedValue.includes('either') ||
           roomTypeValue === 'either Private or Shared' ||
           roomTypeValue === 'Either Private or Shared') {
-        console.log('✅ [savePreferences] Mapping room_type from "' + roomTypeValue + '" to "flexible"');
         mappedPreferences.room_type = 'flexible';
       } else if (!['private', 'shared', 'entire', 'flexible'].includes(roomTypeValue)) {
-        // If it's not a valid value, set to undefined to avoid constraint violation
-        console.warn('⚠️ [savePreferences] Invalid room_type value:', roomTypeValue, '- setting to undefined');
         mappedPreferences.room_type = undefined;
       }
     }
-    
-    console.log('💾 [savePreferences] Final room_type value being saved:', mappedPreferences.room_type);
 
     // Check if preferences exist
     const existing = await hasPreferences(userId);
