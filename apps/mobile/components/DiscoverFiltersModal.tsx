@@ -13,6 +13,12 @@ import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPreferences, savePreferences } from '../lib/preferences';
 
+const GENDER_PREF_OPTIONS = [
+  { val: 'Man',        label: 'Men' },
+  { val: 'Woman',      label: 'Women' },
+  { val: 'Non-binary', label: 'Non-binary' },
+];
+
 const ETHNICITY_OPTIONS = [
   'Asian',
   'Black / African American',
@@ -58,6 +64,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [roomType, setRoomType] = useState('');
   const [moveIn, setMoveIn] = useState('');
   const [leaseDuration, setLeaseDuration] = useState<number | null>(null);
+  const [genderPref, setGenderPref] = useState('');
   const [hasListingOnly, setHasListingOnly] = useState(false);
   const [minBudget, setMinBudget] = useState(0);
   const [maxBudget, setMaxBudget] = useState(10000);
@@ -72,6 +79,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       setRoomType(prefs?.room_type ?? '');
       setMoveIn(prefs?.move_in_date ?? '');
       setLeaseDuration(prefs?.lease_duration_months ?? null);
+      setGenderPref(prefs?.gender_preference ?? '');
       setHasListingOnly(prefs?.has_listing_only ?? false);
       setMinBudget(prefs?.min_budget ?? 0);
       setMaxBudget(prefs?.max_budget ?? 10000);
@@ -88,6 +96,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
     setSaving(true);
     try {
       await savePreferences(userId, {
+        gender_preference: genderPref || '',
         ethnicity_preference: ethnicityPref,
         room_type: (roomType as any) || undefined,
         move_in_date: moveIn || undefined,
@@ -108,6 +117,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
     setRoomType('');
     setMoveIn('');
     setLeaseDuration(null);
+    setGenderPref('');
     setHasListingOnly(false);
     setMinBudget(0);
     setMaxBudget(10000);
@@ -131,6 +141,26 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
             <ActivityIndicator style={{ marginVertical: 40 }} color="#1A3329" />
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+
+              {/* Gender preference */}
+              <Text style={styles.sectionTitle}>I want to live with</Text>
+              <View style={[styles.chipsRow, { marginBottom: 4 }]}>
+                {GENDER_PREF_OPTIONS.map(({ val, label }) => {
+                  const on = genderPref === val;
+                  return (
+                    <TouchableOpacity
+                      key={val}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setGenderPref(on ? '' : val)}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.sectionSub}>Leave blank to see everyone</Text>
+
+              <View style={styles.divider} />
 
               {/* Has listing toggle */}
               <View style={styles.toggleRow}>

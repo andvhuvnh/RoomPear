@@ -132,6 +132,10 @@ export async function fetchDiscoverProfiles(
     query = query.eq('has_listing', true);
   }
 
+  if (myPrefs?.gender_preference) {
+    query = query.eq('gender', myPrefs.gender_preference);
+  }
+
   if (swipedIds.length > 0) {
     query = query.not('id', 'in', `(${swipedIds.join(',')})`);
   }

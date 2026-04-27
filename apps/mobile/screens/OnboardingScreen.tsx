@@ -67,7 +67,7 @@ const TOTAL_STEPS = 17;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_THUMB = (SCREEN_WIDTH - 40 - 10) / 2;
 
-const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Other', 'Prefer not to say'];
+const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Trans man', 'Trans woman', 'Other', 'Prefer not to say'];
 
 const ETHNICITY_OPTIONS = [
   'Asian',
@@ -233,7 +233,7 @@ const STEPS: StepDef[] = [
   { icon: User,          question: "What's your name?",               subtitle: "This is how you'll appear to others." },
   { icon: Cake,          question: 'How old are you?',                subtitle: 'You must be 18+ to use RoomPear.' },
   { icon: Sparkle,       question: 'How do you identify?',            subtitle: 'Helps personalize your matches.' },
-  { icon: Globe,         question: "What's your ethnicity?",          subtitle: 'Optional — skip if you prefer not to say.', optional: true },
+  { icon: Globe,         question: 'A little more about you…',         subtitle: 'Both fields are optional — skip if you prefer.', optional: true },
   { icon: MapPin,        question: 'Where are you looking?',          subtitle: "We'll show you people in your area." },
   { icon: CurrencyDollar,question: "What's your monthly budget?",     subtitle: 'Your comfortable range for rent.' },
   { icon: Door,          question: 'What kind of room?',              subtitle: 'Pick what works for you.' },
@@ -331,8 +331,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [age, setAge] = useState('');
   // Step 2: Gender
   const [gender, setGender] = useState('');
-  // Step 3: Ethnicity
+  // Step 3: Ethnicity + gender preference
   const [ethnicity, setEthnicity] = useState('');
+  const [genderPref, setGenderPref] = useState('');
   // Step 4: Location
   const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
   const useLegacyLocationUi = !Constants.expoConfig?.extra?.mapboxAccessToken || isExpoGo;
@@ -512,6 +513,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         social_preference: socialPrefMapped as any,
         interests: Object.values(interests).some((v) => v.length > 0) ? interests : undefined,
         dealbreakers,
+        gender_preference: genderPref || '',
       });
 
       if (!result.success) { Alert.alert('Error', result.error ?? 'Could not save preferences.'); setSaving(false); return; }
@@ -729,6 +731,20 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 onPress={() => { setEthnicity(ethnicity === e ? '' : e); scheduleAutoAdvance(); }}
               />
             ))}
+            <Text style={styles.sectionLabel}>Who would you like to live with?</Text>
+            {(['Man', 'Woman', 'Non-binary'] as const).map((g) => (
+              <Chip
+                key={g}
+                label={g === 'Man' ? 'Men' : g === 'Woman' ? 'Women' : 'Non-binary'}
+                selected={genderPref === g}
+                onPress={() => setGenderPref(genderPref === g ? '' : g)}
+              />
+            ))}
+            <Chip
+              label="Anyone"
+              selected={genderPref === ''}
+              onPress={() => setGenderPref('')}
+            />
           </View>
         );
 
