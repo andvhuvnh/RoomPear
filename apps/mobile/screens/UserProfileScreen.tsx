@@ -123,6 +123,7 @@ export default function UserProfileScreen({ route }: Props) {
     'photos' | 'interests' | 'dealbreakers' | 'prompts' | null
   >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPhotos, setSavingPhotos] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
@@ -381,6 +382,7 @@ export default function UserProfileScreen({ route }: Props) {
     }
 
     setProfile(data);
+    setIsPaused(data?.is_paused === true);
 
     const paths = profilePhotoPathsFromRow(data?.profile_photo_url);
     setPhotoPaths(paths);
@@ -549,6 +551,19 @@ export default function UserProfileScreen({ route }: Props) {
     await logoutPurchases();
     const { error } = await supabase.auth.signOut();
     if (error) Alert.alert('Error', error.message);
+  };
+
+  const handleTogglePause = async (value: boolean) => {
+    if (!user) return;
+    setIsPaused(value);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_paused: value })
+      .eq('id', user.id);
+    if (error) {
+      setIsPaused(!value);
+      Alert.alert('Error', 'Could not update visibility. Try again.');
+    }
   };
 
   const handleCopyReferralCode = async (code: string) => {
@@ -722,6 +737,15 @@ export default function UserProfileScreen({ route }: Props) {
                     />
                   </View>
                 </View>
+
+                {isPaused && (
+                  <View style={styles.pausedBanner}>
+                    <Ionicons name="pause-circle-outline" size={16} color="#7A5C00" />
+                    <Text style={styles.pausedBannerText}>
+                      Your profile is paused — you won't appear in discover
+                    </Text>
+                  </View>
+                )}
 
                 <ProfileOverviewSection
                   displayName={displayName}
@@ -1178,6 +1202,8 @@ export default function UserProfileScreen({ route }: Props) {
         onOpenEditName={() => afterCloseSettings(() => openEditName())}
         onOpenListing={() => afterCloseSettings(() => openListingModal())}
         onDeleteListing={handleDeleteListing}
+        isPaused={isPaused}
+        onTogglePause={handleTogglePause}
         onCopyReferralCode={handleCopyReferralCode}
         onApplyReferralCode={handleApplyReferralCode}
         onSignOut={handleSignOut}
@@ -2219,5 +2245,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: theme.foreground,
+  },
+  pausedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFF8E1',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#F0C040',
+  },
+  pausedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#7A5C00',
+    fontWeight: '500',
   },
 });

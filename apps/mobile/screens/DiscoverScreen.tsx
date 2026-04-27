@@ -93,6 +93,7 @@ export default function DiscoverScreen() {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
+  const [isPaused, setIsPaused] = useState(false);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -111,9 +112,10 @@ export default function DiscoverScreen() {
         loadProfiles(uid);
         const { data: me } = await supabase
           .from('profiles')
-          .select('profile_photo_url, hobbies')
+          .select('profile_photo_url, hobbies, is_paused')
           .eq('id', uid)
           .single();
+        setIsPaused(me?.is_paused === true);
         if (me?.profile_photo_url) {
           const paths = profilePhotoPathsFromRow(me.profile_photo_url);
           if (paths[0]) {
@@ -144,7 +146,14 @@ export default function DiscoverScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (userId) refreshDailyUsage(userId);
+      if (!userId) return;
+      refreshDailyUsage(userId);
+      supabase
+        .from('profiles')
+        .select('is_paused')
+        .eq('id', userId)
+        .single()
+        .then(({ data }) => setIsPaused(data?.is_paused === true));
     }, [userId, refreshDailyUsage])
   );
 
@@ -242,6 +251,32 @@ export default function DiscoverScreen() {
       <Background>
         <View style={styles.centered}>
           <Text style={styles.emptyText}>Finding roommates…</Text>
+        </View>
+      </Background>
+    );
+  }
+
+  if (isPaused) {
+    return (
+      <Background>
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>Your profile is paused</Text>
+          <Text style={styles.emptyText}>
+            {"You're hidden from discover.\nUnpause to start swiping again."}
+          </Text>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={async () => {
+              if (!userId) return;
+              const { error } = await supabase
+                .from('profiles')
+                .update({ is_paused: false })
+                .eq('id', userId);
+              if (!error) setIsPaused(false);
+            }}
+          >
+            <Text style={styles.refreshBtnText}>Unpause my profile</Text>
+          </TouchableOpacity>
         </View>
       </Background>
     );
