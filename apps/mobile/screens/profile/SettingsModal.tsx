@@ -1,4 +1,4 @@
-import { ActivityIndicator, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Listing } from '../../lib/listings';
 import { formatAvailabilityForDisplay } from './listingFormUtils';
@@ -19,6 +19,8 @@ type Props = {
   onDeleteListing: () => void;
   onCopyReferralCode: (code: string) => void;
   onApplyReferralCode: () => void;
+  isPaused: boolean;
+  onTogglePause: (value: boolean) => void;
   onSignOut: () => void;
   onDevShowOnboarding?: () => void;
   styles: Record<string, unknown>;
@@ -38,6 +40,8 @@ export default function SettingsModal({
   onOpenEditName,
   onOpenListing,
   onDeleteListing,
+  isPaused,
+  onTogglePause,
   onCopyReferralCode,
   onApplyReferralCode,
   onSignOut,
@@ -205,6 +209,27 @@ export default function SettingsModal({
               <Text style={styles.settingsInfoValue as object}>
                 {(profile?.subscription_tier as string) || 'free'}
               </Text>
+            </View>
+          </View>
+
+          <Text style={styles.settingsSectionLabel as object}>Visibility</Text>
+          <View style={styles.settingsGroup as object}>
+            <View style={styles.settingsRow as object}>
+              <View style={styles.settingsRowLeft as object}>
+                <Ionicons name="pause-circle-outline" size={20} color={theme.foreground} />
+                <View>
+                  <Text style={styles.settingsRowTitle as object}>Pause my profile</Text>
+                  <Text style={[styles.settingsInfoLabel as object, { fontSize: 12 }]}>
+                    {isPaused ? 'Hidden from discover' : 'Visible to others'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={isPaused}
+                onValueChange={onTogglePause}
+                trackColor={{ false: '#D1D5DB', true: '#4A7C59' }}
+                thumbColor="#FFFFFF"
+              />
             </View>
           </View>
 

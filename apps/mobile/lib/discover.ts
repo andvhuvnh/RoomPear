@@ -126,6 +126,7 @@ export async function fetchDiscoverProfiles(
     )
     .neq('id', userId)
     .not('profile_photo_url', 'is', null)
+    .neq('is_paused', true)
     .limit(50);
 
   if (myPrefs?.has_listing_only === true) {
