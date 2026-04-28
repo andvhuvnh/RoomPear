@@ -123,7 +123,7 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, ' +
+      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, last_active_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
       'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, move_in_date, lease_duration_months, search_lat, search_lng, ethnicity_preference)'
     )
@@ -169,6 +169,7 @@ export async function fetchDiscoverProfiles(
         subscription_tier: row.subscription_tier,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        last_active_at: row.last_active_at,
         name: row.name,
         age: row.age,
         bio: row.bio,

@@ -15,6 +15,7 @@ export interface ProfileMeta {
   subscription_tier?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  last_active_at?: string | null;
   name?: string | null;
   age?: number | null;
   bio?: string | null;
@@ -208,9 +209,12 @@ export function scoreCompatibility(
     const ageHours = (Date.now() - new Date(theirMeta.created_at).getTime()) / 3_600_000;
     if (ageHours < 48) score *= 1.15;
   }
-  if (theirMeta.updated_at) {
-    const idleDays = (Date.now() - new Date(theirMeta.updated_at).getTime()) / 86_400_000;
-    if (idleDays < 7) score *= 1.05;
+  const lastActive = theirMeta.last_active_at ?? theirMeta.updated_at;
+  if (lastActive) {
+    const idleDays = (Date.now() - new Date(lastActive).getTime()) / 86_400_000;
+    if (idleDays < 1)  score *= 1.10; // active today
+    else if (idleDays < 7)  score *= 1.05; // active this week
+    else if (idleDays < 30) score *= 1.02; // active this month
   }
 
   return score;

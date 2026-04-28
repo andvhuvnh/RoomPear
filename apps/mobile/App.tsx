@@ -53,6 +53,9 @@ export default function App() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       await checkUserState(session);
+      if (session?.user?.id) {
+        supabase.from('profiles').update({ last_active_at: new Date().toISOString() }).eq('id', session.user.id);
+      }
       setLoading(false);
     });
 
