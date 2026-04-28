@@ -120,7 +120,7 @@ export default function UserProfileScreen({ route }: Props) {
 
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [profileEditorSection, setProfileEditorSection] = useState<
-    'photos' | 'interests' | 'dealbreakers' | 'prompts' | null
+    'photos' | 'interests' | 'dealbreakers' | 'prompts' | 'basics' | null
   >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -135,6 +135,15 @@ export default function UserProfileScreen({ route }: Props) {
   const [editInterests, setEditInterests] = useState<Record<string, string[]>>({});
   const [editDealbreakers, setEditDealbreakers] = useState<Record<string, DealbreakerLevel>>({});
   const [expandedPrefCat, setExpandedPrefCat] = useState<string | null>('fitness');
+
+  // Edit basics state
+  const [editBio, setEditBio] = useState('');
+  const [editGender, setEditGender] = useState('');
+  const [editEthnicity, setEditEthnicity] = useState('');
+  const [editWorkSchedule, setEditWorkSchedule] = useState('');
+  const [editSocialPref, setEditSocialPref] = useState('');
+  const [editCleanliness, setEditCleanliness] = useState<number | null>(null);
+  const [savingBasics, setSavingBasics] = useState(false);
 
   // Edit prompts state
   const [editPrompts, setEditPrompts] = useState<PromptEntry[]>([]);
@@ -234,8 +243,15 @@ export default function UserProfileScreen({ route }: Props) {
     });
   }, [SHEET_COLLAPSED_OFFSET, sheetTranslateY]);
 
+  const socialPrefToLabel = (val: string | null | undefined): string => {
+    if (val === 'social') return 'Social Butterfly';
+    if (val === 'quiet') return 'Homebody';
+    if (val === 'balanced') return 'Balanced';
+    return val ?? '';
+  };
+
   const activateProfileSection = useCallback(
-    (section: 'photos' | 'interests' | 'dealbreakers' | 'prompts') => {
+    (section: 'photos' | 'interests' | 'dealbreakers' | 'prompts' | 'basics') => {
       if (profileEditorSection === section) {
         setProfileEditorSection(null);
         return;
@@ -255,9 +271,17 @@ export default function UserProfileScreen({ route }: Props) {
         setEditPrompts(current.length > 0 ? current : [{ question: '', answer: '' }]);
         setPromptPickerIndex(null);
       }
+      if (section === 'basics') {
+        setEditBio(profile?.bio ?? '');
+        setEditGender(profile?.gender ?? '');
+        setEditEthnicity(profile?.ethnicity ?? '');
+        setEditWorkSchedule(prefs?.work_schedule ?? '');
+        setEditSocialPref(socialPrefToLabel(prefs?.social_preference));
+        setEditCleanliness(prefs?.cleanliness_level ?? null);
+      }
       setProfileEditorSection(section);
     },
-    [profileEditorSection, prefs, profile?.prompts]
+    [profileEditorSection, prefs, profile?.prompts, profile?.bio, profile?.gender, profile?.ethnicity, profile?.social_preference]
   );
 
   const loadListing = useCallback(async (userId: string) => {
@@ -529,6 +553,42 @@ export default function UserProfileScreen({ route }: Props) {
       setPrefs(p);
     } finally {
       setSavingPrefs(false);
+    }
+  };
+
+  const handleSaveBasics = async () => {
+    if (!user) return;
+    setSavingBasics(true);
+    try {
+      const profileUpdates: Record<string, any> = {};
+      if (editBio.trim() !== (profile?.bio ?? '')) profileUpdates.bio = editBio.trim() || null;
+      if (editGender !== (profile?.gender ?? '')) profileUpdates.gender = editGender || null;
+      if (editEthnicity !== (profile?.ethnicity ?? '')) profileUpdates.ethnicity = editEthnicity || null;
+      if (Object.keys(profileUpdates).length > 0) {
+        await supabase.from('profiles').update(profileUpdates).eq('id', user.id);
+      }
+
+      const socialMapped =
+        editSocialPref === 'Social Butterfly' ? 'social'
+        : editSocialPref === 'Homebody' ? 'quiet'
+        : editSocialPref === 'Balanced' ? 'balanced'
+        : undefined;
+
+      const prefUpdates: Partial<Preferences> = {};
+      if (editWorkSchedule) prefUpdates.work_schedule = editWorkSchedule;
+      if (socialMapped) prefUpdates.social_preference = socialMapped as any;
+      if (editCleanliness != null) prefUpdates.cleanliness_level = editCleanliness;
+
+      if (Object.keys(prefUpdates).length > 0) {
+        await savePreferences(user.id, prefUpdates);
+      }
+
+      setProfileEditorSection(null);
+      await loadProfile(user.id);
+      const p = await getPreferences(user.id);
+      setPrefs(p);
+    } finally {
+      setSavingBasics(false);
     }
   };
 
@@ -1078,6 +1138,7 @@ export default function UserProfileScreen({ route }: Props) {
                 {profileEditorSection === 'prompts' ? (
                   <View style={styles.accordionBody}>
                     <Text style={styles.prefSectionSub}>Pick up to 3 prompts and answer them.</Text>
+
                     {editPrompts.map((entry, idx) => (
                       <View key={idx} style={styles.promptBlock}>
                         {promptPickerIndex === idx ? (
@@ -1155,6 +1216,135 @@ export default function UserProfileScreen({ route }: Props) {
                     </TouchableOpacity>
                   </View>
                 ) : null}
+
+                <View style={styles.accordionDivider} />
+
+                <TouchableOpacity
+                  style={[
+                    styles.accordionRow,
+                    profileEditorSection === 'basics' && styles.accordionRowOpen,
+                  ]}
+                  onPress={() => activateProfileSection('basics')}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.accordionRowLeft}>
+                    <Ionicons name="person-outline" size={22} color={theme.foreground} />
+                    <Text style={styles.accordionRowLabel}>About Me</Text>
+                  </View>
+                  <Ionicons
+                    name={profileEditorSection === 'basics' ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color='rgba(26, 26, 30, 0.72)'
+                  />
+                </TouchableOpacity>
+                {profileEditorSection === 'basics' ? (
+                  <View style={styles.accordionBody}>
+                    {/* Bio */}
+                    <Text style={styles.basicsLabel}>Bio</Text>
+                    <TextInput
+                      style={styles.basicsTextInput}
+                      value={editBio}
+                      onChangeText={setEditBio}
+                      placeholder="Tell future roommates about yourself…"
+                      placeholderTextColor={theme.mutedForeground}
+                      multiline
+                      maxLength={300}
+                    />
+
+                    {/* Gender */}
+                    <Text style={styles.basicsLabel}>Gender</Text>
+                    <View style={styles.chipsWrap}>
+                      {['Man', 'Woman', 'Non-binary', 'Other', 'Prefer not to say'].map((g) => (
+                        <TouchableOpacity
+                          key={g}
+                          style={[styles.chip, editGender === g && styles.chipOn]}
+                          onPress={() => setEditGender(editGender === g ? '' : g)}
+                        >
+                          <Text style={[styles.chipText, editGender === g && styles.chipTextOn]}>{g}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Ethnicity */}
+                    <Text style={styles.basicsLabel}>Ethnicity <Text style={styles.basicsOptional}>(optional)</Text></Text>
+                    <View style={styles.chipsWrap}>
+                      {[
+                        'Asian', 'Black / African American', 'Hispanic / Latino',
+                        'Middle Eastern', 'Native American', 'Pacific Islander',
+                        'White / Caucasian', 'Multiracial', 'Prefer not to say',
+                      ].map((e) => (
+                        <TouchableOpacity
+                          key={e}
+                          style={[styles.chip, editEthnicity === e && styles.chipOn]}
+                          onPress={() => setEditEthnicity(editEthnicity === e ? '' : e)}
+                        >
+                          <Text style={[styles.chipText, editEthnicity === e && styles.chipTextOn]}>{e}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Work schedule */}
+                    <Text style={styles.basicsLabel}>Work Schedule</Text>
+                    <View style={styles.chipsWrap}>
+                      {[
+                        { val: '9-to-5', label: '9 to 5' },
+                        { val: 'Remote', label: 'Remote / WFH' },
+                        { val: 'Night Shift', label: 'Night Shift' },
+                        { val: 'Flexible', label: 'Flexible' },
+                      ].map(({ val, label }) => (
+                        <TouchableOpacity
+                          key={val}
+                          style={[styles.chip, editWorkSchedule === val && styles.chipOn]}
+                          onPress={() => setEditWorkSchedule(editWorkSchedule === val ? '' : val)}
+                        >
+                          <Text style={[styles.chipText, editWorkSchedule === val && styles.chipTextOn]}>{label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Social vibe */}
+                    <Text style={styles.basicsLabel}>Social Vibe</Text>
+                    <View style={styles.chipsWrap}>
+                      {['Social Butterfly', 'Balanced', 'Homebody'].map((v) => (
+                        <TouchableOpacity
+                          key={v}
+                          style={[styles.chip, editSocialPref === v && styles.chipOn]}
+                          onPress={() => setEditSocialPref(editSocialPref === v ? '' : v)}
+                        >
+                          <Text style={[styles.chipText, editSocialPref === v && styles.chipTextOn]}>{v}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Cleanliness */}
+                    <Text style={styles.basicsLabel}>Cleanliness <Text style={styles.basicsOptional}>(1 = relaxed · 5 = spotless)</Text></Text>
+                    <View style={styles.chipsWrap}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <TouchableOpacity
+                          key={n}
+                          style={[styles.chip, editCleanliness === n && styles.chipOn]}
+                          onPress={() => setEditCleanliness(editCleanliness === n ? null : n)}
+                        >
+                          <Text style={[styles.chipText, editCleanliness === n && styles.chipTextOn]}>{n}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.accordionSaveBtn}
+                      onPress={handleSaveBasics}
+                      disabled={savingBasics}
+                      activeOpacity={0.85}
+                    >
+                      {savingBasics ? (
+                        <ActivityIndicator color={theme.primaryForeground} />
+                      ) : (
+                        <Text style={styles.accordionSaveBtnText}>Save</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
                       </>
                     ) : null}
                   </ScrollView>
@@ -2219,5 +2409,29 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: theme.foreground,
+  },
+  basicsLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.mutedForeground,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  basicsOptional: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: theme.mutedForeground,
+  },
+  basicsTextInput: {
+    backgroundColor: theme.inputBackground,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: theme.foreground,
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
 });
