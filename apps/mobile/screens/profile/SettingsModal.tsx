@@ -24,6 +24,7 @@ type Props = {
   isPremium: boolean;
   onUpgradeToPlus: () => void;
   onManageSubscription: () => void;
+  onDeleteAccount: () => void;
   onOpenBlockedUsers: () => void;
   onSignOut: () => void;
   onDevShowOnboarding?: () => void;
@@ -52,6 +53,7 @@ export default function SettingsModal({
   isPremium,
   onUpgradeToPlus,
   onManageSubscription,
+  onDeleteAccount,
   onSignOut,
   onDevShowOnboarding,
   styles,
@@ -193,7 +195,7 @@ export default function SettingsModal({
           </View>
 
           <Text style={styles.settingsSectionLabel as object}>Account</Text>
-          <View style={styles.settingsGroup as object}>
+          <View style={[styles.settingsGroup as object, { paddingBottom: 4 }]}>
             {user?.email ? (
               <>
                 <View style={styles.settingsInfoRow as object}>
@@ -231,6 +233,16 @@ export default function SettingsModal({
                 />
                 <Text style={styles.settingsRowTitle as object}>
                   {isPremium ? 'Manage subscription' : 'Upgrade to RoomPear+'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
+            </TouchableOpacity>
+            <View style={styles.settingsRowDivider as object} />
+            <TouchableOpacity style={styles.settingsRow as object} onPress={onDeleteAccount}>
+              <View style={styles.settingsRowLeft as object}>
+                <Ionicons name="trash-outline" size={20} color={theme.foreground} />
+                <Text style={styles.settingsRowTitle as object}>
+                  Delete account
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
