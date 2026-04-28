@@ -68,6 +68,8 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [hasListingOnly, setHasListingOnly] = useState(false);
   const [minBudget, setMinBudget] = useState(0);
   const [maxBudget, setMaxBudget] = useState(10000);
+  const [minAge, setMinAge] = useState(18);
+  const [maxAge, setMaxAge] = useState(99);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -83,6 +85,8 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       setHasListingOnly(prefs?.has_listing_only ?? false);
       setMinBudget(prefs?.min_budget ?? 0);
       setMaxBudget(prefs?.max_budget ?? 10000);
+      setMinAge(prefs?.min_age ?? 18);
+      setMaxAge(prefs?.max_age ?? 99);
       setLoading(false);
     });
   }, [visible, userId]);
@@ -104,6 +108,8 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
         has_listing_only: hasListingOnly,
         min_budget: minBudget,
         max_budget: maxBudget,
+        min_age: minAge,
+        max_age: maxAge,
       });
       onApply();
       onClose();
@@ -121,6 +127,8 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
     setHasListingOnly(false);
     setMinBudget(0);
     setMaxBudget(10000);
+    setMinAge(18);
+    setMaxAge(99);
   };
 
   return (
@@ -211,6 +219,46 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
                 step={50}
                 value={maxBudget}
                 onValueChange={(v) => setMaxBudget(Math.max(v, minBudget + 50))}
+                minimumTrackTintColor="#1A3329"
+                maximumTrackTintColor="#D0D8D4"
+                thumbTintColor="#1A3329"
+              />
+
+              <View style={styles.divider} />
+
+              {/* Age range */}
+              <Text style={styles.sectionTitle}>Age range</Text>
+              <View style={styles.budgetDisplay}>
+                <View style={styles.budgetBadge}>
+                  <Text style={styles.budgetBadgeLabel}>Min</Text>
+                  <Text style={styles.budgetBadgeValue}>{minAge}</Text>
+                </View>
+                <View style={styles.budgetDash} />
+                <View style={styles.budgetBadge}>
+                  <Text style={styles.budgetBadgeLabel}>Max</Text>
+                  <Text style={styles.budgetBadgeValue}>{maxAge >= 99 ? 'Any' : maxAge}</Text>
+                </View>
+              </View>
+              <Text style={styles.sliderLabel}>Minimum age</Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={18}
+                maximumValue={maxAge - 1}
+                step={1}
+                value={minAge}
+                onValueChange={(v) => setMinAge(Math.floor(v))}
+                minimumTrackTintColor="#1A3329"
+                maximumTrackTintColor="#D0D8D4"
+                thumbTintColor="#1A3329"
+              />
+              <Text style={styles.sliderLabel}>Maximum age</Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={minAge + 1}
+                maximumValue={99}
+                step={1}
+                value={maxAge}
+                onValueChange={(v) => setMaxAge(Math.floor(v))}
                 minimumTrackTintColor="#1A3329"
                 maximumTrackTintColor="#D0D8D4"
                 thumbTintColor="#1A3329"

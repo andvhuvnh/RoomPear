@@ -161,6 +161,10 @@ export async function fetchDiscoverProfiles(
     ) as Preferences | null;
 
     if (myPrefs && theirPrefs) {
+      // Age hard filter
+      if (myPrefs.min_age != null && myPrefs.max_age != null && row.age != null) {
+        if (row.age < myPrefs.min_age || row.age > myPrefs.max_age) continue;
+      }
       if (!passesHardFilters(myPrefs, theirPrefs, options?.isPremium ?? false)) continue;
       if (options?.useAdvancedFilters && !passesPremiumAdvancedFilters(myPrefs, theirPrefs)) {
         continue;

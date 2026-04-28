@@ -75,6 +75,8 @@ export interface Preferences {
   ethnicity_preference?: string[];
   gender_preference?: string;
   has_listing_only?: boolean;
+  min_age?: number;
+  max_age?: number;
   created_at?: string;
   updated_at?: string;
 }
