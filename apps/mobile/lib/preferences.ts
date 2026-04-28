@@ -72,6 +72,9 @@ export interface Preferences {
   must_haves?: string[];
   interests?: Record<string, string[]>;
   dealbreakers?: Record<string, 'hard' | 'soft' | 'none'>;
+  ethnicity_preference?: string[];
+  gender_preference?: string;
+  has_listing_only?: boolean;
   created_at?: string;
   updated_at?: string;
 }
