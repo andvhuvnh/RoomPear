@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
-import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
+import { passesHardFilters, scoreCompatibility, applyWildcardMix, getMatchReasons } from './matching';
 import { sendPushNotification } from './pushNotifications';
 import { isWithinRadiusMiles } from './distance';
 import { getBlockedIds } from './blockReport';
@@ -23,6 +23,7 @@ export type DiscoverProfile = {
   roomType: string | null;
   maxBudget: number | null;
   compatibilityScore: number;  // 0–100, display as "XX% Match"
+  matchReasons: string[];      // why these profiles match (premium display)
 };
 
 type PreferenceCoordinateRow = {
@@ -153,7 +154,7 @@ export async function fetchDiscoverProfiles(
   if (error || !rows) return [];
 
   // Score each candidate, applying hard filters when we have preference data
-  type ScoredRow = { row: typeof rows[0]; score: number };
+  type ScoredRow = { row: typeof rows[0]; score: number; reasons: string[] };
   const scored: ScoredRow[] = [];
 
   for (const row of rows) {
@@ -170,7 +171,7 @@ export async function fetchDiscoverProfiles(
       if (options?.useAdvancedFilters && !passesPremiumAdvancedFilters(myPrefs, theirPrefs)) {
         continue;
       }
-      const score = scoreCompatibility(myPrefs, theirPrefs, {
+      const theirMeta = {
         subscription_tier: row.subscription_tier,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -180,15 +181,18 @@ export async function fetchDiscoverProfiles(
         bio: row.bio,
         hobbies: row.hobbies,
         ethnicity: row.ethnicity,
-      });
-      scored.push({ row, score });
+      };
+      const score = scoreCompatibility(myPrefs, theirPrefs, theirMeta);
+      const reasons = getMatchReasons(myPrefs, theirPrefs, theirMeta);
+      scored.push({ row, score, reasons });
     } else {
       // No preferences data on one side — include with neutral score
-      scored.push({ row, score: 0.5 });
+      scored.push({ row, score: 0.5, reasons: [] });
     }
   }
 
   // Feed mixing: free 70/20/10, premium 85/10/5
+  const reasonsByRow = new Map(scored.map(s => [s.row, s.reasons]));
   const mixed = applyWildcardMix(
     scored.map(s => ({ item: s.row, score: s.score })),
     Math.min(limit, scored.length),
@@ -250,6 +254,7 @@ export async function fetchDiscoverProfiles(
       roomType: prefs?.room_type ?? null,
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),
+      matchReasons: reasonsByRow.get(row) ?? [],
     });
   }
 

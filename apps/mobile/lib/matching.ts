@@ -300,6 +300,87 @@ export function selectTopPicks<T>(
     .slice(0, count);
 }
 
+// ─── Match reasons ────────────────────────────────────────────────────────────
+
+/**
+ * Returns up to 5 human-readable reasons why two profiles are compatible.
+ * Premium-only display feature — compute freely, gate rendering in UI.
+ */
+export function getMatchReasons(
+  mine: Preferences,
+  theirs: Preferences,
+  theirMeta: ProfileMeta,
+): string[] {
+  const reasons: string[] = [];
+
+  // Shared interests
+  const myInterests = flattenInterests(mine.interests);
+  const theirInterests = flattenInterests(theirs.interests);
+  const shared = [...myInterests].filter(x => theirInterests.has(x));
+  if (shared.length >= 3) {
+    reasons.push(`${shared.length} shared interests`);
+  } else if (shared.length === 2) {
+    reasons.push(`Both into ${shared[0]} & ${shared[1]}`);
+  } else if (shared.length === 1) {
+    reasons.push(`Both into ${shared[0]}`);
+  }
+
+  // Cleanliness
+  if (mine.cleanliness_level != null && theirs.cleanliness_level != null) {
+    if (Math.abs(mine.cleanliness_level - theirs.cleanliness_level) <= 1) {
+      reasons.push('Similar cleanliness habits');
+    }
+  }
+
+  // Social preference
+  if (mine.social_preference && theirs.social_preference && mine.social_preference === theirs.social_preference) {
+    const label: Record<string, string> = {
+      quiet: 'Both prefer a quiet home',
+      balanced: 'Both balanced socially',
+      social: 'Both love socializing',
+    };
+    reasons.push(label[mine.social_preference] ?? 'Similar social vibe');
+  }
+
+  // Work schedule
+  if (mine.work_schedule && theirs.work_schedule) {
+    if (mine.work_schedule === theirs.work_schedule) {
+      reasons.push(`Both on ${mine.work_schedule} schedule`);
+    } else {
+      const flex = (s: string) => s === 'Flexible' || s === 'Remote';
+      if (flex(mine.work_schedule) || flex(theirs.work_schedule)) {
+        reasons.push('Flexible schedule match');
+      }
+    }
+  }
+
+  // Budget overlap
+  if (mine.min_budget != null && mine.max_budget != null &&
+      theirs.min_budget != null && theirs.max_budget != null) {
+    const overlapMin = Math.max(mine.min_budget, theirs.min_budget);
+    const overlapMax = Math.min(mine.max_budget, theirs.max_budget);
+    if (overlapMax >= overlapMin) {
+      reasons.push(`Budget overlap $${overlapMin}–$${overlapMax}/mo`);
+    }
+  }
+
+  // Move-in timing
+  if (mine.move_in_date && theirs.move_in_date) {
+    const flex = (d: string) => d.toLowerCase() === 'flexible';
+    if (flex(mine.move_in_date) || flex(theirs.move_in_date) || mine.move_in_date === theirs.move_in_date) {
+      reasons.push('Move-in timing lines up');
+    }
+  }
+
+  // Same city
+  if (mine.city && theirs.city &&
+      mine.city.trim().toLowerCase() === theirs.city.trim().toLowerCase()) {
+    reasons.push(`Both looking in ${theirs.city.trim()}`);
+  }
+
+  return reasons.slice(0, 5);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function socialPreferenceScore(a: string, b: string): number {
