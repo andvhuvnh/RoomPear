@@ -30,6 +30,7 @@ import {
   CHATS_GREEN_BORDER,
 } from '../theme/chatsAmbient';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
+import BlockReportModal from '../components/BlockReportModal';
 
 type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
 
@@ -114,6 +115,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(!!initialConversationId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   /** Bottom inset for keyboard — avoids KeyboardAvoidingView fighting FlatList (jitter). */
   const [keyboardBottom, setKeyboardBottom] = useState(0);
   const listRef = useRef<FlatList<ChatListItem>>(null);
@@ -262,6 +264,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             onBack={() => navigation.goBack()}
             topInset={insets.top}
             backAccessibilityLabel="Back to chats"
+            onReport={otherUserId ? () => setReportOpen(true) : undefined}
           />
         </View>
         <View style={[styles.centered, { paddingTop: insets.top + 56 }]}>
@@ -354,6 +357,19 @@ export default function ChatScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+      {myUserId && otherUserId && (
+        <BlockReportModal
+          visible={reportOpen}
+          reporterId={myUserId}
+          reportedId={otherUserId}
+          reportedName={title}
+          onClose={() => setReportOpen(false)}
+          onBlocked={() => {
+            setReportOpen(false);
+            navigation.goBack();
+          }}
+        />
+      )}
     </Background>
   );
 }

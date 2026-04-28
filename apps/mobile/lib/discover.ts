@@ -4,6 +4,7 @@ import { getPreferences, type Preferences } from './preferences';
 import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
 import { sendPushNotification } from './pushNotifications';
 import { isWithinRadiusMiles } from './distance';
+import { getBlockedIds } from './blockReport';
 
 export type PromptEntry = { question: string; answer: string };
 
@@ -109,13 +110,14 @@ export async function fetchDiscoverProfiles(
     return [];
   }
 
-  // Get IDs the user has already swiped on
-  const { data: swipedRows } = await supabase
-    .from('swipes')
-    .select('swiped_id')
-    .eq('swiper_id', userId);
+  // Get IDs the user has already swiped on + blocked (either direction)
+  const [{ data: swipedRows }, blockedIds] = await Promise.all([
+    supabase.from('swipes').select('swiped_id').eq('swiper_id', userId),
+    getBlockedIds(userId),
+  ]);
 
   const swipedIds = swipedRows?.map((r: any) => r.swiped_id) ?? [];
+  const excludedIds = Array.from(new Set([...swipedIds, ...blockedIds]));
 
   // Fetch a larger candidate pool so filtering still leaves enough results
   let query = supabase
@@ -138,8 +140,8 @@ export async function fetchDiscoverProfiles(
     query = query.eq('gender', myPrefs.gender_preference);
   }
 
-  if (swipedIds.length > 0) {
-    query = query.not('id', 'in', `(${swipedIds.join(',')})`);
+  if (excludedIds.length > 0) {
+    query = query.not('id', 'in', `(${excludedIds.join(',')})`);
   }
 
   if (Array.isArray(nearbyIds)) {

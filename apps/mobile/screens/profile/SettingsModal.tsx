@@ -24,6 +24,7 @@ type Props = {
   isPremium: boolean;
   onUpgradeToPlus: () => void;
   onManageSubscription: () => void;
+  onOpenBlockedUsers: () => void;
   onSignOut: () => void;
   onDevShowOnboarding?: () => void;
   styles: Record<string, unknown>;
@@ -45,6 +46,7 @@ export default function SettingsModal({
   onDeleteListing,
   isPaused,
   onTogglePause,
+  onOpenBlockedUsers,
   onCopyReferralCode,
   onApplyReferralCode,
   isPremium,
@@ -254,6 +256,17 @@ export default function SettingsModal({
                 thumbColor="#FFFFFF"
               />
             </View>
+          </View>
+
+          <Text style={styles.settingsSectionLabel as object}>Privacy & safety</Text>
+          <View style={styles.settingsGroup as object}>
+            <TouchableOpacity style={styles.settingsRow as object} onPress={onOpenBlockedUsers}>
+              <View style={styles.settingsRowLeft as object}>
+                <Ionicons name="ban-outline" size={20} color={theme.foreground} />
+                <Text style={styles.settingsRowTitle as object}>Blocked users</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.settingsSectionLabel as object}>More</Text>

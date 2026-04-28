@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Flag } from 'phosphor-react-native';
 import {
   CHATS_CARD,
   CHATS_GREEN,
@@ -15,6 +16,7 @@ type Props = {
   onBack: () => void;
   topInset: number;
   backAccessibilityLabel?: string;
+  onReport?: () => void;
 };
 
 /** Floating back + title pills (matches Chat screen) — overlay on scroll content. */
@@ -23,6 +25,7 @@ export function ChatStyleTopBar({
   onBack,
   topInset,
   backAccessibilityLabel = 'Go back',
+  onReport,
 }: Props) {
   return (
     <View style={[styles.wrap, { paddingTop: topInset }]} pointerEvents="box-none">
@@ -45,7 +48,17 @@ export function ChatStyleTopBar({
           </View>
         </View>
 
-        <View style={styles.balance} />
+        {onReport ? (
+          <TouchableOpacity
+            onPress={onReport}
+            style={styles.roundBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+          >
+            <Flag size={20} color={CHATS_GREEN} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.balance} />
+        )}
       </View>
     </View>
   );
