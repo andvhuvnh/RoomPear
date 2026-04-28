@@ -26,8 +26,9 @@ export interface ProfileMeta {
 
 /**
  * Returns false if the candidate should be excluded from the deck entirely.
+ * isPremium: pets/smoking hard filters are premium-only — free users see them ranked lower instead.
  */
-export function passesHardFilters(mine: Preferences, theirs: Preferences): boolean {
+export function passesHardFilters(mine: Preferences, theirs: Preferences, isPremium = false): boolean {
   // Same state required (flexible for a small user base)
   if (mine.state && theirs.state) {
     if (mine.state.trim().toLowerCase() !== theirs.state.trim().toLowerCase()) {
@@ -45,12 +46,13 @@ export function passesHardFilters(mine: Preferences, theirs: Preferences): boole
     if (overlapMax < overlapMin) return false;
   }
 
-  // My hard dealbreakers vs their self-reported traits
+  // My hard dealbreakers vs their self-reported traits.
+  // Pets/smoking hard filtering is premium-only — free users get them ranked lower instead.
   const myDealbreakers = mine.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(myDealbreakers)) {
     if (severity !== 'hard') continue;
-    if (key === 'smoking'    && theirs.smoking_allowed === true) return false;
-    if (key === 'pets'       && theirs.pets_allowed    === true) return false;
+    if (key === 'smoking'    && isPremium && theirs.smoking_allowed === true) return false;
+    if (key === 'pets'       && isPremium && theirs.pets_allowed    === true) return false;
     if (key === 'parties'    && theirs.social_preference === 'social') return false;
     if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
     if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;

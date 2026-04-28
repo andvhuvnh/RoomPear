@@ -178,7 +178,7 @@ export default function DiscoverScreen() {
 
   async function loadProfiles(uid: string, hasPremiumAccess = false) {
     setLoading(true);
-    const data = await fetchDiscoverProfiles(uid, 10, { useAdvancedFilters: hasPremiumAccess });
+    const data = await fetchDiscoverProfiles(uid, 10, { useAdvancedFilters: hasPremiumAccess, isPremium: hasPremiumAccess });
     setProfiles(data);
     setCurrentIndex(0);
     translateX.setValue(0);

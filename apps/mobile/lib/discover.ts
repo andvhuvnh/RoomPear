@@ -99,7 +99,7 @@ async function getNearbyCandidateIds(
 export async function fetchDiscoverProfiles(
   userId: string,
   limit = 10,
-  options?: { useAdvancedFilters?: boolean }
+  options?: { useAdvancedFilters?: boolean; isPremium?: boolean }
 ): Promise<DiscoverProfile[]> {
   // Fetch viewer's own preferences for filtering + scoring
   const myPrefs = await getPreferences(userId);
@@ -159,7 +159,7 @@ export async function fetchDiscoverProfiles(
     ) as Preferences | null;
 
     if (myPrefs && theirPrefs) {
-      if (!passesHardFilters(myPrefs, theirPrefs)) continue;
+      if (!passesHardFilters(myPrefs, theirPrefs, options?.isPremium ?? false)) continue;
       if (options?.useAdvancedFilters && !passesPremiumAdvancedFilters(myPrefs, theirPrefs)) {
         continue;
       }
