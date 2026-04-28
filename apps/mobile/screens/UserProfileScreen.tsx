@@ -37,6 +37,7 @@ import { getListing, saveListing, deleteListing, type Listing } from '../lib/lis
 import ProfileOverviewSection from './profile/ProfileOverviewSection';
 import ListingModal from './profile/ListingModal';
 import SettingsModal from './profile/SettingsModal';
+import BlockedUsersModal from '../components/BlockedUsersModal';
 import EditNameModal from './profile/EditNameModal';
 import {
   DEALBREAKER_ITEMS,
@@ -124,6 +125,7 @@ export default function UserProfileScreen({ route }: Props) {
   >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [blockedUsersOpen, setBlockedUsersOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPhotos, setSavingPhotos] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
@@ -1398,6 +1400,7 @@ export default function UserProfileScreen({ route }: Props) {
         onDeleteListing={handleDeleteListing}
         isPaused={isPaused}
         onTogglePause={handleTogglePause}
+        onOpenBlockedUsers={() => afterCloseSettings(() => setBlockedUsersOpen(true))}
         onCopyReferralCode={handleCopyReferralCode}
         onApplyReferralCode={handleApplyReferralCode}
         isPremium={showRoomPearPlus}
@@ -1412,6 +1415,14 @@ export default function UserProfileScreen({ route }: Props) {
         styles={styles}
         theme={theme}
       />
+
+      {user && (
+        <BlockedUsersModal
+          visible={blockedUsersOpen}
+          userId={user.id}
+          onClose={() => setBlockedUsersOpen(false)}
+        />
+      )}
 
       <EditNameModal
         visible={editNameOpen}

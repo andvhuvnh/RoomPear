@@ -13,7 +13,7 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ArrowCounterClockwise, X, Star, Heart } from 'phosphor-react-native';
+import { MapPin, ArrowCounterClockwise, X, Star, Heart, Flag } from 'phosphor-react-native';
 import type { DiscoverProfile } from '../lib/discover';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -31,13 +31,14 @@ interface Props {
   onLike?: () => void;
   onTopPick?: () => void;
   onUndo?: () => void;
+  onReport?: () => void;
   canUndo?: boolean;
   actionDisabled?: boolean;
 }
 
 export default function SwipeCard({
   profile,
-  onPass, onLike, onTopPick, onUndo,
+  onPass, onLike, onTopPick, onUndo, onReport,
   canUndo = false, actionDisabled = false,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
@@ -129,6 +130,12 @@ export default function SwipeCard({
               style={styles.scrim}
               pointerEvents="none"
             />
+
+            {onReport && (
+              <TouchableOpacity style={styles.flagBtn} onPress={onReport} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Flag size={18} color="rgba(255,255,255,0.85)" weight="fill" />
+              </TouchableOpacity>
+            )}
 
             {photoTab === 'profile' && (
               <View style={styles.overlay} pointerEvents="none">
@@ -552,4 +559,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionBtnDimmed: { opacity: 0.3 },
+  flagBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

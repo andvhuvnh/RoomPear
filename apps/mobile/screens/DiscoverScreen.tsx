@@ -27,6 +27,7 @@ import { usePurchases } from '../context/PurchasesContext';
 import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
 import SwipeCard from '../components/SwipeCard';
 import DiscoverFiltersModal from '../components/DiscoverFiltersModal';
+import BlockReportModal from '../components/BlockReportModal';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -98,6 +99,7 @@ export default function DiscoverScreen() {
   const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
   const [isPaused, setIsPaused] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ id: string; name: string } | null>(null);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -379,6 +381,7 @@ export default function DiscoverScreen() {
               onUndo={handleUndo}
               canUndo={currentIndex > 0}
               actionDisabled={actionDisabled}
+              onReport={() => setReportTarget({ id: currentProfile.id, name: currentProfile.name })}
             />
           </Animated.View>
         </View>
@@ -446,6 +449,20 @@ export default function DiscoverScreen() {
           </View>
         </View>
       </Modal>
+
+      {reportTarget && userId && (
+        <BlockReportModal
+          visible={!!reportTarget}
+          reporterId={userId}
+          reportedId={reportTarget.id}
+          reportedName={reportTarget.name}
+          onClose={() => setReportTarget(null)}
+          onBlocked={() => {
+            setReportTarget(null);
+            setCurrentIndex(i => i + 1);
+          }}
+        />
+      )}
     </Background>
   );
 }
