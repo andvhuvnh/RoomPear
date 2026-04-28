@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { House, Heart, ChatCircle, User } from 'phosphor-react-native';
 import { supabase } from '../lib/supabase';
 import { fonts } from '../lib/typography';
 import { getProfileImageUrls } from '../lib/storage';
@@ -21,21 +21,16 @@ export type MainTabParamList = {
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-const TAB_ICON: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Discover: 'home-outline',
-  Likes: 'heart-outline',
-  Chats: 'chatbubbles-outline',
-  Profile: 'person-outline',
-};
+const TAB_ACTIVE = '#1A3329';
+const TAB_INACTIVE = '#9AADA6';
+const TAB_BG = '#FFFFFF';
 
-const TAB_ICON_FOCUSED: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Discover: 'home',
-  Likes: 'heart',
-  Chats: 'chatbubbles',
-  Profile: 'person',
+const TAB_ICONS: Record<keyof MainTabParamList, { icon: any; iconFilled: any }> = {
+  Discover: { icon: House,       iconFilled: House },
+  Likes:    { icon: Heart,       iconFilled: Heart },
+  Chats:    { icon: ChatCircle,  iconFilled: ChatCircle },
+  Profile:  { icon: User,        iconFilled: User },
 };
-
-const TAB_ACTIVE = '#0C5389';
 
 interface Props {
   onDevShowOnboarding?: () => void;
@@ -83,16 +78,17 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
         headerShown: false,
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: TAB_ACTIVE,
-        tabBarInactiveTintColor: '#888',
+        tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarLabelStyle: {
           fontFamily: fonts.semiBold,
           fontSize: 11,
         },
         tabBarStyle: {
-          borderTopColor: '#D9E1E6',
-          backgroundColor: '#FDFDFD',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: '#E0EAE5',
+          backgroundColor: TAB_BG,
         },
-        tabBarIcon: ({ color, size, focused }) => {
+        tabBarIcon: ({ size, focused }) => {
           const name = route.name as keyof MainTabParamList;
           if (name === 'Profile' && profileCoverUrl) {
             const dim = size + 2;
@@ -103,9 +99,9 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
                   height: dim,
                   borderRadius: dim / 2,
                   borderWidth: focused ? 2 : StyleSheet.hairlineWidth,
-                  borderColor: focused ? TAB_ACTIVE : 'rgba(0,0,0,0.12)',
+                  borderColor: focused ? TAB_ACTIVE : TAB_INACTIVE,
                   overflow: 'hidden',
-                  backgroundColor: '#E8E8E8',
+                  backgroundColor: '#E0EAE5',
                 }}
               >
                 <Image
@@ -116,11 +112,12 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
               </View>
             );
           }
+          const { icon: Icon } = TAB_ICONS[name];
           return (
-            <Ionicons
-              name={focused ? TAB_ICON_FOCUSED[name] : TAB_ICON[name]}
+            <Icon
               size={size}
-              color={color}
+              weight={focused ? 'fill' : 'regular'}
+              color={focused ? TAB_ACTIVE : TAB_INACTIVE}
             />
           );
         },
