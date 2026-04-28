@@ -21,6 +21,9 @@ type Props = {
   onApplyReferralCode: () => void;
   isPaused: boolean;
   onTogglePause: (value: boolean) => void;
+  isPremium: boolean;
+  onUpgradeToPlus: () => void;
+  onManageSubscription: () => void;
   onSignOut: () => void;
   onDevShowOnboarding?: () => void;
   styles: Record<string, unknown>;
@@ -44,6 +47,9 @@ export default function SettingsModal({
   onTogglePause,
   onCopyReferralCode,
   onApplyReferralCode,
+  isPremium,
+  onUpgradeToPlus,
+  onManageSubscription,
   onSignOut,
   onDevShowOnboarding,
   styles,
@@ -210,6 +216,23 @@ export default function SettingsModal({
                 {(profile?.subscription_tier as string) || 'free'}
               </Text>
             </View>
+            <View style={styles.settingsRowDivider as object} />
+            <TouchableOpacity
+              style={styles.settingsRow as object}
+              onPress={isPremium ? onManageSubscription : onUpgradeToPlus}
+            >
+              <View style={styles.settingsRowLeft as object}>
+                <Ionicons
+                  name={isPremium ? 'card-outline' : 'sparkles-outline'}
+                  size={20}
+                  color={theme.foreground}
+                />
+                <Text style={styles.settingsRowTitle as object}>
+                  {isPremium ? 'Manage subscription' : 'Upgrade to RoomPear+'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.mutedForeground} />
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.settingsSectionLabel as object}>Visibility</Text>
