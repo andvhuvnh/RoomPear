@@ -1,12 +1,11 @@
 /**
- * Matching algorithm for RoomPear.
+ * RoomPear matching algorithm.
  *
- * 4 layers:
- *   1. Hard filters  — location (same state), budget overlap, hard dealbreakers
+ * Layers:
+ *   1. Hard filters  — location, budget, age, gender, hard dealbreakers
  *   2. Compatibility — Lifestyle 35% | Interests 30% | Budget 20% | Dealbreakers 15%
- *   3. Boost factors — profile completeness ×1.0–1.20 | premium ×1.10
- *                      new user <48 h ×1.15 | recently active <7 d ×1.05
- *   4. Wildcard mix  — 80% top scorers + 20% random from the rest
+ *   3. Boost factors — completeness, premium, new user, recently active, city, listing
+ *   4. Feed mixing   — free: 70/20/10 | premium: 85/10/5 (with score thresholds + fallback)
  */
 
 import type { Preferences } from './preferences';
@@ -21,36 +20,31 @@ export interface ProfileMeta {
   bio?: string | null;
   hobbies?: string[] | null;
   ethnicity?: string | null;
+  has_listing?: boolean | null;
+  prompts?: Array<{ question: string; answer: string }> | null;
 }
 
-// ─── Hard filters ────────────────────────────────────────────────────────────
+// ─── Hard filters ─────────────────────────────────────────────────────────────
 
 /**
  * Returns false if the candidate should be excluded from the deck entirely.
- * isPremium: pets/smoking hard filters are premium-only — free users see them ranked lower instead.
+ * isPremium: pets/smoking hard-filter is premium-only (free users get score penalty instead).
  */
 export function passesHardFilters(mine: Preferences, theirs: Preferences, isPremium = false): boolean {
-  // Same state required (flexible for a small user base)
+  // State match (location fallback when no radius is set)
   if (mine.state && theirs.state) {
-    if (mine.state.trim().toLowerCase() !== theirs.state.trim().toLowerCase()) {
-      return false;
-    }
+    if (mine.state.trim().toLowerCase() !== theirs.state.trim().toLowerCase()) return false;
   }
 
-  // Budget ranges must overlap
-  if (
-    mine.min_budget != null && mine.max_budget != null &&
-    theirs.min_budget != null && theirs.max_budget != null
-  ) {
-    const overlapMax = Math.min(mine.max_budget, theirs.max_budget);
-    const overlapMin = Math.max(mine.min_budget, theirs.min_budget);
-    if (overlapMax < overlapMin) return false;
+  // Budget overlap
+  if (mine.min_budget != null && mine.max_budget != null &&
+      theirs.min_budget != null && theirs.max_budget != null) {
+    if (Math.min(mine.max_budget, theirs.max_budget) < Math.max(mine.min_budget, theirs.min_budget)) return false;
   }
 
-  // My hard dealbreakers vs their self-reported traits.
-  // Pets/smoking hard filtering is premium-only — free users get them ranked lower instead.
-  const myDealbreakers = mine.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(myDealbreakers)) {
+  // Hard dealbreakers — pets/smoking are premium-only hard filters; others apply to all
+  const myDB = mine.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(myDB)) {
     if (severity !== 'hard') continue;
     if (key === 'smoking'    && isPremium && theirs.smoking_allowed === true) return false;
     if (key === 'pets'       && isPremium && theirs.pets_allowed    === true) return false;
@@ -60,9 +54,9 @@ export function passesHardFilters(mine: Preferences, theirs: Preferences, isPrem
     if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;
   }
 
-  // Their hard dealbreakers vs my self-reported traits (avoid wasted swipes)
-  const theirDealbreakers = theirs.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(theirDealbreakers)) {
+  // Their hard dealbreakers vs my traits
+  const theirDB = theirs.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(theirDB)) {
     if (severity !== 'hard') continue;
     if (key === 'smoking'    && mine.smoking_allowed === true) return false;
     if (key === 'pets'       && mine.pets_allowed    === true) return false;
@@ -78,13 +72,14 @@ export function passesHardFilters(mine: Preferences, theirs: Preferences, isPrem
 // ─── Compatibility score ──────────────────────────────────────────────────────
 
 /**
- * Returns a raw compatibility score (0–1, higher = better).
- * Boost factors can push it above 1.
+ * Returns a compatibility score (0–1+). Boost factors can push it above 1.
+ * Convert to display % with: Math.min(100, Math.round(score * 100))
  */
 export function scoreCompatibility(
   mine: Preferences,
   theirs: Preferences,
-  theirMeta: ProfileMeta
+  theirMeta: ProfileMeta,
+  myMeta?: { has_listing_only?: boolean },
 ): number {
   let score = 0;
 
@@ -98,15 +93,14 @@ export function scoreCompatibility(
     lifestyleWeightSum += 0.40;
   }
   if (mine.social_preference && theirs.social_preference) {
-    lifestyleRaw += (mine.social_preference === theirs.social_preference ? 1 : 0) * 0.35;
+    lifestyleRaw += socialPreferenceScore(mine.social_preference, theirs.social_preference) * 0.35;
     lifestyleWeightSum += 0.35;
   }
   if (mine.work_schedule && theirs.work_schedule) {
-    lifestyleRaw += (mine.work_schedule === theirs.work_schedule ? 1 : 0) * 0.25;
+    lifestyleRaw += workScheduleScore(mine.work_schedule, theirs.work_schedule) * 0.25;
     lifestyleWeightSum += 0.25;
   }
 
-  // Neutral (0.5) when no lifestyle data available
   score += (lifestyleWeightSum > 0 ? lifestyleRaw / lifestyleWeightSum : 0.5) * 0.35;
 
   // ── Interests (30%) ────────────────────────────────────────────────────────
@@ -118,103 +112,97 @@ export function scoreCompatibility(
     const union = new Set([...myInterests, ...theirInterests]);
     score += (intersection.size / union.size) * 0.30;
   } else {
-    score += 0.15; // neutral when no interests data
+    score += 0.15; // neutral fallback
   }
 
   // ── Budget (20%) ───────────────────────────────────────────────────────────
-  if (
-    mine.min_budget != null && mine.max_budget != null &&
-    theirs.min_budget != null && theirs.max_budget != null
-  ) {
+  if (mine.min_budget != null && mine.max_budget != null &&
+      theirs.min_budget != null && theirs.max_budget != null) {
     const overlapMin = Math.max(mine.min_budget, theirs.min_budget);
     const overlapMax = Math.min(mine.max_budget, theirs.max_budget);
-    const rangeMin = Math.min(mine.min_budget, theirs.min_budget);
-    const rangeMax = Math.max(mine.max_budget, theirs.max_budget);
-    const overlap = Math.max(0, overlapMax - overlapMin);
-    const range = rangeMax - rangeMin;
+    const rangeMin   = Math.min(mine.min_budget, theirs.min_budget);
+    const rangeMax   = Math.max(mine.max_budget, theirs.max_budget);
+    const overlap    = Math.max(0, overlapMax - overlapMin);
+    const range      = rangeMax - rangeMin;
     score += (range > 0 ? overlap / range : 1) * 0.20;
   } else {
-    score += 0.10; // neutral
+    score += 0.10;
   }
 
   // ── Dealbreakers (15%) ─────────────────────────────────────────────────────
+  // hard conflict (free users only, since premium hard-filters them out): -0.10
+  // soft conflict: -0.05
   let dealScore = 0.15;
-  const myDealbreakers = mine.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(myDealbreakers)) {
-    if (severity !== 'soft') continue;
-    if (key === 'smoking'    && theirs.smoking_allowed === true) dealScore -= 0.05;
-    if (key === 'pets'       && theirs.pets_allowed    === true) dealScore -= 0.05;
-    if (key === 'parties'    && theirs.social_preference === 'social') dealScore -= 0.05;
-    if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') dealScore -= 0.05;
-    if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') dealScore -= 0.05;
-    if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) dealScore -= 0.05;
+  const myDB = mine.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(myDB)) {
+    if (severity !== 'hard' && severity !== 'soft') continue;
+    const penalty = severity === 'hard' ? 0.10 : 0.05;
+    if (key === 'smoking'    && theirs.smoking_allowed === true) dealScore -= penalty;
+    if (key === 'pets'       && theirs.pets_allowed    === true) dealScore -= penalty;
+    if (key === 'parties'    && theirs.social_preference === 'social') dealScore -= penalty;
+    if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') dealScore -= penalty;
+    if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') dealScore -= penalty;
+    if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) dealScore -= penalty;
   }
-  const theirDealbreakers = theirs.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(theirDealbreakers)) {
-    if (severity !== 'soft') continue;
-    if (key === 'smoking'    && mine.smoking_allowed === true) dealScore -= 0.05;
-    if (key === 'pets'       && mine.pets_allowed    === true) dealScore -= 0.05;
-    if (key === 'parties'    && mine.social_preference === 'social') dealScore -= 0.05;
-    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') dealScore -= 0.05;
-    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') dealScore -= 0.05;
-    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) dealScore -= 0.05;
+  const theirDB = theirs.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(theirDB)) {
+    if (severity !== 'hard' && severity !== 'soft') continue;
+    const penalty = severity === 'hard' ? 0.10 : 0.05;
+    if (key === 'smoking'    && mine.smoking_allowed === true) dealScore -= penalty;
+    if (key === 'pets'       && mine.pets_allowed    === true) dealScore -= penalty;
+    if (key === 'parties'    && mine.social_preference === 'social') dealScore -= penalty;
+    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') dealScore -= penalty;
+    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') dealScore -= penalty;
+    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) dealScore -= penalty;
   }
   score += Math.max(0, dealScore);
 
-  // ── Move-in date compatibility (soft boost) ────────────────────────────────
+  // ── Soft boosts (move-in, lease, ethnicity, city) ──────────────────────────
   if (mine.move_in_date && theirs.move_in_date) {
-    const flexVals = ['flexible', 'Flexible'];
-    const mineFlex = flexVals.includes(mine.move_in_date);
-    const theirsFlex = flexVals.includes(theirs.move_in_date);
-    if (mineFlex || theirsFlex || mine.move_in_date === theirs.move_in_date) {
+    const flex = (d: string) => d.toLowerCase() === 'flexible';
+    if (flex(mine.move_in_date) || flex(theirs.move_in_date) || mine.move_in_date === theirs.move_in_date) {
       score += 0.04;
     }
   }
-
-  // ── Lease duration compatibility (soft boost) ──────────────────────────────
   if (mine.lease_duration_months != null && theirs.lease_duration_months != null) {
-    const mineFlex = mine.lease_duration_months === 0;
-    const theirsFlex = theirs.lease_duration_months === 0;
-    if (mineFlex || theirsFlex || mine.lease_duration_months === theirs.lease_duration_months) {
+    if (mine.lease_duration_months === 0 || theirs.lease_duration_months === 0 ||
+        mine.lease_duration_months === theirs.lease_duration_months) {
       score += 0.03;
     }
   }
 
-  // ── Ethnicity preference (soft boost) ──────────────────────────────────────
-  // Only applied when the viewer has set a preference — never hard-filters.
+  // Ethnicity — strong soft boost, never a hard filter
   const myEthPref = mine.ethnicity_preference ?? [];
-  if (myEthPref.length > 0 && theirMeta.ethnicity) {
-    if (myEthPref.includes(theirMeta.ethnicity)) score += 0.08;
+  if (myEthPref.length > 0 && theirMeta.ethnicity && myEthPref.includes(theirMeta.ethnicity)) {
+    score += 0.08;
   }
 
-  // ── City match bonus ────────────────────────────────────────────────────────
-  if (
-    mine.city && theirs.city &&
-    mine.city.trim().toLowerCase() === theirs.city.trim().toLowerCase()
-  ) {
+  if (mine.city && theirs.city &&
+      mine.city.trim().toLowerCase() === theirs.city.trim().toLowerCase()) {
     score += 0.05;
   }
 
-  // ── Boost factors ──────────────────────────────────────────────────────────
-
-  // Profile completeness (like Hinge/CMB — rewards users who filled out their profile)
-  // Max boost: ×1.20 for a fully completed profile
-  const completeness = profileCompletenessBoost(theirMeta, theirs);
-  score *= completeness;
-
-  if (theirMeta.subscription_tier === 'premium') {
-    score *= 1.10;
+  // Has listing boost — only when viewer prefers listings
+  if (myMeta?.has_listing_only && theirMeta.has_listing === true) {
+    score += 0.06;
   }
+
+  // ── Boost factors ──────────────────────────────────────────────────────────
+  score *= profileCompletenessBoost(theirMeta, theirs);
+
+  if (theirMeta.subscription_tier === 'premium') score *= 1.10;
+
   if (theirMeta.created_at) {
     const ageHours = (Date.now() - new Date(theirMeta.created_at).getTime()) / 3_600_000;
     if (ageHours < 48) score *= 1.15;
   }
+
   const lastActive = theirMeta.last_active_at ?? theirMeta.updated_at;
   if (lastActive) {
     const idleDays = (Date.now() - new Date(lastActive).getTime()) / 86_400_000;
-    if (idleDays < 1)  score *= 1.10; // active today
-    else if (idleDays < 7)  score *= 1.05; // active this week
-    else if (idleDays < 30) score *= 1.02; // active this month
+    if (idleDays < 1)       score *= 1.10;
+    else if (idleDays < 7)  score *= 1.05;
+    else if (idleDays < 30) score *= 1.02;
   }
 
   return score;
@@ -222,19 +210,12 @@ export function scoreCompatibility(
 
 // ─── Profile completeness boost ──────────────────────────────────────────────
 
-/**
- * Returns a multiplier between 1.0 and 1.20 based on how complete the profile is.
- * Incentivises users to fill out their profile — same signal Hinge/CMB use.
- *
- * Fields checked (each worth equal share of the 0.20 range):
- *   Profile: bio, hobbies (≥1), age
- *   Preferences: city/state, budget, cleanliness, social_preference, work_schedule, interests (≥1 category)
- */
 function profileCompletenessBoost(meta: ProfileMeta, prefs: Preferences): number {
   const checks = [
     !!meta.bio?.trim(),
-    Array.isArray(meta.hobbies) && meta.hobbies.length > 0,
     meta.age != null,
+    Array.isArray(meta.hobbies) && meta.hobbies.length > 0,
+    Array.isArray(meta.prompts) && meta.prompts.filter(p => p?.answer?.trim()).length >= 2,
     !!(prefs.city?.trim()),
     prefs.min_budget != null && prefs.max_budget != null,
     prefs.cleanliness_level != null,
@@ -242,40 +223,98 @@ function profileCompletenessBoost(meta: ProfileMeta, prefs: Preferences): number
     !!prefs.work_schedule,
     prefs.interests != null && Object.values(prefs.interests).some(v => v.length > 0),
   ];
-
-  const filled = checks.filter(Boolean).length;
-  const ratio = filled / checks.length; // 0 to 1
-  return 1.0 + ratio * 0.20;            // 1.0 to 1.20
+  const ratio = checks.filter(Boolean).length / checks.length;
+  return 1.0 + ratio * 0.20; // 1.0 – 1.20
 }
 
-// ─── Wildcard mix ─────────────────────────────────────────────────────────────
+// ─── Feed mixing ──────────────────────────────────────────────────────────────
 
 /**
- * Returns `count` items: 80% from the top scorers, 20% random from the rest.
- * Prevents filter-bubble lock-in.
+ * Returns up to `count` scored items using tiered mixing:
+ *   Free:    70% high (≥0.65) | 20% medium (0.40–0.65) | 10% wildcard (<0.40)
+ *   Premium: 85% high         | 10% medium              |  5% wildcard
+ *
+ * Progressive fallback: if pool is too small, thresholds are relaxed automatically.
  */
 export function applyWildcardMix<T>(
   scored: Array<{ item: T; score: number }>,
-  count: number
-): T[] {
+  count: number,
+  isPremium = false,
+): Array<{ item: T; score: number }> {
   if (scored.length === 0) return [];
 
   scored.sort((a, b) => b.score - a.score);
 
-  const topCount = Math.ceil(count * 0.8);
-  const wildcardCount = count - topCount;
+  const HIGH_THRESHOLD    = 0.65;
+  const MED_THRESHOLD     = 0.40;
+  const WILDCARD_MIN      = 0.15;
+  const minPool           = isPremium ? 0.40 : 0.20;
 
-  const top = scored.slice(0, topCount).map(x => x.item);
-  const rest = scored
-    .slice(topCount)
-    .sort(() => Math.random() - 0.5)
-    .slice(0, wildcardCount)
-    .map(x => x.item);
+  // Progressive fallback to avoid empty states
+  let pool = scored.filter(x => x.score >= minPool);
+  if (pool.length < count) pool = scored.filter(x => x.score >= WILDCARD_MIN);
+  if (pool.length < count) pool = scored;
 
-  return [...top, ...rest];
+  const high     = pool.filter(x => x.score >= HIGH_THRESHOLD);
+  const medium   = pool.filter(x => x.score >= MED_THRESHOLD && x.score < HIGH_THRESHOLD);
+  const wildcard = pool.filter(x => x.score < MED_THRESHOLD);
+
+  const highRatio     = isPremium ? 0.85 : 0.70;
+  const medRatio      = isPremium ? 0.10 : 0.20;
+  const highCount     = Math.round(count * highRatio);
+  const medCount      = Math.round(count * medRatio);
+  const wildcardCount = Math.max(0, count - highCount - medCount);
+
+  const shuffle = <U>(arr: U[]): U[] => [...arr].sort(() => Math.random() - 0.5);
+
+  const result: Array<{ item: T; score: number }> = [
+    ...high.slice(0, highCount),
+    ...shuffle(medium).slice(0, medCount),
+    ...shuffle(wildcard).slice(0, wildcardCount),
+  ];
+
+  // Fill remainder if buckets ran dry
+  if (result.length < count) {
+    const used = new Set(result.map(r => r.item));
+    const extras = pool.filter(x => !used.has(x.item)).slice(0, count - result.length);
+    result.push(...extras);
+  }
+
+  return result.slice(0, count);
+}
+
+// ─── Top Picks selection ──────────────────────────────────────────────────────
+
+/**
+ * Returns the highest-scoring profiles that meet the Top Picks threshold.
+ * No wildcards — only genuinely high-compatibility profiles.
+ */
+export function selectTopPicks<T>(
+  scored: Array<{ item: T; score: number }>,
+  count: number,
+): Array<{ item: T; score: number }> {
+  const TOP_PICKS_THRESHOLD = 0.70;
+  return scored
+    .filter(x => x.score >= TOP_PICKS_THRESHOLD)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function socialPreferenceScore(a: string, b: string): number {
+  if (a === b) return 1.0;
+  if (a === 'balanced' || b === 'balanced') return 0.5; // adjacent
+  return 0.0; // quiet ↔ social: opposite ends
+}
+
+function workScheduleScore(a: string, b: string): number {
+  if (a === b) return 1.0;
+  const isFlexible = (s: string) => s === 'Flexible' || s === 'Remote';
+  if (isFlexible(a) || isFlexible(b)) return 0.7;
+  if ((a === '9-to-5' && b === 'Night Shift') || (a === 'Night Shift' && b === '9-to-5')) return 0.0;
+  return 0.4;
+}
 
 function flattenInterests(interests?: Record<string, string[]>): Set<string> {
   if (!interests) return new Set();

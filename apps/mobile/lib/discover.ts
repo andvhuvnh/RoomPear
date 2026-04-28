@@ -22,6 +22,7 @@ export type DiscoverProfile = {
   hasListing: boolean;
   roomType: string | null;
   maxBudget: number | null;
+  compatibilityScore: number;  // 0–100, display as "XX% Match"
 };
 
 type PreferenceCoordinateRow = {
@@ -187,16 +188,17 @@ export async function fetchDiscoverProfiles(
     }
   }
 
-  // 80% top scorers + 20% wildcards, capped at limit
+  // Feed mixing: free 70/20/10, premium 85/10/5
   const mixed = applyWildcardMix(
     scored.map(s => ({ item: s.row, score: s.score })),
-    Math.min(limit, scored.length)
+    Math.min(limit, scored.length),
+    options?.isPremium ?? false,
   );
 
   // Load photos and build the final list
   const result: DiscoverProfile[] = [];
 
-  for (const row of mixed) {
+  for (const { item: row, score } of mixed) {
     const urls = await getProfileImageUrls(row.profile_photo_url);
     if (!urls || urls.length === 0) continue;
 
@@ -247,6 +249,7 @@ export async function fetchDiscoverProfiles(
       location,
       roomType: prefs?.room_type ?? null,
       maxBudget: prefs?.max_budget ?? null,
+      compatibilityScore: Math.min(100, Math.round(score * 100)),
     });
   }
 
@@ -285,15 +288,23 @@ function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): b
   const mineDealbreakers = mine.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(mineDealbreakers)) {
     if (severity !== 'hard' && severity !== 'soft') continue;
-    if (key === 'smoking' && theirs.smoking_allowed === true) return false;
-    if (key === 'pets' && theirs.pets_allowed === true) return false;
+    if (key === 'smoking'    && theirs.smoking_allowed === true) return false;
+    if (key === 'pets'       && theirs.pets_allowed === true) return false;
+    if (key === 'parties'    && theirs.social_preference === 'social') return false;
+    if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
+    if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;
+    if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;
   }
 
   const theirDealbreakers = theirs.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(theirDealbreakers)) {
     if (severity !== 'hard' && severity !== 'soft') continue;
-    if (key === 'smoking' && mine.smoking_allowed === true) return false;
-    if (key === 'pets' && mine.pets_allowed === true) return false;
+    if (key === 'smoking'    && mine.smoking_allowed === true) return false;
+    if (key === 'pets'       && mine.pets_allowed === true) return false;
+    if (key === 'parties'    && mine.social_preference === 'social') return false;
+    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') return false;
+    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') return false;
+    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) return false;
   }
 
   return true;

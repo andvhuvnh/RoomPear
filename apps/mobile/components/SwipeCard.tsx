@@ -144,6 +144,11 @@ export default function SwipeCard({
                   {profile.age != null && (
                     <Text style={styles.overlayAge}>{profile.age}</Text>
                   )}
+                  {profile.compatibilityScore > 0 && (
+                    <View style={styles.matchBadge}>
+                      <Text style={styles.matchBadgeText}>{profile.compatibilityScore}% Match</Text>
+                    </View>
+                  )}
                 </View>
                 {!!profile.location && (
                   <View style={styles.locationRow}>
@@ -569,5 +574,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  matchBadge: {
+    backgroundColor: 'rgba(12,83,137,0.82)',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginLeft: 6,
+  },
+  matchBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
   },
 });
