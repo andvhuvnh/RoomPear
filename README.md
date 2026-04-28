@@ -1,6 +1,6 @@
 # RoomPear
 
-A mobile roommate-matching app built like a dating app. Swipe on profiles, match mutually, and chat. Think Hinge but for finding a compatible roommate — starting at UCR, targeting college students.
+A mobile roommate-matching app built like a dating app. Swipe on profiles, match mutually, and chat. For finding a compatible roommate.
 
 ## Tech Stack
 
