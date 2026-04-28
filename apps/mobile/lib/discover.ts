@@ -98,7 +98,8 @@ async function getNearbyCandidateIds(
 
 export async function fetchDiscoverProfiles(
   userId: string,
-  limit = 10
+  limit = 10,
+  options?: { useAdvancedFilters?: boolean }
 ): Promise<DiscoverProfile[]> {
   // Fetch viewer's own preferences for filtering + scoring
   const myPrefs = await getPreferences(userId);
@@ -159,6 +160,9 @@ export async function fetchDiscoverProfiles(
 
     if (myPrefs && theirPrefs) {
       if (!passesHardFilters(myPrefs, theirPrefs)) continue;
+      if (options?.useAdvancedFilters && !passesPremiumAdvancedFilters(myPrefs, theirPrefs)) {
+        continue;
+      }
       const score = scoreCompatibility(myPrefs, theirPrefs, {
         subscription_tier: row.subscription_tier,
         created_at: row.created_at,
@@ -240,6 +244,52 @@ export async function fetchDiscoverProfiles(
   }
 
   return result;
+}
+
+function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): boolean {
+  // Room type: if viewer is specific (non-flexible), require a compatible candidate room type.
+  if (mine.room_type && mine.room_type !== 'flexible') {
+    const candidateRoomType = theirs.room_type;
+    if (
+      candidateRoomType &&
+      candidateRoomType !== 'flexible' &&
+      candidateRoomType !== mine.room_type
+    ) {
+      return false;
+    }
+  }
+
+  // Move-in date: keep candidates within a practical planning window.
+  if (mine.move_in_date && theirs.move_in_date) {
+    const mineTs = new Date(mine.move_in_date).getTime();
+    const theirTs = new Date(theirs.move_in_date).getTime();
+    const DAY_MS = 86_400_000;
+    const maxGapDays = 60;
+    if (
+      Number.isFinite(mineTs) &&
+      Number.isFinite(theirTs) &&
+      Math.abs(mineTs - theirTs) > maxGapDays * DAY_MS
+    ) {
+      return false;
+    }
+  }
+
+  // Dealbreakers: for premium filtering, treat both hard and soft conflicts as excludes.
+  const mineDealbreakers = mine.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(mineDealbreakers)) {
+    if (severity !== 'hard' && severity !== 'soft') continue;
+    if (key === 'smoking' && theirs.smoking_allowed === true) return false;
+    if (key === 'pets' && theirs.pets_allowed === true) return false;
+  }
+
+  const theirDealbreakers = theirs.dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(theirDealbreakers)) {
+    if (severity !== 'hard' && severity !== 'soft') continue;
+    if (key === 'smoking' && mine.smoking_allowed === true) return false;
+    if (key === 'pets' && mine.pets_allowed === true) return false;
+  }
+
+  return true;
 }
 
 export async function recordSwipe(

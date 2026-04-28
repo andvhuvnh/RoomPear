@@ -28,3 +28,17 @@ export function formatPlanLabel(subscriptionTier: string | null | undefined): st
   if (t === SUBSCRIPTION_TIER_PREMIUM) return 'RoomPear+';
   return 'Free';
 }
+
+/**
+ * `profiles.subscription_tier` is synced to `free` / `premium` from RevenueCat; keep this
+ * tolerant in case the column is set manually or legacy values appear.
+ */
+export function isPremiumProfileTier(subscriptionTier: string | null | undefined): boolean {
+  const t = (subscriptionTier ?? '').toLowerCase().trim();
+  if (!t) return false;
+  if (t === SUBSCRIPTION_TIER_PREMIUM) return true;
+  if (t === 'room_pear_plus' || t === 'roompear+') return true;
+  if (t.replace(/\s/g, '') === 'roompear+') return true;
+  if (t.startsWith('room_pear_')) return true;
+  return false;
+}

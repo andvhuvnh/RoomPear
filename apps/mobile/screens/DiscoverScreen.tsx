@@ -24,6 +24,7 @@ import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsage';
 import { FREE_TIER_LIMITS } from '../lib/freeTierLimits';
 import { usePurchases } from '../context/PurchasesContext';
+import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
 import SwipeCard from '../components/SwipeCard';
 import DiscoverFiltersModal from '../components/DiscoverFiltersModal';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
@@ -83,7 +84,8 @@ function Background({ children }: { children: React.ReactNode }) {
 
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
-  const { isRoomPearPlus, presentPaywall } = usePurchases();
+  const { isRoomPearPlus, customerInfo, presentPaywall } = usePurchases();
+  const [hasPremiumTier, setHasPremiumTier] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | null>(null);
   const [myHobbies, setMyHobbies] = useState<string[]>([]);
@@ -100,18 +102,31 @@ export default function DiscoverScreen() {
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
+  const hasPremiumAccess = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || hasPremiumTier;
 
   const refreshDailyUsage = useCallback(async (uid: string) => {
     const u = await getDiscoverUsage(uid);
     setDailyUsage(u);
   }, []);
+  const openPaywallIfNeeded = useCallback(async () => {
+    if (hasPremiumAccess) return;
+    await presentPaywall();
+  }, [hasPremiumAccess, presentPaywall]);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       const uid = data.session?.user.id ?? null;
       setUserId(uid);
       if (uid) {
-        loadProfiles(uid);
+        const { data: tierRow } = await supabase
+          .from('profiles')
+          .select('subscription_tier')
+          .eq('id', uid)
+          .maybeSingle();
+        const isPremiumTier = isPremiumProfileTier(tierRow?.subscription_tier as string | undefined);
+        setHasPremiumTier(isPremiumTier);
+        const hasPremiumAtLoad = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || isPremiumTier;
+        loadProfiles(uid, hasPremiumAtLoad);
         const { data: me } = await supabase
           .from('profiles')
           .select('profile_photo_url, hobbies, is_paused')
@@ -142,9 +157,11 @@ export default function DiscoverScreen() {
           interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : [])
         );
         refreshDailyUsage(uid);
+      } else {
+        setHasPremiumTier(false);
       }
     });
-  }, [refreshDailyUsage]);
+  }, [isRoomPearPlus, customerInfo, refreshDailyUsage]);
 
   useFocusEffect(
     useCallback(() => {
@@ -159,9 +176,9 @@ export default function DiscoverScreen() {
     }, [userId, refreshDailyUsage])
   );
 
-  async function loadProfiles(uid: string) {
+  async function loadProfiles(uid: string, hasPremiumAccess = false) {
     setLoading(true);
-    const data = await fetchDiscoverProfiles(uid);
+    const data = await fetchDiscoverProfiles(uid, 10, { useAdvancedFilters: hasPremiumAccess });
     setProfiles(data);
     setCurrentIndex(0);
     translateX.setValue(0);
@@ -192,18 +209,18 @@ export default function DiscoverScreen() {
     if (actionDisabled) return;
     if (!userId) return;
 
-    if (!isRoomPearPlus) {
+    if (!hasPremiumAccess) {
       const usage = await getDiscoverUsage(userId);
       if (direction === 'top_pick') {
         if (
           usage.swipes >= FREE_TIER_LIMITS.swipesPerDay ||
           usage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay
         ) {
-          await presentPaywall();
+          await openPaywallIfNeeded();
           return;
         }
       } else if (usage.swipes >= FREE_TIER_LIMITS.swipesPerDay) {
-        await presentPaywall();
+        await openPaywallIfNeeded();
         return;
       }
     }
@@ -233,8 +250,8 @@ export default function DiscoverScreen() {
 
   async function handleUndo() {
     if (actionDisabled || currentIndex === 0) return;
-    if (!isRoomPearPlus) {
-      await presentPaywall();
+    if (!hasPremiumAccess) {
+      await openPaywallIfNeeded();
       return;
     }
     setActionDisabled(true);
@@ -298,7 +315,10 @@ export default function DiscoverScreen() {
               ? 'Try increasing your search radius, then refresh Discover.'
               : `No more profiles right now.\nCheck back later!`}
           </Text>
-          <TouchableOpacity style={styles.refreshBtn} onPress={() => userId && loadProfiles(userId)}>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={() => userId && loadProfiles(userId, hasPremiumAccess)}
+          >
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
         </View>
@@ -314,8 +334,10 @@ export default function DiscoverScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.pearLogo}>🍐</Text>
-            {isRoomPearPlus ? (
-              <Text style={styles.headerMetricsPremium}>RoomPear+ · Unlimited swipes & Top Picks</Text>
+            {hasPremiumAccess ? (
+              <Text style={styles.headerMetricsPremium}>
+                RoomPear+ · Unlimited swipes, advanced filters, and boosted profile
+              </Text>
             ) : (
               <Text style={styles.headerMetrics}>
                 {Math.max(0, FREE_TIER_LIMITS.swipesPerDay - dailyUsage.swipes)}/

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -30,6 +30,7 @@ import {
 } from '../lib/likes';
 import { recordSwipe } from '../lib/discover';
 import { usePurchases } from '../context/PurchasesContext';
+import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import type { LikesStackParamList } from '../navigation/LikesStack';
 import {
@@ -109,7 +110,8 @@ function LikesAmbientBackdrop() {
 
 export default function LikesScreen() {
   const navigation = useNavigation<NavProp>();
-  const { isRoomPearPlus, presentPaywall } = usePurchases();
+  const { isRoomPearPlus, customerInfo, presentPaywall } = usePurchases();
+  const [hasPremiumTier, setHasPremiumTier] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [likers, setLikers] = useState<Liker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,6 +127,10 @@ export default function LikesScreen() {
   const initialLoadDoneRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
   const lastFetchedAtRef = useRef(0);
+  const likersRef = useRef<Liker[]>([]);
+  useEffect(() => {
+    likersRef.current = likers;
+  }, [likers]);
 
   const load = useCallback(async (isRefresh = false, skipIfFresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -133,6 +139,7 @@ export default function LikesScreen() {
     const uid = sessionData.session?.user.id;
     if (!uid) {
       setUserId(null);
+      setHasPremiumTier(false);
       setLikers([]);
       setRevealedIds(new Set());
       setLikedBackIds(new Set());
@@ -155,6 +162,24 @@ export default function LikesScreen() {
       lastFetchedAtRef.current = 0;
     }
 
+    const firstLoadForUser = !initialLoadDoneRef.current;
+    if (!isRefresh && firstLoadForUser) setLoading(true);
+
+    setUserId(uid);
+    // Always re-sync subscription (DB + RC) on every load — must run *before* the stale-focus
+    // short-circuit or premium users can stay stuck on blurred / “reveal” UI after purchase.
+    const { data: tierRow } = await supabase
+      .from('profiles')
+      .select('subscription_tier')
+      .eq('id', uid)
+      .maybeSingle();
+    const isPremiumTier = isPremiumProfileTier(tierRow?.subscription_tier as string | undefined);
+    setHasPremiumTier(isPremiumTier);
+    const hasPremiumAccess = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || isPremiumTier;
+    if (hasPremiumAccess && likersRef.current.length > 0) {
+      setRevealedIds(new Set(likersRef.current.map((l) => l.id)));
+    }
+
     if (
       skipIfFresh &&
       initialLoadDoneRef.current &&
@@ -162,13 +187,9 @@ export default function LikesScreen() {
       Date.now() - lastFetchedAtRef.current < FOCUS_STALE_MS
     ) {
       setRefreshing(false);
+      setLoading(false);
       return;
     }
-
-    const firstLoadForUser = !initialLoadDoneRef.current;
-    if (!isRefresh && firstLoadForUser) setLoading(true);
-
-    setUserId(uid);
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -189,12 +210,22 @@ export default function LikesScreen() {
     const filteredRevealed = new Set(
       [...persistedRevealed].filter((likerId) => pendingIds.has(likerId))
     );
-    setRevealedIds(filteredRevealed);
+    setRevealedIds(hasPremiumAccess ? new Set(data.map((liker) => liker.id)) : filteredRevealed);
     initialLoadDoneRef.current = true;
     lastFetchedAtRef.current = Date.now();
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [isRoomPearPlus, customerInfo]);
+
+  /** When RC / DB flips to paid while you stay on this tab, or likers list arrives after premium, unlock all. */
+  useEffect(() => {
+    if (!userId) return;
+    const paid =
+      hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || hasPremiumTier;
+    if (!paid) return;
+    if (likers.length === 0) return;
+    setRevealedIds(new Set(likers.map((l) => l.id)));
+  }, [userId, customerInfo, isRoomPearPlus, hasPremiumTier, likers]);
 
   useFocusEffect(
     useCallback(() => {
@@ -208,7 +239,13 @@ export default function LikesScreen() {
     return copy.sort((a, b) => b.likedAt.localeCompare(a.likedAt));
   }, [likers, sortBy]);
 
-  const canRevealMore = !dailyRevealSpentToday || bonusRevealBalance > 0;
+  const hasPremiumAccess =
+    hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || hasPremiumTier;
+  const canRevealMore = hasPremiumAccess || !dailyRevealSpentToday || bonusRevealBalance > 0;
+  const openPaywallIfNeeded = useCallback(async () => {
+    if (hasPremiumAccess) return;
+    await presentPaywall();
+  }, [hasPremiumAccess, presentPaywall]);
 
   async function handleLikeBack(liker: Liker) {
     if (!userId || likedBackIds.has(liker.id)) return;
@@ -220,6 +257,7 @@ export default function LikesScreen() {
   }
 
   async function handleReveal(liker: Liker) {
+    if (hasPremiumAccess) return;
     if (revealedIds.has(liker.id)) return;
 
     if (!canRevealMore) {
@@ -228,7 +266,7 @@ export default function LikesScreen() {
         'Come back tomorrow for another free reveal, invite friends from Profile for bonus reveals, or upgrade to RoomPear+ to see every liker instantly.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'View RoomPear+', onPress: () => void presentPaywall() },
+          { text: 'View RoomPear+', onPress: () => void openPaywallIfNeeded() },
         ]
       );
       return;
@@ -260,13 +298,13 @@ export default function LikesScreen() {
         'Come back tomorrow, invite friends from Profile for bonus reveals, or upgrade to RoomPear+ for unlimited access to your likers.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'View RoomPear+', onPress: () => void presentPaywall() },
+          { text: 'View RoomPear+', onPress: () => void openPaywallIfNeeded() },
         ]
       );
     }
   }
 
-  const revealSummary = isRoomPearPlus
+  const revealSummary = hasPremiumAccess
     ? {
         icon: 'checkmark-circle' as const,
         title: 'RoomPear+',
@@ -296,7 +334,8 @@ export default function LikesScreen() {
 
   function renderItem({ item }: { item: Liker }) {
     const isRevealed = revealedIds.has(item.id);
-    const photoClear = isRoomPearPlus || isRevealed;
+    // Premium: RC entitlement and/or `profiles.subscription_tier` (must match load + useEffect).
+    const photoClear = hasPremiumAccess || isRevealed;
     const photo = item.photoUrls[0];
 
     return (
@@ -316,11 +355,12 @@ export default function LikesScreen() {
           <View style={styles.photoWrap}>
             {photo ? (
               <Image
+                key={`${item.id}-${photoClear ? 'clear' : 'blurred'}`}
                 source={{ uri: photo, cacheKey: photo }}
                 style={styles.gridPhoto}
                 contentFit="cover"
                 cachePolicy="memory-disk"
-                recyclingKey={photo}
+                recyclingKey={`${item.id}-${photoClear ? 'c' : 'b'}`}
                 transition={0}
                 blurRadius={photoClear ? 0 : 70}
               />
@@ -382,7 +422,7 @@ export default function LikesScreen() {
               style={[styles.actionBtn, !canRevealMore && styles.actionBtnMuted]}
               onPress={() => {
                 if (!canRevealMore) {
-                  void presentPaywall();
+                  void openPaywallIfNeeded();
                 } else {
                   void handleReveal(item);
                 }

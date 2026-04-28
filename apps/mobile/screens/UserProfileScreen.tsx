@@ -725,6 +725,10 @@ export default function UserProfileScreen({ route }: Props) {
   const profileSaysPremium =
     String(profile?.subscription_tier || '').toLowerCase() === SUBSCRIPTION_TIER_PREMIUM;
   const showRoomPearPlus = isRoomPearPlus || profileSaysPremium;
+  const openUpgradeIfNeeded = useCallback(async () => {
+    if (showRoomPearPlus) return;
+    await presentPaywall();
+  }, [showRoomPearPlus, presentPaywall]);
 
   return (
     <View style={styles.container}>
@@ -1396,6 +1400,13 @@ export default function UserProfileScreen({ route }: Props) {
         onTogglePause={handleTogglePause}
         onCopyReferralCode={handleCopyReferralCode}
         onApplyReferralCode={handleApplyReferralCode}
+        isPremium={showRoomPearPlus}
+        onUpgradeToPlus={() => {
+          void openUpgradeIfNeeded();
+        }}
+        onManageSubscription={() => {
+          void presentCustomerCenter();
+        }}
         onSignOut={handleSignOut}
         onDevShowOnboarding={onDevShowOnboarding}
         styles={styles}
