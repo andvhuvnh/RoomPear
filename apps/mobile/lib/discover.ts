@@ -179,7 +179,7 @@ export async function fetchDiscoverProfiles(
         hobbies: row.hobbies,
         ethnicity: row.ethnicity,
       };
-      const score = scoreCompatibility(myPrefs, theirPrefs, theirMeta);
+      const score = scoreCompatibility(myPrefs, theirPrefs, theirMeta, { has_listing_only: myPrefs.has_listing_only ?? false });
       const reasons = getMatchReasons(myPrefs, theirPrefs, theirMeta);
       scored.push({ row, score, reasons });
     } else {
@@ -222,13 +222,8 @@ export async function fetchDiscoverProfiles(
     }
   }
 
-  // Load photos and build the final list
-  const result: DiscoverProfile[] = [];
-
-  for (const { item: row, score } of mixed) {
-    const urls = await getProfileImageUrls(row.profile_photo_url);
-    if (!urls || urls.length === 0) continue;
-
+  // Load photos for all profiles in parallel to avoid sequential network stalls
+  async function buildProfile(row: typeof rows[0], score: number): Promise<DiscoverProfile | null> {
     const prefs = (
       Array.isArray(row.preferences) ? row.preferences[0] : row.preferences
     ) as Preferences | null;
@@ -241,28 +236,33 @@ export async function fetchDiscoverProfiles(
     const interestChips = Object.values(interests).flat() as string[];
     const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
-    // Fetch listing photos if this user has a place listed
-    let listingPhotoUrls: string[] = [];
-    if (row.has_listing === true) {
-      const { data: listing } = await supabase
-        .from('listings')
-        .select('listing_photos')
-        .eq('user_id', row.id)
-        .maybeSingle();
+    const listingFetch: Promise<string[]> = row.has_listing === true
+      ? (async () => {
+          const { data: listing } = await supabase
+            .from('listings')
+            .select('listing_photos')
+            .eq('user_id', row.id)
+            .maybeSingle();
+          const paths: string[] = Array.isArray(listing?.listing_photos)
+            ? listing.listing_photos
+            : [];
+          const signed = await Promise.all(paths.map((p: string) => getProfileImageUrl(p)));
+          return signed.filter((u): u is string => u !== null);
+        })()
+      : Promise.resolve([]);
 
-      const paths: string[] = Array.isArray(listing?.listing_photos)
-        ? listing.listing_photos
-        : [];
+    const [urls, listingPhotoUrls] = await Promise.all([
+      getProfileImageUrls(row.profile_photo_url),
+      listingFetch,
+    ]);
 
-      const signed = await Promise.all(paths.map(p => getProfileImageUrl(p)));
-      listingPhotoUrls = signed.filter((u): u is string => u !== null);
-    }
+    if (!urls || urls.length === 0) return null;
 
     const prompts: PromptEntry[] = Array.isArray(row.prompts)
       ? row.prompts.filter((p: any) => p?.question && p?.answer)
       : [];
 
-    result.push({
+    return {
       id: row.id,
       name: row.name ?? 'Unknown',
       age: row.age ?? null,
@@ -278,10 +278,11 @@ export async function fetchDiscoverProfiles(
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),
       matchReasons: reasonsByRow.get(row) ?? [],
-    });
+    };
   }
 
-  return result;
+  const settled = await Promise.all(mixed.map(({ item: row, score }) => buildProfile(row, score)));
+  return settled.filter((p): p is DiscoverProfile => p !== null);
 }
 
 function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): boolean {

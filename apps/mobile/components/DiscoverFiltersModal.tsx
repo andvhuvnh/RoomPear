@@ -72,6 +72,12 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [maxBudget, setMaxBudget] = useState(10000);
   const [minAge, setMinAge] = useState(18);
   const [maxAge, setMaxAge] = useState(99);
+  const [strictPets, setStrictPets] = useState(false);
+  const [strictSmoking, setStrictSmoking] = useState(false);
+  const [strictParties, setStrictParties] = useState(false);
+  const [strictCleanliness, setStrictCleanliness] = useState(false);
+  const [strictEarlyBird, setStrictEarlyBird] = useState(false);
+  const [strictNightOwl, setStrictNightOwl] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -89,6 +95,13 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       setMaxBudget(prefs?.max_budget ?? 10000);
       setMinAge(prefs?.min_age ?? 18);
       setMaxAge(prefs?.max_age ?? 99);
+      const db = prefs?.dealbreakers ?? {};
+      setStrictPets(db.pets === 'hard');
+      setStrictSmoking(db.smoking === 'hard');
+      setStrictParties(db.parties === 'hard');
+      setStrictCleanliness(db.messy === 'hard');
+      setStrictEarlyBird(db.early_bird === 'hard');
+      setStrictNightOwl(db.night_owl === 'hard');
       setLoading(false);
     });
   }, [visible, userId]);
@@ -101,6 +114,16 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const handleApply = async () => {
     setSaving(true);
     try {
+      const dealbreakers: Record<string, string> = {};
+      if (isPremium) {
+        dealbreakers.pets       = strictPets        ? 'hard' : 'none';
+        dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
+        dealbreakers.parties    = strictParties     ? 'hard' : 'none';
+        dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
+        dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
+        dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
+      }
+
       await savePreferences(userId, {
         gender_preference: genderPref || '',
         ethnicity_preference: ethnicityPref,
@@ -112,6 +135,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
         max_budget: maxBudget,
         min_age: minAge,
         max_age: maxAge,
+        ...(isPremium ? { dealbreakers } : {}),
       });
       onApply();
       onClose();
@@ -131,6 +155,12 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
     setMaxBudget(10000);
     setMinAge(18);
     setMaxAge(99);
+    setStrictPets(false);
+    setStrictSmoking(false);
+    setStrictParties(false);
+    setStrictCleanliness(false);
+    setStrictEarlyBird(false);
+    setStrictNightOwl(false);
   };
 
   return (
@@ -347,34 +377,53 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
               <View style={styles.divider} />
 
-              {/* Advanced Filters — premium only */}
-              {isPremium ? (
-                <View style={styles.advancedActive}>
-                  <Text style={styles.advancedActiveTitle}>✓ Advanced Filters active</Text>
-                  <Text style={styles.advancedActiveSub}>
-                    Your hard dealbreakers (pets, smoking, parties, cleanliness, sleep schedule, social vibe) strictly exclude incompatible profiles. Manage dealbreakers in onboarding settings.
-                  </Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.advancedLocked}
-                  onPress={onUpgrade}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.advancedLockedHeader}>
-                    <Text style={styles.advancedLockedTitle}>🔒 Advanced Filters</Text>
-                    <View style={styles.plusBadge}>
-                      <Text style={styles.plusBadgeText}>RoomPear+</Text>
-                    </View>
+              {/* Advanced Filters — visible to all, interactive for premium only */}
+              <View style={styles.advancedHeader}>
+                <Text style={styles.sectionTitle}>Advanced Filters</Text>
+                {!isPremium && (
+                  <View style={styles.plusBadge}>
+                    <Text style={styles.plusBadgeText}>RoomPear+</Text>
                   </View>
-                  <Text style={styles.advancedLockedSub}>
-                    Convert soft preferences into hard filters — strictly exclude profiles with pets, smoking, parties, or incompatible cleanliness and schedules.
-                  </Text>
-                  <View style={styles.advancedUnlockBtn}>
-                    <Text style={styles.advancedUnlockBtnText}>Unlock with RoomPear+</Text>
+                )}
+              </View>
+              <Text style={styles.sectionSub}>Strictly exclude profiles that don't meet these criteria.</Text>
+
+              <View style={[styles.advancedControls, !isPremium && styles.advancedControlsLocked]}>
+                {[
+                  { label: 'No pets',            value: strictPets,        set: setStrictPets },
+                  { label: 'No smoking',          value: strictSmoking,     set: setStrictSmoking },
+                  { label: 'No parties',          value: strictParties,     set: setStrictParties },
+                  { label: 'Strict cleanliness',  value: strictCleanliness, set: setStrictCleanliness },
+                  { label: 'No night owls',       value: strictEarlyBird,   set: setStrictEarlyBird },
+                  { label: 'No early birds',      value: strictNightOwl,    set: setStrictNightOwl },
+                ].map(({ label, value, set }) => (
+                  <View key={label} style={styles.advancedRow}>
+                    <Text style={styles.advancedRowLabel}>{label}</Text>
+                    <Switch
+                      value={value}
+                      onValueChange={isPremium ? set : undefined}
+                      disabled={!isPremium}
+                      trackColor={{ false: '#D0D0D8', true: '#1A3329' }}
+                      thumbColor="#FFFFFF"
+                    />
                   </View>
-                </TouchableOpacity>
-              )}
+                ))}
+
+                {!isPremium && (
+                  <View style={styles.advancedOverlay}>
+                    <Text style={styles.advancedOverlayText}>🔒 Upgrade to RoomPear+ to use advanced filters</Text>
+                  </View>
+                )}
+
+                {/* Transparent tap-catcher sits on top for free users */}
+                {!isPremium && (
+                  <TouchableOpacity
+                    style={StyleSheet.absoluteFill}
+                    onPress={() => { onClose(); onUpgrade?.(); }}
+                    activeOpacity={0.0}
+                  />
+                )}
+              </View>
 
             </ScrollView>
           )}
@@ -536,39 +585,11 @@ const styles = StyleSheet.create({
     height: 36,
     marginBottom: 4,
   },
-  advancedActive: {
-    backgroundColor: '#F0F5F2',
-    borderRadius: 14,
-    padding: 16,
-  },
-  advancedActiveTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1A3329',
-    marginBottom: 6,
-  },
-  advancedActiveSub: {
-    fontSize: 13,
-    color: '#717182',
-    lineHeight: 18,
-  },
-  advancedLocked: {
-    backgroundColor: '#F8F8FC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.08)',
-    padding: 16,
-  },
-  advancedLockedHeader: {
+  advancedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
-  },
-  advancedLockedTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1A2C24',
+    marginBottom: 6,
   },
   plusBadge: {
     backgroundColor: '#030213',
@@ -582,22 +603,38 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
-  advancedLockedSub: {
-    fontSize: 13,
-    color: '#717182',
-    lineHeight: 18,
-    marginBottom: 14,
+  advancedControls: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.08)',
+    overflow: 'hidden',
   },
-  advancedUnlockBtn: {
-    backgroundColor: '#030213',
-    borderRadius: 10,
-    paddingVertical: 11,
+  advancedControlsLocked: {
+    opacity: 0.55,
+  },
+  advancedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.07)',
+  },
+  advancedRowLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A2C24',
+  },
+  advancedOverlay: {
+    padding: 14,
     alignItems: 'center',
   },
-  advancedUnlockBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  advancedOverlayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#717182',
+    textAlign: 'center',
   },
   applyBtn: {
     marginTop: 8,
