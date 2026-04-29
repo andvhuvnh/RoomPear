@@ -56,9 +56,11 @@ interface Props {
   userId: string;
   onClose: () => void;
   onApply: () => void;
+  isPremium?: boolean;
+  onUpgrade?: () => void;
 }
 
-export default function DiscoverFiltersModal({ visible, userId, onClose, onApply }: Props) {
+export default function DiscoverFiltersModal({ visible, userId, onClose, onApply, isPremium = false, onUpgrade }: Props) {
   const insets = useSafeAreaInsets();
   const [ethnicityPref, setEthnicityPref] = useState<string[]>([]);
   const [roomType, setRoomType] = useState('');
@@ -343,6 +345,37 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
                 })}
               </View>
 
+              <View style={styles.divider} />
+
+              {/* Advanced Filters — premium only */}
+              {isPremium ? (
+                <View style={styles.advancedActive}>
+                  <Text style={styles.advancedActiveTitle}>✓ Advanced Filters active</Text>
+                  <Text style={styles.advancedActiveSub}>
+                    Your hard dealbreakers (pets, smoking, parties, cleanliness, sleep schedule, social vibe) strictly exclude incompatible profiles. Manage dealbreakers in onboarding settings.
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.advancedLocked}
+                  onPress={onUpgrade}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.advancedLockedHeader}>
+                    <Text style={styles.advancedLockedTitle}>🔒 Advanced Filters</Text>
+                    <View style={styles.plusBadge}>
+                      <Text style={styles.plusBadgeText}>RoomPear+</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.advancedLockedSub}>
+                    Convert soft preferences into hard filters — strictly exclude profiles with pets, smoking, parties, or incompatible cleanliness and schedules.
+                  </Text>
+                  <View style={styles.advancedUnlockBtn}>
+                    <Text style={styles.advancedUnlockBtnText}>Unlock with RoomPear+</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
             </ScrollView>
           )}
 
@@ -502,6 +535,69 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 36,
     marginBottom: 4,
+  },
+  advancedActive: {
+    backgroundColor: '#F0F5F2',
+    borderRadius: 14,
+    padding: 16,
+  },
+  advancedActiveTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A3329',
+    marginBottom: 6,
+  },
+  advancedActiveSub: {
+    fontSize: 13,
+    color: '#717182',
+    lineHeight: 18,
+  },
+  advancedLocked: {
+    backgroundColor: '#F8F8FC',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.08)',
+    padding: 16,
+  },
+  advancedLockedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  advancedLockedTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A2C24',
+  },
+  plusBadge: {
+    backgroundColor: '#030213',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  plusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  advancedLockedSub: {
+    fontSize: 13,
+    color: '#717182',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  advancedUnlockBtn: {
+    backgroundColor: '#030213',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  advancedUnlockBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   applyBtn: {
     marginTop: 8,
