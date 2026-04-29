@@ -615,6 +615,53 @@ export default function UserProfileScreen({ route }: Props) {
     if (error) Alert.alert('Error', error.message);
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently removes your RoomPear data and signs you out.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Confirm deletion',
+              'This action cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete forever',
+                  style: 'destructive',
+                  onPress: async () => {
+                    if (!user) return;
+                    try {
+                      const { error } = await supabase.rpc('delete_my_account');
+                      if (error) {
+                        Alert.alert(
+                          'Delete failed',
+                          error.message || 'Account deletion is not fully configured yet. Please contact support to complete deletion.'
+                        );
+                        return;
+                      }
+                      await logoutPurchases();
+                      await supabase.auth.signOut();
+                    } catch {
+                      Alert.alert(
+                        'Delete unavailable',
+                        'Could not delete your account right now. Please try again later.'
+                      );
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   const handleTogglePause = async (value: boolean) => {
     if (!user) return;
     setIsPaused(value);
@@ -1410,6 +1457,7 @@ export default function UserProfileScreen({ route }: Props) {
         onManageSubscription={() => {
           void presentCustomerCenter();
         }}
+        onDeleteAccount={handleDeleteAccount}
         onSignOut={handleSignOut}
         onDevShowOnboarding={onDevShowOnboarding}
         styles={styles}
