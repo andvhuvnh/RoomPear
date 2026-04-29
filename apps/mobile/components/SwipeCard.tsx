@@ -34,12 +34,15 @@ interface Props {
   onReport?: () => void;
   canUndo?: boolean;
   actionDisabled?: boolean;
+  showMatchReasons?: boolean;
+  onUnlockReasons?: () => void;
 }
 
 export default function SwipeCard({
   profile,
   onPass, onLike, onTopPick, onUndo, onReport,
   canUndo = false, actionDisabled = false,
+  showMatchReasons = false, onUnlockReasons,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -144,6 +147,11 @@ export default function SwipeCard({
                   {profile.age != null && (
                     <Text style={styles.overlayAge}>{profile.age}</Text>
                   )}
+                  {profile.compatibilityScore > 0 && (
+                    <View style={styles.matchBadge}>
+                      <Text style={styles.matchBadgeText}>{profile.compatibilityScore}% Match</Text>
+                    </View>
+                  )}
                 </View>
                 {!!profile.location && (
                   <View style={styles.locationRow}>
@@ -204,6 +212,20 @@ export default function SwipeCard({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
       >
+        {showMatchReasons && profile.matchReasons.length > 0 ? (
+          <View style={styles.reasonsRow}>
+            {profile.matchReasons.map((r, i) => (
+              <View key={i} style={styles.reasonChip}>
+                <Text style={styles.reasonChipText}>{r}</Text>
+              </View>
+            ))}
+          </View>
+        ) : !showMatchReasons && profile.matchReasons.length > 0 && onUnlockReasons ? (
+          <TouchableOpacity style={styles.reasonsLock} onPress={onUnlockReasons} activeOpacity={0.75}>
+            <Text style={styles.reasonsLockText}>🔒 See why you match</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {profile.prompts.length > 0 ? (
           <>
             {profile.prompts.map((p, i) => (
@@ -569,5 +591,49 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  matchBadge: {
+    backgroundColor: 'rgba(12,83,137,0.82)',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginLeft: 6,
+  },
+  matchBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
+  },
+  reasonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  reasonChip: {
+    backgroundColor: 'rgba(45,106,79,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,106,79,0.25)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  reasonChipText: {
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+    color: '#2D6A4F',
+  },
+  reasonsLock: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  reasonsLockText: {
+    fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
+    color: '#717182',
   },
 });

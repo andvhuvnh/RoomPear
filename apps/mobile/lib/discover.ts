@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
-import { passesHardFilters, scoreCompatibility, applyWildcardMix } from './matching';
+import { passesHardFilters, scoreCompatibility, applyWildcardMix, getMatchReasons } from './matching';
 import { sendPushNotification } from './pushNotifications';
 import { isWithinRadiusMiles } from './distance';
 import { getBlockedIds } from './blockReport';
@@ -22,6 +22,8 @@ export type DiscoverProfile = {
   hasListing: boolean;
   roomType: string | null;
   maxBudget: number | null;
+  compatibilityScore: number;  // 0–100, display as "XX% Match"
+  matchReasons: string[];      // why these profiles match (premium display)
 };
 
 type PreferenceCoordinateRow = {
@@ -52,16 +54,13 @@ async function getNearbyCandidateIds(
 ): Promise<string[] | null> {
   const centerLat = viewerPreferences?.search_lat;
   const centerLng = viewerPreferences?.search_lng;
-  const radiusMiles = viewerPreferences?.search_radius_miles;
+  const rawRadius = viewerPreferences?.search_radius_miles;
+  const radiusMiles = (rawRadius != null && Number.isFinite(rawRadius) && rawRadius > 0)
+    ? rawRadius
+    : 25; // default 25-mile radius
 
-  // If the viewer has no location/radius configured, skip distance filtering.
-  if (
-    centerLat == null ||
-    centerLng == null ||
-    radiusMiles == null ||
-    !Number.isFinite(radiusMiles) ||
-    radiusMiles <= 0
-  ) {
+  // If no location coords, skip distance filtering entirely.
+  if (centerLat == null || centerLng == null) {
     return null;
   }
 
@@ -123,7 +122,7 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, ' +
+      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, last_active_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
       'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, move_in_date, lease_duration_months, search_lat, search_lng, ethnicity_preference)'
     )
@@ -152,7 +151,7 @@ export async function fetchDiscoverProfiles(
   if (error || !rows) return [];
 
   // Score each candidate, applying hard filters when we have preference data
-  type ScoredRow = { row: typeof rows[0]; score: number };
+  type ScoredRow = { row: typeof rows[0]; score: number; reasons: string[] };
   const scored: ScoredRow[] = [];
 
   for (const row of rows) {
@@ -161,40 +160,70 @@ export async function fetchDiscoverProfiles(
     ) as Preferences | null;
 
     if (myPrefs && theirPrefs) {
+      // Age hard filter
+      if (myPrefs.min_age != null && myPrefs.max_age != null && row.age != null) {
+        if (row.age < myPrefs.min_age || row.age > myPrefs.max_age) continue;
+      }
       if (!passesHardFilters(myPrefs, theirPrefs, options?.isPremium ?? false)) continue;
       if (options?.useAdvancedFilters && !passesPremiumAdvancedFilters(myPrefs, theirPrefs)) {
         continue;
       }
-      const score = scoreCompatibility(myPrefs, theirPrefs, {
+      const theirMeta = {
         subscription_tier: row.subscription_tier,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        last_active_at: row.last_active_at,
         name: row.name,
         age: row.age,
         bio: row.bio,
         hobbies: row.hobbies,
         ethnicity: row.ethnicity,
-      });
-      scored.push({ row, score });
+      };
+      const score = scoreCompatibility(myPrefs, theirPrefs, theirMeta, { has_listing_only: myPrefs.has_listing_only ?? false });
+      const reasons = getMatchReasons(myPrefs, theirPrefs, theirMeta);
+      scored.push({ row, score, reasons });
     } else {
       // No preferences data on one side — include with neutral score
-      scored.push({ row, score: 0.5 });
+      scored.push({ row, score: 0.5, reasons: [] });
     }
   }
 
-  // 80% top scorers + 20% wildcards, capped at limit
-  const mixed = applyWildcardMix(
+  // Feed mixing: free 70/20/10, premium 85/10/5
+  const reasonsByRow = new Map(scored.map(s => [s.row, s.reasons]));
+  let mixed = applyWildcardMix(
     scored.map(s => ({ item: s.row, score: s.score })),
-    Math.min(limit, scored.length)
+    Math.min(limit, scored.length),
+    options?.isPremium ?? false,
   );
 
-  // Load photos and build the final list
-  const result: DiscoverProfile[] = [];
+  // Ethnicity cap: no more than 65% of the feed should match the viewer's ethnicity preference.
+  // This ensures diversity and prevents ethnicity from dominating the feed.
+  const ethPref = myPrefs?.ethnicity_preference ?? [];
+  if (ethPref.length > 0 && mixed.length > 0) {
+    const CAP = 0.65;
+    const maxEthMatch = Math.floor(mixed.length * CAP);
+    let ethCount = mixed.filter(x => ethPref.includes(x.item.ethnicity)).length;
+    if (ethCount > maxEthMatch) {
+      // Swap excess ethnicity-matches with non-matching rows from scored pool
+      const nonEthRows = scored
+        .filter(s => !ethPref.includes(s.row.ethnicity) && !mixed.find(m => m.item === s.row))
+        .sort((a, b) => b.score - a.score);
+      const toSwap = ethCount - maxEthMatch;
+      let swapped = 0;
+      mixed = mixed.map(entry => {
+        if (swapped >= toSwap) return entry;
+        if (ethPref.includes(entry.item.ethnicity) && nonEthRows.length > 0) {
+          const replacement = nonEthRows.shift()!;
+          swapped++;
+          return { item: replacement.row, score: replacement.score };
+        }
+        return entry;
+      });
+    }
+  }
 
-  for (const row of mixed) {
-    const urls = await getProfileImageUrls(row.profile_photo_url);
-    if (!urls || urls.length === 0) continue;
-
+  // Load photos for all profiles in parallel to avoid sequential network stalls
+  async function buildProfile(row: typeof rows[0], score: number): Promise<DiscoverProfile | null> {
     const prefs = (
       Array.isArray(row.preferences) ? row.preferences[0] : row.preferences
     ) as Preferences | null;
@@ -207,28 +236,33 @@ export async function fetchDiscoverProfiles(
     const interestChips = Object.values(interests).flat() as string[];
     const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
-    // Fetch listing photos if this user has a place listed
-    let listingPhotoUrls: string[] = [];
-    if (row.has_listing === true) {
-      const { data: listing } = await supabase
-        .from('listings')
-        .select('listing_photos')
-        .eq('user_id', row.id)
-        .maybeSingle();
+    const listingFetch: Promise<string[]> = row.has_listing === true
+      ? (async () => {
+          const { data: listing } = await supabase
+            .from('listings')
+            .select('listing_photos')
+            .eq('user_id', row.id)
+            .maybeSingle();
+          const paths: string[] = Array.isArray(listing?.listing_photos)
+            ? listing.listing_photos
+            : [];
+          const signed = await Promise.all(paths.map((p: string) => getProfileImageUrl(p)));
+          return signed.filter((u): u is string => u !== null);
+        })()
+      : Promise.resolve([]);
 
-      const paths: string[] = Array.isArray(listing?.listing_photos)
-        ? listing.listing_photos
-        : [];
+    const [urls, listingPhotoUrls] = await Promise.all([
+      getProfileImageUrls(row.profile_photo_url),
+      listingFetch,
+    ]);
 
-      const signed = await Promise.all(paths.map(p => getProfileImageUrl(p)));
-      listingPhotoUrls = signed.filter((u): u is string => u !== null);
-    }
+    if (!urls || urls.length === 0) return null;
 
     const prompts: PromptEntry[] = Array.isArray(row.prompts)
       ? row.prompts.filter((p: any) => p?.question && p?.answer)
       : [];
 
-    result.push({
+    return {
       id: row.id,
       name: row.name ?? 'Unknown',
       age: row.age ?? null,
@@ -242,10 +276,13 @@ export async function fetchDiscoverProfiles(
       location,
       roomType: prefs?.room_type ?? null,
       maxBudget: prefs?.max_budget ?? null,
-    });
+      compatibilityScore: Math.min(100, Math.round(score * 100)),
+      matchReasons: reasonsByRow.get(row) ?? [],
+    };
   }
 
-  return result;
+  const settled = await Promise.all(mixed.map(({ item: row, score }) => buildProfile(row, score)));
+  return settled.filter((p): p is DiscoverProfile => p !== null);
 }
 
 function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): boolean {
@@ -280,15 +317,23 @@ function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): b
   const mineDealbreakers = mine.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(mineDealbreakers)) {
     if (severity !== 'hard' && severity !== 'soft') continue;
-    if (key === 'smoking' && theirs.smoking_allowed === true) return false;
-    if (key === 'pets' && theirs.pets_allowed === true) return false;
+    if (key === 'smoking'    && theirs.smoking_allowed === true) return false;
+    if (key === 'pets'       && theirs.pets_allowed === true) return false;
+    if (key === 'parties'    && theirs.social_preference === 'social') return false;
+    if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
+    if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;
+    if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;
   }
 
   const theirDealbreakers = theirs.dealbreakers ?? {};
   for (const [key, severity] of Object.entries(theirDealbreakers)) {
     if (severity !== 'hard' && severity !== 'soft') continue;
-    if (key === 'smoking' && mine.smoking_allowed === true) return false;
-    if (key === 'pets' && mine.pets_allowed === true) return false;
+    if (key === 'smoking'    && mine.smoking_allowed === true) return false;
+    if (key === 'pets'       && mine.pets_allowed === true) return false;
+    if (key === 'parties'    && mine.social_preference === 'social') return false;
+    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') return false;
+    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') return false;
+    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) return false;
   }
 
   return true;
