@@ -23,7 +23,7 @@ import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsage';
-import { FREE_TIER_LIMITS } from '../lib/freeTierLimits';
+import { FREE_TIER_LIMITS, PREMIUM_TIER_LIMITS } from '../lib/freeTierLimits';
 import { usePurchases } from '../context/PurchasesContext';
 import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
 import SwipeCard from '../components/SwipeCard';
@@ -212,20 +212,19 @@ export default function DiscoverScreen() {
     if (actionDisabled) return;
     if (!userId) return;
 
-    if (!hasPremiumAccess) {
-      const usage = await getDiscoverUsage(userId);
-      if (direction === 'top_pick') {
-        if (
-          usage.swipes >= FREE_TIER_LIMITS.swipesPerDay ||
-          usage.topPicks >= FREE_TIER_LIMITS.topPicksPerDay
-        ) {
-          await openPaywallIfNeeded();
-          return;
-        }
-      } else if (usage.swipes >= FREE_TIER_LIMITS.swipesPerDay) {
+    const usage = await getDiscoverUsage(userId);
+    if (direction === 'top_pick') {
+      const topPickLimit = hasPremiumAccess
+        ? PREMIUM_TIER_LIMITS.topPicksPerDay
+        : FREE_TIER_LIMITS.topPicksPerDay;
+      if (usage.topPicks >= topPickLimit) {
         await openPaywallIfNeeded();
         return;
       }
+    }
+    if (!hasPremiumAccess && usage.swipes >= FREE_TIER_LIMITS.swipesPerDay) {
+      await openPaywallIfNeeded();
+      return;
     }
 
     setActionDisabled(true);
@@ -417,6 +416,7 @@ export default function DiscoverScreen() {
               actionDisabled={actionDisabled}
               onReport={() => setReportTarget({ id: currentProfile.id, name: currentProfile.name })}
               showMatchReasons={hasPremiumAccess}
+              onUnlockReasons={hasPremiumAccess ? undefined : openPaywallIfNeeded}
             />
           </Animated.View>
         </View>

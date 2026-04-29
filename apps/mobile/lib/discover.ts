@@ -54,16 +54,13 @@ async function getNearbyCandidateIds(
 ): Promise<string[] | null> {
   const centerLat = viewerPreferences?.search_lat;
   const centerLng = viewerPreferences?.search_lng;
-  const radiusMiles = viewerPreferences?.search_radius_miles;
+  const rawRadius = viewerPreferences?.search_radius_miles;
+  const radiusMiles = (rawRadius != null && Number.isFinite(rawRadius) && rawRadius > 0)
+    ? rawRadius
+    : 25; // default 25-mile radius
 
-  // If the viewer has no location/radius configured, skip distance filtering.
-  if (
-    centerLat == null ||
-    centerLng == null ||
-    radiusMiles == null ||
-    !Number.isFinite(radiusMiles) ||
-    radiusMiles <= 0
-  ) {
+  // If no location coords, skip distance filtering entirely.
+  if (centerLat == null || centerLng == null) {
     return null;
   }
 
@@ -193,11 +190,37 @@ export async function fetchDiscoverProfiles(
 
   // Feed mixing: free 70/20/10, premium 85/10/5
   const reasonsByRow = new Map(scored.map(s => [s.row, s.reasons]));
-  const mixed = applyWildcardMix(
+  let mixed = applyWildcardMix(
     scored.map(s => ({ item: s.row, score: s.score })),
     Math.min(limit, scored.length),
     options?.isPremium ?? false,
   );
+
+  // Ethnicity cap: no more than 65% of the feed should match the viewer's ethnicity preference.
+  // This ensures diversity and prevents ethnicity from dominating the feed.
+  const ethPref = myPrefs?.ethnicity_preference ?? [];
+  if (ethPref.length > 0 && mixed.length > 0) {
+    const CAP = 0.65;
+    const maxEthMatch = Math.floor(mixed.length * CAP);
+    let ethCount = mixed.filter(x => ethPref.includes(x.item.ethnicity)).length;
+    if (ethCount > maxEthMatch) {
+      // Swap excess ethnicity-matches with non-matching rows from scored pool
+      const nonEthRows = scored
+        .filter(s => !ethPref.includes(s.row.ethnicity) && !mixed.find(m => m.item === s.row))
+        .sort((a, b) => b.score - a.score);
+      const toSwap = ethCount - maxEthMatch;
+      let swapped = 0;
+      mixed = mixed.map(entry => {
+        if (swapped >= toSwap) return entry;
+        if (ethPref.includes(entry.item.ethnicity) && nonEthRows.length > 0) {
+          const replacement = nonEthRows.shift()!;
+          swapped++;
+          return { item: replacement.row, score: replacement.score };
+        }
+        return entry;
+      });
+    }
+  }
 
   // Load photos and build the final list
   const result: DiscoverProfile[] = [];

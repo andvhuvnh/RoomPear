@@ -35,13 +35,14 @@ interface Props {
   canUndo?: boolean;
   actionDisabled?: boolean;
   showMatchReasons?: boolean;
+  onUnlockReasons?: () => void;
 }
 
 export default function SwipeCard({
   profile,
   onPass, onLike, onTopPick, onUndo, onReport,
   canUndo = false, actionDisabled = false,
-  showMatchReasons = false,
+  showMatchReasons = false, onUnlockReasons,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -211,7 +212,7 @@ export default function SwipeCard({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
       >
-        {showMatchReasons && profile.matchReasons.length > 0 && (
+        {showMatchReasons && profile.matchReasons.length > 0 ? (
           <View style={styles.reasonsRow}>
             {profile.matchReasons.map((r, i) => (
               <View key={i} style={styles.reasonChip}>
@@ -219,7 +220,11 @@ export default function SwipeCard({
               </View>
             ))}
           </View>
-        )}
+        ) : !showMatchReasons && profile.matchReasons.length > 0 && onUnlockReasons ? (
+          <TouchableOpacity style={styles.reasonsLock} onPress={onUnlockReasons} activeOpacity={0.75}>
+            <Text style={styles.reasonsLockText}>🔒 See why you match</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {profile.prompts.length > 0 ? (
           <>
@@ -617,5 +622,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Nunito_600SemiBold',
     color: '#2D6A4F',
+  },
+  reasonsLock: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  reasonsLockText: {
+    fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
+    color: '#717182',
   },
 });
