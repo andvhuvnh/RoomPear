@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
-  FlatList,
   Image,
   Modal,
   Platform,
@@ -267,11 +266,6 @@ export default function DiscoverScreen() {
   const nextProfile = profiles[currentIndex + 1];
   const remaining = profiles.length - currentIndex;
 
-  // Top Picks: highest-compatibility profiles not yet swiped, score ≥ 70
-  const topPicks = profiles
-    .map((p, i) => ({ profile: p, index: i }))
-    .filter(({ profile: p, index: i }) => p.compatibilityScore >= 70 && i >= currentIndex)
-    .slice(0, 5);
 
   if (loading) {
     return (
@@ -361,33 +355,6 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* ── Top Picks row ── */}
-        {topPicks.length > 0 && (
-          <View style={styles.topPicksSection}>
-            <Text style={styles.topPicksLabel}>⭐ Top Picks</Text>
-            <FlatList
-              data={topPicks}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={({ profile }) => profile.id}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
-              renderItem={({ item: { profile: p, index: i } }) => (
-                <TouchableOpacity
-                  style={styles.topPickThumb}
-                  onPress={() => setCurrentIndex(i)}
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: p.photoUrls[0] }} style={styles.topPickPhoto} />
-                  <View style={styles.topPickOverlay}>
-                    <Text style={styles.topPickName} numberOfLines={1}>{p.name.split(' ')[0]}</Text>
-                    <Text style={styles.topPickScore}>{p.compatibilityScore}%</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        )}
 
         {/* ── Card stack ── */}
         <View style={styles.cardArea}>
@@ -750,46 +717,4 @@ const styles = StyleSheet.create({
   matchBtnSecondary: { paddingVertical: 10, width: '100%', alignItems: 'center' },
   matchBtnSecondaryText: { color: C.gray, fontSize: 15, fontWeight: '500' },
 
-  // ── Top Picks row ──
-  topPicksSection: {
-    paddingTop: 6,
-    paddingBottom: 4,
-  },
-  topPicksLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.text,
-    paddingHorizontal: 16,
-    marginBottom: 6,
-    opacity: 0.7,
-  },
-  topPickThumb: {
-    width: 68,
-    height: 84,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  topPickPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  topPickOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 5,
-    paddingVertical: 4,
-  },
-  topPickName: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  topPickScore: {
-    color: 'rgba(255,255,255,0.80)',
-    fontSize: 9,
-    fontWeight: '600',
-  },
 });
