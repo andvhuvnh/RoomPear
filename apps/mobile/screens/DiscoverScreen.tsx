@@ -314,7 +314,7 @@ export default function DiscoverScreen() {
           </Text>
           <Text style={styles.emptyText}>
             {noNearbyUsers
-              ? 'Try increasing your search radius, then refresh Discover.'
+              ? 'Try adjusting your preferences, then refresh Discover.'
               : `No more profiles right now.\nCheck back later!`}
           </Text>
           <TouchableOpacity
@@ -323,7 +323,23 @@ export default function DiscoverScreen() {
           >
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => setFiltersOpen(true)}
+          >
+            <Text style={styles.secondaryBtnText}>
+              {noNearbyUsers ? 'Adjust Preferences' : 'Adjust Preferences'}
+            </Text>
+          </TouchableOpacity>
         </View>
+        {userId ? (
+          <DiscoverFiltersModal
+            visible={filtersOpen}
+            userId={userId}
+            onClose={() => setFiltersOpen(false)}
+            onApply={() => userId && loadProfiles(userId, hasPremiumAccess)}
+          />
+        ) : null}
       </Background>
     );
   }
@@ -396,7 +412,7 @@ export default function DiscoverScreen() {
           visible={filtersOpen}
           userId={userId}
           onClose={() => setFiltersOpen(false)}
-          onApply={() => userId && loadProfiles(userId)}
+          onApply={() => userId && loadProfiles(userId, hasPremiumAccess)}
           isPremium={hasPremiumAccess}
           onUpgrade={openPaywallIfNeeded}
         />
@@ -484,6 +500,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28, paddingVertical: 13, borderRadius: 50,
   },
   refreshBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
+  secondaryBtn: {
+    marginTop: 10,
+    backgroundColor: 'rgba(26,44,36,0.10)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: 'rgba(26,44,36,0.20)',
+  },
+  secondaryBtnText: { color: C.text, fontWeight: '700', fontSize: 14 },
 
   // ── Header ──
   header: {
