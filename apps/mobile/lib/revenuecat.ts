@@ -6,6 +6,7 @@ import {
   subscriptionTierFromCustomerInfo,
   SUBSCRIPTION_TIER_FREE,
 } from './purchasesConfig';
+import { isDevPremiumForced } from './devPremiumOverride';
 
 type PurchasesModule = typeof import('react-native-purchases').default;
 
@@ -62,6 +63,9 @@ export async function syncSubscriptionTierToProfile(
   customerInfo: CustomerInfo
 ): Promise<void> {
   const tier = subscriptionTierFromCustomerInfo(customerInfo);
+  if (__DEV__ && tier === SUBSCRIPTION_TIER_FREE && (await isDevPremiumForced())) {
+    return;
+  }
   const { error } = await supabase.from('profiles').update({ subscription_tier: tier }).eq('id', userId);
   if (error) console.warn('[RevenueCat] sync subscription_tier failed', error);
 }
