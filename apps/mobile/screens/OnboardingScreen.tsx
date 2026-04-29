@@ -900,6 +900,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     d.setHours(0, 0, 0, 0);
                     setMoveInDate(d);
                   }
+                  scheduleAutoAdvance();
                 }}
               />
             ))}
