@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
@@ -49,23 +49,54 @@ export default function App() {
     }
   }, []);
 
+  const applySessionAndRoute = useCallback(async (nextSession: Session | null) => {
+    setSession(nextSession);
+    if (!nextSession) {
+      setAppState('auth');
+      return;
+    }
+    try {
+      const hasPrefs = await hasPreferences(nextSession.user.id);
+      setAppState(hasPrefs ? 'home' : 'onboarding');
+      registerForPushNotifications(nextSession.user.id);
+    } catch {
+      setAppState('onboarding');
+    }
+  }, []);
+
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      await checkUserState(session);
+    let cancelled = false;
+
+    void supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return;
+      await applySessionAndRoute(session);
       setLoading(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      await checkUserState(session);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Defer async routing off the auth callback stack (avoids RN deadlocks / missed updates after OAuth).
+      setTimeout(() => {
+        if (cancelled) return;
+        void (async () => {
+          await applySessionAndRoute(session);
+          setLoading(false);
+        })();
+      }, 0);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [applySessionAndRoute]);
+
+  const refreshRouteFromStoredSession = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    await applySessionAndRoute(session);
+    setLoading(false);
+  }, [applySessionAndRoute]);
 
   useEffect(() => {
     const uid = session?.user?.id;
@@ -84,18 +115,13 @@ export default function App() {
     };
   }, [session?.user?.id]);
 
-  const checkUserState = async (session: Session | null) => {
-    if (!session) {
-      setAppState('auth');
-      return;
-    }
-
-    const hasPrefs = await hasPreferences(session.user.id);
-    setAppState(hasPrefs ? 'home' : 'onboarding');
-    registerForPushNotifications(session.user.id);
-  };
-
   const handleOnboardingComplete = () => setAppState('home');
+
+  const handleLeaveOnboardingToAuth = async () => {
+    await supabase.auth.signOut();
+    await applySessionAndRoute(null);
+    setLoading(false);
+  };
 
   if ((!fontsLoaded && !fontError) || loading || appState === 'loading') {
     return (
@@ -113,9 +139,14 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="auto" />
-        {appState === 'auth' && <AuthScreen />}
+        {appState === 'auth' && (
+          <AuthScreen onAuthResolved={refreshRouteFromStoredSession} />
+        )}
         {appState === 'onboarding' && (
-          <OnboardingScreen onComplete={handleOnboardingComplete} />
+          <OnboardingScreen
+            onComplete={handleOnboardingComplete}
+            onLeaveToLogin={handleLeaveOnboardingToAuth}
+          />
         )}
         {appState === 'home' && session?.user && (
           <PurchasesProvider userId={session.user.id}>

@@ -309,9 +309,13 @@ type DealbreakerLevel = 'hard' | 'soft' | 'none';
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-interface Props { onComplete: () => void }
+interface Props {
+  onComplete: () => void;
+  /** Sign out and return to login (e.g. OAuth landed user without prefs yet). */
+  onLeaveToLogin?: () => void | Promise<void>;
+}
 
-export default function OnboardingScreen({ onComplete }: Props) {
+export default function OnboardingScreen({ onComplete, onLeaveToLogin }: Props) {
   const [step, setStep] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1258,6 +1262,26 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const subtitle  = step === 12 ? `${dbStep + 1} of ${DEALBREAKER_ITEMS.length}` : STEPS[step].subtitle;
   const isScrollStep = step > 12;
 
+  const handleLeaveToLogin = useCallback(() => {
+    if (!onLeaveToLogin) return;
+    Alert.alert(
+      'Log out?',
+      'You can sign in again anytime. Some answers may already be saved to your account.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: 'Log out',
+          style: 'destructive',
+          onPress: () => {
+            void Promise.resolve(onLeaveToLogin()).catch(() => {
+              Alert.alert('Could not log out', 'Please try again.');
+            });
+          },
+        },
+      ]
+    );
+  }, [onLeaveToLogin]);
+
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       {/* ── Gradient + blur background (matches profile screen) ── */}
@@ -1286,6 +1310,18 @@ export default function OnboardingScreen({ onComplete }: Props) {
               <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
             </View>
           </View>
+          {onLeaveToLogin ? (
+            <TouchableOpacity
+              style={styles.headerLeaveBtn}
+              onPress={handleLeaveToLogin}
+              disabled={saving}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.headerLeaveText}>Log out</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerLeaveSpacer} />
+          )}
         </View>
 
         {/* ── Question block — hidden in prompt answer mode ── */}
@@ -1359,6 +1395,14 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   backBtnText: { fontSize: 22, color: 'rgba(255,255,255,0.90)' },
+  headerLeaveBtn: {
+    minWidth: 56,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  headerLeaveText: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.88)' },
+  headerLeaveSpacer: { width: 56, height: 36 },
   progressWrap: { flex: 1 },
   progressTrack: {
     height: 5,

@@ -16,6 +16,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { AntDesign, FontAwesome } from '@expo/vector-icons';
+import Constants from 'expo-constants';
+import { makeRedirectUri } from 'expo-auth-session';
+import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../lib/supabase';
 import { setPendingReferralCode } from '../lib/referrals';
 
@@ -37,6 +41,35 @@ const C = {
 
 const GRAD = ['#1A3329','#2D4F42','#5A806B','#9CB8A8','#D8E8DF','#F5FAF7','#FFFFFF'] as const;
 const LOCS = [0, 0.06, 0.14, 0.28, 0.48, 0.72, 1] as const;
+const REDIRECT_PATH = 'auth/callback';
+
+/** If set in app.config / .env, sent as `scopes` for Facebook OAuth only. */
+const FACEBOOK_OAUTH_SCOPES = (
+  Constants.expoConfig?.extra?.facebookOAuthScopes as string | undefined
+)?.trim();
+
+WebBrowser.maybeCompleteAuthSession();
+
+/** Supabase may return tokens in the hash (#...) or a PKCE code in the query (?...). */
+function parseOAuthCallbackParams(url: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const apply = (segment: string) => {
+    if (!segment) return;
+    new URLSearchParams(segment).forEach((v, k) => {
+      params[k] = v;
+    });
+  };
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+  if (queryIndex !== -1) {
+    const end = hashIndex !== -1 && hashIndex > queryIndex ? hashIndex : url.length;
+    apply(url.slice(queryIndex + 1, end));
+  }
+  if (hashIndex !== -1) {
+    apply(url.slice(hashIndex + 1));
+  }
+  return params;
+}
 
 function Background({ children }: { children: React.ReactNode }) {
   return (
@@ -59,7 +92,12 @@ function Background({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function AuthScreen() {
+type AuthScreenProps = {
+  /** After OAuth or password sign-in, re-run app routing (session + prefs → home vs onboarding). */
+  onAuthResolved?: () => void | Promise<void>;
+};
+
+export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>('welcome');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,12 +110,77 @@ export default function AuthScreen() {
     setReferralCode(''); setError(null);
   };
 
-  const handleGooglePlaceholder = () =>
-    Alert.alert('Coming soon', 'Google sign-in will be available soon.');
-  const handleApplePlaceholder = () =>
-    Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
-  const handleFacebookPlaceholder = () =>
-    Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
+  const handleOAuthSignIn = async (provider: 'google' | 'apple' | 'facebook') => {
+    setError(null);
+    setLoading(true);
+
+    try {
+      const redirectTo = makeRedirectUri({
+        scheme: 'roompear',
+        path: REDIRECT_PATH,
+      });
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          ...(provider === 'facebook' && FACEBOOK_OAUTH_SCOPES
+            ? { scopes: FACEBOOK_OAUTH_SCOPES }
+            : {}),
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error('Unable to start OAuth flow. Please try again.');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success') {
+        throw new Error('Sign in was cancelled.');
+      }
+
+      const params = parseOAuthCallbackParams(result.url);
+      const { errorCode } = QueryParams.getQueryParams(result.url);
+      if (errorCode) {
+        throw new Error(errorCode);
+      }
+
+      if (params.error) {
+        throw new Error(params.error_description || params.error);
+      }
+
+      const access_token = params.access_token;
+      const refresh_token = params.refresh_token;
+
+      if (access_token && refresh_token) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (sessionError) throw sessionError;
+        await onAuthResolved?.();
+        return;
+      }
+
+      const code = params.code;
+      if (code) {
+        const { data: exchangeData, error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) throw exchangeError;
+        if (!exchangeData.session) {
+          throw new Error('Sign-in did not return a session. Try again.');
+        }
+        await onAuthResolved?.();
+        return;
+      }
+
+      throw new Error('Missing authentication tokens from provider.');
+    } catch (e: any) {
+      setError(e?.message || 'Social sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSignIn = async () => {
     setError(null);
@@ -86,6 +189,7 @@ export default function AuthScreen() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      await onAuthResolved?.();
     } catch (e: any) {
       setError(e.message || 'Failed to sign in');
     } finally {
@@ -142,15 +246,15 @@ export default function AuthScreen() {
             </View>
 
             <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('google')} disabled={loading}>
                 <AntDesign name="google" size={20} color={C.text} />
               </TouchableOpacity>
               {Platform.OS === 'ios' && (
-                <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder}>
+                <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('apple')} disabled={loading}>
                   <AntDesign name="apple" size={20} color={C.text} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('facebook')} disabled={loading}>
                 <FontAwesome name="facebook" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
@@ -257,15 +361,15 @@ export default function AuthScreen() {
             </View>
 
             <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder} disabled={loading}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('google')} disabled={loading}>
                 <AntDesign name="google" size={20} color={C.text} />
               </TouchableOpacity>
               {Platform.OS === 'ios' && (
-                <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder} disabled={loading}>
+                <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('apple')} disabled={loading}>
                   <AntDesign name="apple" size={20} color={C.text} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder} disabled={loading}>
+              <TouchableOpacity style={styles.socialBtn} onPress={() => handleOAuthSignIn('facebook')} disabled={loading}>
                 <FontAwesome name="facebook" size={20} color={C.text} />
               </TouchableOpacity>
             </View>

@@ -34,6 +34,8 @@ module.exports = {
     extra: {
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+      /** Optional. Passed to signInWithOAuth for Facebook only (e.g. `public_profile`). Usually leave unset — fix `email` in Meta instead. */
+      facebookOAuthScopes: process.env.EXPO_PUBLIC_FACEBOOK_OAUTH_SCOPES,
       mapboxAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
       googlePlacesApiKey: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
       revenueCatIosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
