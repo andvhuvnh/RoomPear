@@ -904,6 +904,7 @@ export default function OnboardingScreen({ onComplete, onLeaveToLogin }: Props) 
                     d.setHours(0, 0, 0, 0);
                     setMoveInDate(d);
                   }
+                  scheduleAutoAdvance();
                 }}
               />
             ))}

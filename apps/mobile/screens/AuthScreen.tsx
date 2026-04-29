@@ -42,6 +42,7 @@ const C = {
 const GRAD = ['#1A3329','#2D4F42','#5A806B','#9CB8A8','#D8E8DF','#F5FAF7','#FFFFFF'] as const;
 const LOCS = [0, 0.06, 0.14, 0.28, 0.48, 0.72, 1] as const;
 const REDIRECT_PATH = 'auth/callback';
+const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
 /** If set in app.config / .env, sent as `scopes` for Facebook OAuth only. */
 const FACEBOOK_OAUTH_SCOPES = (
@@ -69,6 +70,47 @@ function parseOAuthCallbackParams(url: string): Record<string, string> {
     apply(url.slice(hashIndex + 1));
   }
   return params;
+}
+
+function formatAuthError(err: unknown): string {
+  if (!err) return 'Social sign-in failed';
+  if (typeof err === 'string') return err;
+
+  if (typeof err === 'object') {
+    const e = err as {
+      message?: string;
+      code?: string;
+      status?: number;
+      name?: string;
+      details?: string;
+    };
+
+    const parts: string[] = [];
+    if (e.message) parts.push(e.message);
+    if (e.code) parts.push(`code: ${e.code}`);
+    if (typeof e.status === 'number') parts.push(`status: ${e.status}`);
+    if (!e.message && e.name) parts.push(e.name);
+    if (e.details) parts.push(e.details);
+
+    if (parts.length > 0) return parts.join(' | ');
+
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return 'Social sign-in failed';
+    }
+  }
+
+  return 'Social sign-in failed';
+}
+
+function triggerAuthResolved(onAuthResolved?: () => void | Promise<void>): void {
+  if (!onAuthResolved) return;
+  setTimeout(() => {
+    void Promise.resolve(onAuthResolved()).catch((err) => {
+      console.warn('[AuthScreen] onAuthResolved failed:', err);
+    });
+  }, 0);
 }
 
 function Background({ children }: { children: React.ReactNode }) {
@@ -111,12 +153,20 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'apple' | 'facebook') => {
+    if (IS_EXPO_GO) {
+      Alert.alert(
+        'Use Dev Build for Social Login',
+        'Google, Apple, and Facebook sign-in are disabled in Expo Go. Please test social auth in a development build.'
+      );
+      return;
+    }
+
     setError(null);
     setLoading(true);
 
     try {
       const redirectTo = makeRedirectUri({
-        scheme: 'roompear',
+        ...(IS_EXPO_GO ? {} : { scheme: 'roompear' }),
         path: REDIRECT_PATH,
       });
 
@@ -125,6 +175,10 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
         options: {
           redirectTo,
           skipBrowserRedirect: true,
+          queryParams: {
+            ...(provider === 'google' ? { prompt: 'select_account' } : {}),
+            ...(provider === 'facebook' ? { auth_type: 'rerequest' } : {}),
+          },
           ...(provider === 'facebook' && FACEBOOK_OAUTH_SCOPES
             ? { scopes: FACEBOOK_OAUTH_SCOPES }
             : {}),
@@ -134,7 +188,9 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
       if (error) throw error;
       if (!data?.url) throw new Error('Unable to start OAuth flow. Please try again.');
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, {
+        preferEphemeralSession: provider === 'google' || provider === 'facebook',
+      });
       if (result.type !== 'success') {
         throw new Error('Sign in was cancelled.');
       }
@@ -158,7 +214,7 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
           refresh_token,
         });
         if (sessionError) throw sessionError;
-        await onAuthResolved?.();
+        triggerAuthResolved(onAuthResolved);
         return;
       }
 
@@ -170,13 +226,21 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
         if (!exchangeData.session) {
           throw new Error('Sign-in did not return a session. Try again.');
         }
-        await onAuthResolved?.();
+        triggerAuthResolved(onAuthResolved);
         return;
       }
 
       throw new Error('Missing authentication tokens from provider.');
-    } catch (e: any) {
-      setError(e?.message || 'Social sign-in failed');
+    } catch (e: unknown) {
+      const code = typeof e === 'object' && e !== null ? (e as { code?: string }).code : undefined;
+      if (code === 'ERR_REQUEST_CANCELED') {
+        setError('Sign in was cancelled.');
+        return;
+      }
+      const message = formatAuthError(e);
+      setError(message);
+      console.error('[AuthScreen] OAuth sign-in failed:', e);
+      Alert.alert('Sign in failed', message);
     } finally {
       setLoading(false);
     }
@@ -189,7 +253,7 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      await onAuthResolved?.();
+      triggerAuthResolved(onAuthResolved);
     } catch (e: any) {
       setError(e.message || 'Failed to sign in');
     } finally {
@@ -258,6 +322,11 @@ export default function AuthScreen({ onAuthResolved }: AuthScreenProps) {
                 <FontAwesome name="facebook" size={20} color={C.text} />
               </TouchableOpacity>
             </View>
+            {error && (
+              <View style={[styles.errorBox, { marginBottom: 16 }]}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
 
             <TouchableOpacity onPress={() => { clearForm(); setMode('signin'); }}>
               <Text style={styles.switchLink}>
