@@ -29,6 +29,7 @@ function prefs(overrides: Record<string, any> = {}): any {
     work_schedule: '9-to-5',
     interests: { fitness: ['Gym', 'Yoga'], music: ['Guitar'] },
     dealbreakers: {},
+    discover_filter_dealbreakers: {},
     ...overrides,
   };
 }
@@ -77,48 +78,81 @@ describe('passesHardFilters', () => {
     )).toBe(true);
   });
 
-  test('pets hard dealbreaker — free users still see pet owners', () => {
-    const mine = prefs({ dealbreakers: { pets: 'hard' } });
+  test('pets Discover filter — free swipers ignore pets deck filter keys', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { pets: 'hard' },
+      dealbreakers: {},
+    });
     const theirs = prefs({ pets_allowed: true });
     expect(passesHardFilters(mine, theirs, false)).toBe(true);
   });
 
-  test('pets hard dealbreaker — premium users exclude pet owners', () => {
-    const mine = prefs({ dealbreakers: { pets: 'hard' } });
+  test('pets Discover filter — premium swipers exclude pet owners', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { pets: 'hard' },
+      dealbreakers: {},
+    });
     const theirs = prefs({ pets_allowed: true });
     expect(passesHardFilters(mine, theirs, true)).toBe(false);
   });
 
-  test('smoking hard dealbreaker — premium only', () => {
-    const mine = prefs({ dealbreakers: { smoking: 'hard' } });
+  test('profile dealbreakers do not exclude the deck — only Discover filters do', () => {
+    const mine = prefs({
+      dealbreakers: { pets: 'hard' },
+      discover_filter_dealbreakers: {},
+    });
+    const theirs = prefs({ pets_allowed: true });
+    expect(passesHardFilters(mine, theirs, false)).toBe(true);
+    expect(passesHardFilters(mine, theirs, true)).toBe(true);
+  });
+
+  test('smoking Discover filter — premium only deck exclusion', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { smoking: 'hard' },
+      dealbreakers: {},
+    });
     const theirs = prefs({ smoking_allowed: true });
     expect(passesHardFilters(mine, theirs, false)).toBe(true);
     expect(passesHardFilters(mine, theirs, true)).toBe(false);
   });
 
-  test('parties hard dealbreaker — applies to all users', () => {
-    const mine = prefs({ dealbreakers: { parties: 'hard' } });
+  test('parties Discover filter — applies to all swipers', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { parties: 'hard' },
+      dealbreakers: {},
+    });
     const theirs = prefs({ social_preference: 'social' });
     expect(passesHardFilters(mine, theirs, false)).toBe(false);
     expect(passesHardFilters(mine, theirs, true)).toBe(false);
   });
 
-  test('early_bird hard dealbreaker blocks night shift candidate', () => {
-    const mine = prefs({ dealbreakers: { early_bird: 'hard' } });
+  test('early_bird Discover deck filter blocks night shift candidate', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { early_bird: 'hard' },
+      dealbreakers: {},
+    });
     const theirs = prefs({ work_schedule: 'Night Shift' });
     expect(passesHardFilters(mine, theirs)).toBe(false);
   });
 
-  test('messy hard dealbreaker blocks cleanliness ≤ 2', () => {
-    const mine = prefs({ dealbreakers: { messy: 'hard' } });
+  test('messy Discover deck filter blocks cleanliness ≤ 2', () => {
+    const mine = prefs({
+      discover_filter_dealbreakers: { messy: 'hard' },
+      dealbreakers: {},
+    });
     expect(passesHardFilters(mine, prefs({ cleanliness_level: 2 }))).toBe(false);
     expect(passesHardFilters(mine, prefs({ cleanliness_level: 3 }))).toBe(true);
   });
 
-  test('bidirectional — their dealbreakers check mine', () => {
-    const mine = prefs({ smoking_allowed: true });
+  test('their profile dealbreakers do not hard-filter the swiper deck', () => {
+    const mine = prefs({
+      smoking_allowed: true,
+      discover_filter_dealbreakers: {},
+      dealbreakers: {},
+    });
     const theirs = prefs({ dealbreakers: { smoking: 'hard' } });
-    expect(passesHardFilters(mine, theirs, false)).toBe(false);
+    expect(passesHardFilters(mine, theirs, false)).toBe(true);
+    expect(passesHardFilters(mine, theirs, true)).toBe(true);
   });
 });
 
