@@ -28,6 +28,8 @@ type Props = {
   onOpenBlockedUsers: () => void;
   onSignOut: () => void;
   onDevShowOnboarding?: () => void;
+  onDevTogglePremium?: (isPremium: boolean) => void;
+  devPremiumBusy?: boolean;
   styles: Record<string, unknown>;
   theme: { foreground: string; mutedForeground: string; destructive: string; primaryForeground: string };
 };
@@ -56,6 +58,8 @@ export default function SettingsModal({
   onDeleteAccount,
   onSignOut,
   onDevShowOnboarding,
+  onDevTogglePremium,
+  devPremiumBusy = false,
   styles,
   theme,
 }: Props) {
@@ -93,9 +97,7 @@ export default function SettingsModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.settingsHelp as object}>
-            Edit photos, interests, and prompts from the profile tab — not here.
-          </Text>
+        
 
           <Text style={styles.settingsSectionLabel as object}>Your place</Text>
           <View style={styles.settingsGroup as object}>
@@ -319,6 +321,31 @@ export default function SettingsModal({
           <TouchableOpacity style={styles.signOutButton as object} onPress={onSignOut}>
             <Text style={styles.signOutButtonText as object}>Sign out</Text>
           </TouchableOpacity>
+          {__DEV__ && onDevTogglePremium && (
+            <View style={[styles.settingsGroup as object, { marginTop: 12 }]}>
+              <View style={styles.settingsRow as object}>
+                <View style={styles.settingsRowLeft as object}>
+                  <Ionicons name="sparkles-outline" size={20} color={theme.foreground} />
+                  <View>
+                    <Text style={styles.settingsRowTitle as object}>DEV: Premium account</Text>
+                    <Text style={[styles.settingsInfoLabel as object, { fontSize: 12 }]}>
+                      Toggle to test premium-only features
+                    </Text>
+                  </View>
+                </View>
+                {devPremiumBusy ? (
+                  <ActivityIndicator color={theme.foreground} />
+                ) : (
+                  <Switch
+                    value={isPremium}
+                    onValueChange={onDevTogglePremium}
+                    trackColor={{ false: '#D1D5DB', true: '#4A7C59' }}
+                    thumbColor="#FFFFFF"
+                  />
+                )}
+              </View>
+            </View>
+          )}
           {__DEV__ && onDevShowOnboarding && (
             <TouchableOpacity style={styles.devButton as object} onPress={onDevShowOnboarding}>
               <Text style={styles.devButtonText as object}>DEV: Preview Onboarding</Text>

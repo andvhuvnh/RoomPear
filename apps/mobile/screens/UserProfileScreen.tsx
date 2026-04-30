@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePurchases } from '../context/PurchasesContext';
 import { formatPlanLabel, SUBSCRIPTION_TIER_PREMIUM } from '../lib/purchasesConfig';
+import { setDevPremiumForced } from '../lib/devPremiumOverride';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getProfileImageUrls, getProfileImageUrl, pickImage, uploadListingPhoto, pickListingImage } from '../lib/storage';
@@ -133,6 +134,7 @@ export default function UserProfileScreen({ route }: Props) {
 
   const [referralDraft, setReferralDraft] = useState('');
   const [referralBusy, setReferralBusy] = useState(false);
+  const [devPremiumBusy, setDevPremiumBusy] = useState(false);
 
   // Edit preferences state
   const [editInterests, setEditInterests] = useState<Record<string, string[]>>({});
@@ -710,6 +712,35 @@ export default function UserProfileScreen({ route }: Props) {
       }
     } finally {
       setReferralBusy(false);
+    }
+  };
+
+  const handleDevTogglePremium = async (premiumEnabled: boolean) => {
+    if (!user) return;
+    const nextTier = premiumEnabled ? SUBSCRIPTION_TIER_PREMIUM : 'free';
+    setDevPremiumBusy(true);
+    try {
+      // Set before DB + before any RC refresh so `syncSubscriptionTierToProfile` cannot clobber premium.
+      await setDevPremiumForced(premiumEnabled);
+      const { error } = await supabase
+        .from('profiles')
+        .update({ subscription_tier: nextTier })
+        .eq('id', user.id);
+      if (error) {
+        await setDevPremiumForced(false);
+        Alert.alert('Dev toggle failed', error.message);
+        return;
+      }
+      await loadProfile(user.id);
+      // Do not call refreshCustomerInfo() when enabling premium: it syncs RC → DB as free without a purchase.
+      if (!premiumEnabled) {
+        await refreshCustomerInfo();
+      }
+    } catch {
+      await setDevPremiumForced(false);
+      Alert.alert('Dev toggle failed', 'Could not update subscription tier right now.');
+    } finally {
+      setDevPremiumBusy(false);
     }
   };
 
@@ -1460,6 +1491,8 @@ export default function UserProfileScreen({ route }: Props) {
         onDeleteAccount={handleDeleteAccount}
         onSignOut={handleSignOut}
         onDevShowOnboarding={onDevShowOnboarding}
+        onDevTogglePremium={handleDevTogglePremium}
+        devPremiumBusy={devPremiumBusy}
         styles={styles}
         theme={theme}
       />
