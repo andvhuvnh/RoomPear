@@ -95,7 +95,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       setMaxBudget(prefs?.max_budget ?? 10000);
       setMinAge(prefs?.min_age ?? 18);
       setMaxAge(prefs?.max_age ?? 99);
-      const db = prefs?.dealbreakers ?? {};
+      const db = prefs?.discover_filter_dealbreakers ?? prefs?.dealbreakers ?? {};
       setStrictPets(db.pets === 'hard');
       setStrictSmoking(db.smoking === 'hard');
       setStrictParties(db.parties === 'hard');
@@ -114,14 +114,14 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const handleApply = async () => {
     setSaving(true);
     try {
-      const dealbreakers: Record<string, string> = {};
+      const discover_filter_dealbreakers: Record<string, string> = {};
       if (isPremium) {
-        dealbreakers.pets       = strictPets        ? 'hard' : 'none';
-        dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
-        dealbreakers.parties    = strictParties     ? 'hard' : 'none';
-        dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
-        dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
-        dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
+        discover_filter_dealbreakers.pets       = strictPets        ? 'hard' : 'none';
+        discover_filter_dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
+        discover_filter_dealbreakers.parties    = strictParties     ? 'hard' : 'none';
+        discover_filter_dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
+        discover_filter_dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
+        discover_filter_dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
       }
 
       await savePreferences(userId, {
@@ -135,7 +135,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
         max_budget: maxBudget,
         min_age: minAge,
         max_age: maxAge,
-        ...(isPremium ? { dealbreakers } : {}),
+        ...(isPremium ? { discover_filter_dealbreakers } : {}),
       });
       onApply();
       onClose();

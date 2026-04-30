@@ -313,9 +313,9 @@ function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): b
     }
   }
 
-  // Dealbreakers: for premium filtering, treat both hard and soft conflicts as excludes.
-  const mineDealbreakers = mine.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(mineDealbreakers)) {
+  // Discover deck filters: treat both hard and soft conflicts as excludes for premium layering.
+  const mineDeckFilters = mine.discover_filter_dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(mineDeckFilters)) {
     if (severity !== 'hard' && severity !== 'soft') continue;
     if (key === 'smoking'    && theirs.smoking_allowed === true) return false;
     if (key === 'pets'       && theirs.pets_allowed === true) return false;
@@ -323,17 +323,6 @@ function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): b
     if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
     if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;
     if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;
-  }
-
-  const theirDealbreakers = theirs.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(theirDealbreakers)) {
-    if (severity !== 'hard' && severity !== 'soft') continue;
-    if (key === 'smoking'    && mine.smoking_allowed === true) return false;
-    if (key === 'pets'       && mine.pets_allowed === true) return false;
-    if (key === 'parties'    && mine.social_preference === 'social') return false;
-    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') return false;
-    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') return false;
-    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) return false;
   }
 
   return true;

@@ -338,6 +338,8 @@ export default function DiscoverScreen() {
             userId={userId}
             onClose={() => setFiltersOpen(false)}
             onApply={() => userId && loadProfiles(userId, hasPremiumAccess)}
+            isPremium={hasPremiumAccess}
+            onUpgrade={openPaywallIfNeeded}
           />
         ) : null}
       </Background>

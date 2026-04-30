@@ -2,7 +2,7 @@
  * RoomPear matching algorithm.
  *
  * Layers:
- *   1. Hard filters  — location, budget, age, gender, hard dealbreakers
+ *   1. Hard filters  — location, budget, age, Discover deck filters (not others' profile dealbreakers)
  *   2. Compatibility — Lifestyle 35% | Interests 30% | Budget 20% | Dealbreakers 15%
  *   3. Boost factors — completeness, premium, new user, recently active, city, listing
  *   4. Feed mixing   — free: 70/20/10 | premium: 85/10/5 (with score thresholds + fallback)
@@ -28,7 +28,9 @@ export interface ProfileMeta {
 
 /**
  * Returns false if the candidate should be excluded from the deck entirely.
- * isPremium: pets/smoking hard-filter is premium-only (free users get score penalty instead).
+ * Only the swiper's Discover filters (`discover_filter_dealbreakers`) apply dealbreaker-style deck cuts.
+ * Candidates' profile `dealbreakers` do not remove them from the swiper's deck (they still affect match score).
+ * isPremium: pets/smoking hard deck filters apply only when the swiper has premium Discover access.
  */
 export function passesHardFilters(mine: Preferences, theirs: Preferences, isPremium = false): boolean {
   // State match (location fallback when no radius is set)
@@ -42,28 +44,22 @@ export function passesHardFilters(mine: Preferences, theirs: Preferences, isPrem
     if (Math.min(mine.max_budget, theirs.max_budget) < Math.max(mine.min_budget, theirs.min_budget)) return false;
   }
 
-  // Hard dealbreakers — pets/smoking are premium-only hard filters; others apply to all
-  const myDB = mine.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(myDB)) {
+  // My Discover filters (deck query) — excludes candidates; pets/smoking exclusions only when premium swiper
+  const myDeck = mine.discover_filter_dealbreakers ?? {};
+  for (const [key, severity] of Object.entries(myDeck)) {
     if (severity !== 'hard') continue;
-    if (key === 'smoking'    && isPremium && theirs.smoking_allowed === true) return false;
-    if (key === 'pets'       && isPremium && theirs.pets_allowed    === true) return false;
+    if (key === 'smoking'    && theirs.smoking_allowed === true) {
+      if (!isPremium) continue;
+      return false;
+    }
+    if (key === 'pets'       && theirs.pets_allowed    === true) {
+      if (!isPremium) continue;
+      return false;
+    }
     if (key === 'parties'    && theirs.social_preference === 'social') return false;
     if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
     if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;
     if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;
-  }
-
-  // Their hard dealbreakers vs my traits
-  const theirDB = theirs.dealbreakers ?? {};
-  for (const [key, severity] of Object.entries(theirDB)) {
-    if (severity !== 'hard') continue;
-    if (key === 'smoking'    && mine.smoking_allowed === true) return false;
-    if (key === 'pets'       && mine.pets_allowed    === true) return false;
-    if (key === 'parties'    && mine.social_preference === 'social') return false;
-    if (key === 'early_bird' && mine.work_schedule === 'Night Shift') return false;
-    if (key === 'night_owl'  && mine.work_schedule === '9-to-5') return false;
-    if (key === 'messy'      && mine.cleanliness_level != null && mine.cleanliness_level <= 2) return false;
   }
 
   return true;

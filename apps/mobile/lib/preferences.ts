@@ -71,7 +71,10 @@ export interface Preferences {
   work_schedule?: string;
   must_haves?: string[];
   interests?: Record<string, string[]>;
+  /** Declared on profile + onboarding — used for compatibility scoring and when others swipe on you */
   dealbreakers?: Record<string, 'hard' | 'soft' | 'none'>;
+  /** Premium Discover deck filters only — excludes candidates while swiping; independent of profile dealbreakers */
+  discover_filter_dealbreakers?: Record<string, 'hard' | 'soft' | 'none'>;
   ethnicity_preference?: string[];
   gender_preference?: string;
   has_listing_only?: boolean;
