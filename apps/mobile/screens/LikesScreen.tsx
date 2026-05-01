@@ -29,6 +29,7 @@ import {
   type Liker,
 } from '../lib/likes';
 import { recordSwipe } from '../lib/discover';
+import { isSameLaCalendarDay } from '../lib/usageDay';
 import { usePurchases } from '../context/PurchasesContext';
 import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
@@ -132,6 +133,24 @@ export default function LikesScreen() {
     likersRef.current = likers;
   }, [likers]);
 
+  const refreshRevealQuota = useCallback(async (uid: string) => {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('last_free_reveal_at, bonus_reveal_balance')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('refreshRevealQuota', error.message);
+      return;
+    }
+
+    const lastReveal: string | null = profile?.last_free_reveal_at ?? null;
+    const usedToday = !!lastReveal && isSameLaCalendarDay(lastReveal, new Date());
+    setDailyRevealSpentToday(usedToday);
+    setBonusRevealBalance(Math.max(0, Number(profile?.bonus_reveal_balance ?? 0)));
+  }, []);
+
   const load = useCallback(async (isRefresh = false, skipIfFresh = false) => {
     if (isRefresh) setRefreshing(true);
 
@@ -180,6 +199,10 @@ export default function LikesScreen() {
       setRevealedIds(new Set(likersRef.current.map((l) => l.id)));
     }
 
+    // Always sync quota from DB before the stale-focus short-circuit, or banner / canReveal can
+    // disagree with the server after a consume on another tab or stale local state.
+    await refreshRevealQuota(uid);
+
     if (
       skipIfFresh &&
       initialLoadDoneRef.current &&
@@ -190,18 +213,6 @@ export default function LikesScreen() {
       setLoading(false);
       return;
     }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('last_free_reveal_at, bonus_reveal_balance')
-      .eq('id', uid)
-      .single();
-
-    const lastReveal: string | null = profile?.last_free_reveal_at ?? null;
-    const usedToday =
-      !!lastReveal && new Date(lastReveal).toDateString() === new Date().toDateString();
-    setDailyRevealSpentToday(usedToday);
-    setBonusRevealBalance(Math.max(0, Number(profile?.bonus_reveal_balance ?? 0)));
 
     const data = await fetchLikers(uid);
     setLikers(data);
@@ -215,7 +226,7 @@ export default function LikesScreen() {
     lastFetchedAtRef.current = Date.now();
     setLoading(false);
     setRefreshing(false);
-  }, [isRoomPearPlus, customerInfo]);
+  }, [isRoomPearPlus, customerInfo, refreshRevealQuota]);
 
   /** When RC / DB flips to paid while you stay on this tab, or likers list arrives after premium, unlock all. */
   useEffect(() => {
@@ -283,7 +294,7 @@ export default function LikesScreen() {
       return;
     }
 
-    const result = await consumeReveal(userId);
+    const result = await consumeReveal();
     if (result.success) {
       setRevealedIds((prev) => new Set([...prev, liker.id]));
       if (result.usedBonus) {
@@ -293,13 +304,19 @@ export default function LikesScreen() {
       }
     } else {
       await unpersistRevealedLiker(userId, liker.id);
+      await refreshRevealQuota(userId);
+      const rpcDown = result.reason === 'rpc_failed';
       Alert.alert(
-        'No reveals left today',
-        'Come back tomorrow, invite friends from Profile for bonus reveals, or upgrade to RoomPear+ for unlimited access to your likers.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'View RoomPear+', onPress: () => void openPaywallIfNeeded() },
-        ]
+        rpcDown ? 'Reveal unavailable' : 'No reveals left today',
+        rpcDown
+          ? "We couldn't confirm your reveal quota. Check your connection and try again.\nIf this keeps happening, the app server may need the latest migrations."
+          : 'Come back tomorrow, invite friends from Profile for bonus reveals, or upgrade to RoomPear+ for unlimited access to your likers.',
+        rpcDown
+          ? [{ text: 'OK', style: 'cancel' }]
+          : [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'View RoomPear+', onPress: () => void openPaywallIfNeeded() },
+            ]
       );
     }
   }

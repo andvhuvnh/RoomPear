@@ -21,7 +21,7 @@ import { supabase } from '../lib/supabase';
 import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
-import { getDiscoverUsage, recordDiscoverAction } from '../lib/dailyDiscoverUsage';
+import { getDiscoverUsage } from '../lib/dailyDiscoverUsage';
 import { FREE_TIER_LIMITS, PREMIUM_TIER_LIMITS } from '../lib/freeTierLimits';
 import { usePurchases } from '../context/PurchasesContext';
 import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
@@ -241,7 +241,6 @@ export default function DiscoverScreen() {
             sharedInterests,
           });
         }
-        await recordDiscoverAction(userId, direction);
         await refreshDailyUsage(userId);
       }
       setCurrentIndex(prev => prev + 1);

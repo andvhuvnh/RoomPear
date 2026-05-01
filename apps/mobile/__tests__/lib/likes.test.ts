@@ -8,12 +8,14 @@ const mockDeleteEqLiker = jest.fn();
 const mockDeleteEqUser = jest.fn();
 const mockDelete = jest.fn();
 const mockFrom = jest.fn();
+const mockRpc = jest.fn();
 
 function loadLikesModule() {
   jest.resetModules();
   jest.doMock('../../lib/supabase', () => ({
     supabase: {
       from: (...args: unknown[]) => mockFrom(...args),
+      rpc: (name: string, params?: unknown) => mockRpc(name, params),
     },
   }));
   jest.doMock('../../lib/storage', () => ({
@@ -37,6 +39,7 @@ describe('likes integration behavior', () => {
     mockDeleteEqLiker.mockReset();
     mockDelete.mockReset();
     mockFrom.mockReset();
+    mockRpc.mockReset();
 
     mockEq.mockImplementation(() => ({ single: mockSingle }));
     mockSelect.mockImplementation(() => ({ eq: mockEq }));
@@ -51,7 +54,6 @@ describe('likes integration behavior', () => {
       if (table === 'profiles') {
         return {
           select: mockSelect,
-          update: mockUpdate,
         };
       }
       if (table === 'like_reveals') {
@@ -67,30 +69,57 @@ describe('likes integration behavior', () => {
     });
   });
 
-  it('consumeReveal spends daily reveal when available', async () => {
+  it('consumeReveal maps RPC daily success', async () => {
     const likes = loadLikesModule();
-    mockSingle.mockResolvedValueOnce({
-      data: { last_free_reveal_at: null, bonus_reveal_balance: 3 },
+    mockRpc.mockResolvedValueOnce({
+      data: { success: true, used_bonus: false },
       error: null,
     });
 
-    const result = await likes.consumeReveal('user-1');
+    const result = await likes.consumeReveal();
 
     expect(result).toEqual({ success: true, usedBonus: false });
-    expect(mockUpdate).toHaveBeenCalledWith({ last_free_reveal_at: expect.any(String) });
+    expect(mockRpc).toHaveBeenCalledWith('consume_like_reveal_quota', undefined);
   });
 
-  it('consumeReveal spends bonus reveal when daily already used', async () => {
+  it('consumeReveal maps RPC bonus success', async () => {
     const likes = loadLikesModule();
-    mockSingle.mockResolvedValueOnce({
-      data: { last_free_reveal_at: new Date().toISOString(), bonus_reveal_balance: 2 },
+    mockRpc.mockResolvedValueOnce({
+      data: { success: true, used_bonus: true },
       error: null,
     });
 
-    const result = await likes.consumeReveal('user-1');
+    const result = await likes.consumeReveal();
 
     expect(result).toEqual({ success: true, usedBonus: true });
-    expect(mockUpdate).toHaveBeenCalledWith({ bonus_reveal_balance: 1 });
+  });
+
+  it('consumeReveal maps RPC failure', async () => {
+    const likes = loadLikesModule();
+    mockRpc.mockResolvedValueOnce({
+      data: { success: false, reason: 'already_used' },
+      error: null,
+    });
+
+    const result = await likes.consumeReveal();
+
+    expect(result).toEqual({ success: false, reason: 'already_used' });
+  });
+
+  it('consumeReveal maps RPC transport error', async () => {
+    const likes = loadLikesModule();
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Could not find the function' },
+    });
+
+    const result = await likes.consumeReveal();
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'rpc_failed',
+      rpcErrorMessage: 'Could not find the function',
+    });
   });
 
   it('loads persisted revealed ids', async () => {

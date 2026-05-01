@@ -368,3 +368,37 @@ describe('getMatchReasons', () => {
     ))).toBe(true);
   });
 });
+
+// ─── usageDay (America/Los_Angeles daily buckets for server-backed quotas) ───
+
+describe('usageDay', () => {
+  let laCalendarDayBounds: (now?: Date) => { startIso: string; endIso: string };
+  let isSameLaCalendarDay: (a: Date | string, b?: Date | string) => boolean;
+  let fromZonedTime: (d: Date | string | number, tz: string) => Date;
+  let ROOMPEAR_DAILY_TZ: string;
+
+  beforeAll(() => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const u = require('../../lib/usageDay');
+    laCalendarDayBounds = u.laCalendarDayBounds;
+    isSameLaCalendarDay = u.isSameLaCalendarDay;
+    ROOMPEAR_DAILY_TZ = u.ROOMPEAR_DAILY_TZ;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    fromZonedTime = require('date-fns-tz').fromZonedTime;
+  });
+
+  test('laCalendarDayBounds is [LA midnight, next LA midnight) for an instant in that LA day', () => {
+    const fixed = fromZonedTime('2026-06-15 18:30:00', ROOMPEAR_DAILY_TZ);
+    const { startIso, endIso } = laCalendarDayBounds(fixed);
+    expect(startIso).toBe(fromZonedTime('2026-06-15 00:00:00', ROOMPEAR_DAILY_TZ).toISOString());
+    expect(endIso).toBe(fromZonedTime('2026-06-16 00:00:00', ROOMPEAR_DAILY_TZ).toISOString());
+  });
+
+  test('isSameLaCalendarDay matches same Pacific calendar date only', () => {
+    const a = fromZonedTime('2026-01-10 08:00:00', ROOMPEAR_DAILY_TZ);
+    const b = fromZonedTime('2026-01-10 20:00:00', ROOMPEAR_DAILY_TZ);
+    expect(isSameLaCalendarDay(a, b)).toBe(true);
+    const c = fromZonedTime('2026-01-11 01:00:00', ROOMPEAR_DAILY_TZ);
+    expect(isSameLaCalendarDay(a, c)).toBe(false);
+  });
+});
