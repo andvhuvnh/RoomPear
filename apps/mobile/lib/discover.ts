@@ -110,8 +110,10 @@ export async function fetchDiscoverProfiles(
   }
 
   // Get IDs the user has already swiped on + blocked (either direction)
+  // All swipes recycle after 30 days — situations change (new listing, updated budget, etc.)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const [{ data: swipedRows }, blockedIds] = await Promise.all([
-    supabase.from('swipes').select('swiped_id').eq('swiper_id', userId),
+    supabase.from('swipes').select('swiped_id').eq('swiper_id', userId).gte('created_at', thirtyDaysAgo),
     getBlockedIds(userId),
   ]);
 
