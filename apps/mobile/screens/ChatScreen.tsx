@@ -21,8 +21,11 @@ import {
   sendMessage,
   ensureMatchConversation,
   clearConversationHiddenFromList,
+  fetchOtherParticipantUserId,
   type ChatMessageRow,
 } from '../lib/messaging';
+import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
+import ThemedConfirmSheet from '../components/ThemedConfirmSheet';
 import {
   CHATS_SCREEN_BG,
   CHATS_CARD,
@@ -108,14 +111,19 @@ function Background({ children }: { children: React.ReactNode }) {
 
 export default function ChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { conversationId: initialConversationId, otherUserId, title } = route.params;
+  const { conversationId: initialConversationId, otherUserId: routeOtherUserId, title } =
+    route.params;
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [otherUserId, setOtherUserId] = useState<string | undefined>(routeOtherUserId);
   const [loading, setLoading] = useState(!!initialConversationId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [peerSafetyOpen, setPeerSafetyOpen] = useState(false);
+  const [peerSafetyStart, setPeerSafetyStart] = useState<PeerSafetyStart>('main');
+  const [waitPeerSheet, setWaitPeerSheet] = useState(false);
   /** Bottom inset for keyboard — avoids KeyboardAvoidingView fighting FlatList (jitter). */
   const [keyboardBottom, setKeyboardBottom] = useState(0);
   const listRef = useRef<FlatList<ChatListItem>>(null);
@@ -137,6 +145,31 @@ export default function ChatScreen({ navigation, route }: Props) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!cancelled && user) setMyUserId(user.id);
     });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!conversationId || otherUserId) return;
+    let cancelled = false;
+    void (async () => {
+      const { userId, error } = await fetchOtherParticipantUserId(conversationId);
+      if (cancelled) return;
+      if (error) {
+        console.warn('fetchOtherParticipantUserId', error.message);
+        return;
+      }
+      if (userId) setOtherUserId(userId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, otherUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
 
     if (!conversationId) return;
 
@@ -184,6 +217,15 @@ export default function ChatScreen({ navigation, route }: Props) {
       supabase.removeChannel(channel);
     };
   }, [conversationId, appendUnique, myUserId]);
+
+  const openSafetyMenu = useCallback(() => {
+    if (!otherUserId) {
+      setWaitPeerSheet(true);
+      return;
+    }
+    setPeerSafetyStart('main');
+    setPeerSafetyOpen(true);
+  }, [otherUserId]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -264,7 +306,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             onBack={() => navigation.goBack()}
             topInset={insets.top}
             backAccessibilityLabel="Back to chats"
-            onReport={otherUserId ? () => setReportOpen(true) : undefined}
+            onMenu={openSafetyMenu}
           />
         </View>
         <View style={[styles.centered, { paddingTop: insets.top + 56 }]}>
@@ -332,6 +374,7 @@ export default function ChatScreen({ navigation, route }: Props) {
               onBack={() => navigation.goBack()}
               topInset={insets.top}
               backAccessibilityLabel="Back to chats"
+              onMenu={openSafetyMenu}
             />
           </View>
         </View>
@@ -370,6 +413,32 @@ export default function ChatScreen({ navigation, route }: Props) {
           }}
         />
       )}
+      {otherUserId && (
+        <PeerSafetyActionsModal
+          visible={peerSafetyOpen}
+          otherUserId={otherUserId}
+          otherName={title}
+          start={peerSafetyStart}
+          onClose={() => setPeerSafetyOpen(false)}
+          onOpenReport={() => {
+            setPeerSafetyOpen(false);
+            setReportOpen(true);
+          }}
+          onAfterUnmatchOrBlock={() => {
+            setPeerSafetyOpen(false);
+            navigation.goBack();
+          }}
+        />
+      )}
+      <ThemedConfirmSheet
+        visible={waitPeerSheet}
+        title="One moment"
+        message="Still loading this chat. Try again in a second."
+        confirmLabel="OK"
+        singleAction
+        onConfirm={() => setWaitPeerSheet(false)}
+        onClose={() => setWaitPeerSheet(false)}
+      />
     </Background>
   );
 }

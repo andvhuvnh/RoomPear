@@ -35,6 +35,31 @@ function displayNameFromProfile(name: string | null | undefined, fallbackId: str
  * Conversations the current user is in, newest activity first.
  * Only threads with at least one message (last_message_at set) appear in the list.
  */
+/** Other participant in a 1:1 thread (for safety actions when only `conversationId` is known). */
+export async function fetchOtherParticipantUserId(
+  conversationId: string
+): Promise<{ userId: string | null; error: Error | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { userId: null, error: new Error('Not signed in') };
+  }
+
+  const { data, error } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .neq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) {
+    return { userId: null, error: new Error(error.message) };
+  }
+  const uid = data?.user_id;
+  return { userId: typeof uid === 'string' ? uid : null, error: null };
+}
+
 export async function fetchConversationSummaries(): Promise<{
   data: ConversationSummary[];
   error: Error | null;

@@ -20,7 +20,9 @@ import { getPreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import PublicProfileCard from '../components/PublicProfileCard';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
+import BlockReportModal from '../components/BlockReportModal';
 import { CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
+import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
 
 type PromptEntry = { question: string; answer: string };
 
@@ -86,6 +88,16 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const [bio, setBio] = useState<string | null>(null);
   const [interestChips, setInterestChips] = useState<string[]>([]);
   const [prompts, setPrompts] = useState<PromptEntry[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [peerSafetyOpen, setPeerSafetyOpen] = useState(false);
+  const [peerSafetyStart, setPeerSafetyStart] = useState<PeerSafetyStart>('main');
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.id) setMyUserId(user.id);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +148,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const openChat = useCallback(() => {
     const title = name || initialName || 'Chat';
     const params = conversationId
-      ? { conversationId, title }
+      ? { conversationId, otherUserId: userId, title }
       : { otherUserId: userId, title };
 
     if (profileSource === 'likes') {
@@ -151,6 +163,12 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   /** Space below floating bubbles so the card sits on the canvas, not under the pills. */
   const contentTopPad = insets.top + 56 + 12;
 
+  const openSafetyMenu = useCallback(() => {
+    if (profileSource !== 'chats') return;
+    setPeerSafetyStart('main');
+    setPeerSafetyOpen(true);
+  }, [profileSource]);
+
   if (loading) {
     return (
       <View style={styles.root}>
@@ -162,6 +180,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
             title={initialName || 'Profile'}
             onBack={() => navigation.goBack()}
             topInset={insets.top}
+            onMenu={profileSource === 'chats' ? openSafetyMenu : undefined}
           />
         </View>
       </View>
@@ -213,6 +232,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           title={name || 'Profile'}
           onBack={() => navigation.goBack()}
           topInset={insets.top}
+          onMenu={profileSource === 'chats' ? openSafetyMenu : undefined}
         />
       </View>
 
@@ -230,6 +250,37 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           <Ionicons name="chatbubbles" size={26} color={CHATS_GREEN} />
         </TouchableOpacity>
       </View>
+
+      {myUserId && profileSource === 'chats' && (
+        <BlockReportModal
+          visible={reportOpen}
+          reporterId={myUserId}
+          reportedId={userId}
+          reportedName={name || initialName || 'User'}
+          onClose={() => setReportOpen(false)}
+          onBlocked={() => {
+            setReportOpen(false);
+            navigation.goBack();
+          }}
+        />
+      )}
+      {profileSource === 'chats' && (
+        <PeerSafetyActionsModal
+          visible={peerSafetyOpen}
+          otherUserId={userId}
+          otherName={name || initialName || 'Profile'}
+          start={peerSafetyStart}
+          onClose={() => setPeerSafetyOpen(false)}
+          onOpenReport={() => {
+            setPeerSafetyOpen(false);
+            setReportOpen(true);
+          }}
+          onAfterUnmatchOrBlock={() => {
+            setPeerSafetyOpen(false);
+            navigation.goBack();
+          }}
+        />
+      )}
     </View>
   );
 }

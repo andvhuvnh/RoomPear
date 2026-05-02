@@ -9,7 +9,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
-  Alert,
   TextInput,
 } from 'react-native';
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
@@ -25,6 +24,9 @@ import {
   type ConversationSummary,
 } from '../lib/messaging';
 import { supabase } from '../lib/supabase';
+import BlockReportModal from '../components/BlockReportModal';
+import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
+import ThemedConfirmSheet from '../components/ThemedConfirmSheet';
 import {
   CHATS_SCREEN_BG,
   CHATS_CARD,
@@ -84,6 +86,16 @@ export default function ChatsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [messagesSearchQuery, setMessagesSearchQuery] = useState('');
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [reportPeer, setReportPeer] = useState<{ id: string; name: string } | null>(null);
+  const [peerSafety, setPeerSafety] = useState<{
+    otherUserId: string;
+    otherName: string;
+    start: PeerSafetyStart;
+  } | null>(null);
+  const [removeConvTarget, setRemoveConvTarget] = useState<ConversationSummary | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const swipeableRefs = useRef<Map<string, Swipeable | null>>(new Map());
   /** Avoid full-screen spinner + list remount on every tab focus — keeps expo-image cache warm. */
   const initialLoadDoneRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
@@ -94,12 +106,15 @@ export default function ChatsScreen({ navigation }: Props) {
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user.id;
     if (!uid) {
+      setMyUserId(null);
       setLoading(false);
       setRefreshing(false);
       initialLoadDoneRef.current = false;
       lastUserIdRef.current = null;
       return;
     }
+
+    setMyUserId(uid);
 
     if (lastUserIdRef.current !== uid) {
       if (lastUserIdRef.current !== null) {
@@ -149,28 +164,21 @@ export default function ChatsScreen({ navigation }: Props) {
   }, [conversations, messagesSearchQuery]);
 
   const confirmRemoveConversation = useCallback((item: ConversationSummary) => {
-    Alert.alert(
-      'Do you wish to delete this conversation?',
-      'It will be removed from your Messages list only. The other person still has the thread; messages are not deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              const { error } = await hideConversationFromList(item.conversationId);
-              if (error) {
-                Alert.alert('Could not remove', error.message);
-                return;
-              }
-              setConversations((prev) => prev.filter((c) => c.conversationId !== item.conversationId));
-            })();
-          },
-        },
-      ]
-    );
+    setRemoveError(null);
+    setRemoveConvTarget(item);
   }, []);
+
+  const runRemoveConversation = useCallback(async () => {
+    if (!removeConvTarget) return;
+    const { error } = await hideConversationFromList(removeConvTarget.conversationId);
+    if (error) {
+      setRemoveError(error.message);
+      return;
+    }
+    setConversations((prev) => prev.filter((c) => c.conversationId !== removeConvTarget.conversationId));
+    setRemoveConvTarget(null);
+    setRemoveError(null);
+  }, [removeConvTarget]);
 
   function renderMatchItem({ item }: { item: Match }) {
     return (
@@ -221,18 +229,77 @@ export default function ChatsScreen({ navigation }: Props) {
   }
 
   function renderConvItem({ item }: { item: ConversationSummary }) {
+    const closeSwipe = () => swipeableRefs.current.get(item.conversationId)?.close();
+
     return (
       <Swipeable
+        ref={(el) => {
+          if (el) swipeableRefs.current.set(item.conversationId, el);
+          else swipeableRefs.current.delete(item.conversationId);
+        }}
         friction={2}
         overshootRight={false}
         renderRightActions={() => (
-          <View style={styles.swipeActionsRight}>
+          <View style={styles.swipeRightCluster}>
             <RectButton
-              style={styles.swipeDeleteBtn}
-              onPress={() => confirmRemoveConversation(item)}
+              style={styles.swipeCompactBtn}
+              onPress={() => {
+                closeSwipe();
+                setPeerSafety({
+                  otherUserId: item.otherUserId,
+                  otherName: item.otherDisplayName,
+                  start: 'confirmUnmatch',
+                });
+              }}
+              accessibilityLabel="Unmatch"
+            >
+              <Ionicons name="heart-dislike-outline" size={20} color={C.destructive} />
+              <Text style={styles.swipeCompactLabel} numberOfLines={1}>
+                Unmatch
+              </Text>
+            </RectButton>
+            <RectButton
+              style={styles.swipeCompactBtn}
+              onPress={() => {
+                closeSwipe();
+                setReportPeer({ id: item.otherUserId, name: item.otherDisplayName });
+              }}
+              accessibilityLabel="Report"
+            >
+              <Ionicons name="flag-outline" size={20} color={C.accent} />
+              <Text style={styles.swipeCompactLabel} numberOfLines={1}>
+                Report
+              </Text>
+            </RectButton>
+            <RectButton
+              style={styles.swipeCompactBtn}
+              onPress={() => {
+                closeSwipe();
+                setPeerSafety({
+                  otherUserId: item.otherUserId,
+                  otherName: item.otherDisplayName,
+                  start: 'confirmBlock',
+                });
+              }}
+              accessibilityLabel="Block"
+            >
+              <Ionicons name="ban-outline" size={20} color={C.destructive} />
+              <Text style={styles.swipeCompactLabel} numberOfLines={1}>
+                Block
+              </Text>
+            </RectButton>
+            <RectButton
+              style={styles.swipeCompactBtn}
+              onPress={() => {
+                closeSwipe();
+                confirmRemoveConversation(item);
+              }}
               accessibilityLabel="Remove conversation from list"
             >
               <Ionicons name="trash-outline" size={22} color={C.gray} />
+              <Text style={[styles.swipeCompactLabel, { color: C.gray }]} numberOfLines={1}>
+                Remove
+              </Text>
             </RectButton>
           </View>
         )}
@@ -243,6 +310,7 @@ export default function ChatsScreen({ navigation }: Props) {
           onPress={() =>
             navigation.navigate('Chat', {
               conversationId: item.conversationId,
+              otherUserId: item.otherUserId,
               title: item.otherDisplayName,
             })
           }
@@ -445,6 +513,56 @@ export default function ChatsScreen({ navigation }: Props) {
           />
         )}
       </SafeAreaView>
+      {myUserId && reportPeer && (
+        <BlockReportModal
+          visible
+          reporterId={myUserId}
+          reportedId={reportPeer.id}
+          reportedName={reportPeer.name}
+          onClose={() => setReportPeer(null)}
+          onBlocked={() => {
+            setReportPeer(null);
+            void load(true);
+          }}
+        />
+      )}
+      {peerSafety && (
+        <PeerSafetyActionsModal
+          visible
+          otherUserId={peerSafety.otherUserId}
+          otherName={peerSafety.otherName}
+          start={peerSafety.start}
+          onClose={() => setPeerSafety(null)}
+          onOpenReport={() => setReportPeer({ id: peerSafety.otherUserId, name: peerSafety.otherName })}
+          onAfterUnmatchOrBlock={() => {
+            setPeerSafety(null);
+            void load(true);
+          }}
+        />
+      )}
+      <ThemedConfirmSheet
+        visible={removeConvTarget !== null}
+        title={removeError ? 'Could not remove' : 'Remove this conversation?'}
+        message={
+          removeError ??
+          'It will be removed from your Messages list only. The other person still has the thread; messages are not deleted.'
+        }
+        confirmLabel={removeError ? 'OK' : 'Remove'}
+        destructive={!removeError}
+        singleAction={!!removeError}
+        onConfirm={() => {
+          if (removeError) {
+            setRemoveConvTarget(null);
+            setRemoveError(null);
+            return;
+          }
+          void runRemoveConversation();
+        }}
+        onClose={() => {
+          setRemoveConvTarget(null);
+          setRemoveError(null);
+        }}
+      />
     </Background>
   );
 }
@@ -657,20 +775,32 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  swipeActionsRight: {
-    justifyContent: 'center',
+  swipeRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    justifyContent: 'flex-end',
     marginBottom: 10,
-    marginLeft: 8,
+    marginLeft: 6,
+    gap: 6,
   },
-  swipeDeleteBtn: {
-    backgroundColor: CHATS_CARD,
+  swipeCompactBtn: {
+    width: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 56,
-    minHeight: 78,
-    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: CHATS_GREEN_BORDER,
+    backgroundColor: CHATS_CARD,
+  },
+  swipeCompactLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: C.text,
+    marginTop: 4,
+    textAlign: 'center',
+    maxWidth: 54,
   },
   convAvatar: {
     width: 52,
