@@ -24,6 +24,8 @@
     "@rnmapbox/maps": "^10.3.0",
     "@supabase/supabase-js": "^2.89.0",
     "@turf/circle": "^7.3.4",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^17.2.3",
     "expo": "~54.0.30",
     "expo-blur": "~15.0.8",

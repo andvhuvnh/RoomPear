@@ -89,51 +89,39 @@ export async function fetchLikers(userId: string): Promise<Liker[]> {
   return result;
 }
 
-export type ConsumeRevealReason = 'already_used' | 'no_bonus';
+export type ConsumeRevealReason =
+  | 'already_used'
+  | 'no_bonus'
+  /** PostgREST / transport error (migration missing, offline, etc.) — differs from exhausted quota */
+  | 'rpc_failed';
 
 /**
- * Uses the daily free reveal first; if already used today, consumes one bonus reveal.
+ * Server-side reveal quota (RPC): LA daily free reveal first, then bonus_reveal_balance.
+ * Must match `consume_like_reveal_quota` in Supabase.
  */
-export async function consumeReveal(
-  userId: string
-): Promise<{ success: boolean; reason?: ConsumeRevealReason; usedBonus?: boolean }> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('last_free_reveal_at, bonus_reveal_balance')
-    .eq('id', userId)
-    .single();
+export async function consumeReveal(): Promise<{
+  success: boolean;
+  reason?: ConsumeRevealReason;
+  usedBonus?: boolean;
+  rpcErrorMessage?: string;
+}> {
+  const { data, error } = await supabase.rpc('consume_like_reveal_quota');
 
-  if (error || !data) {
-    return { success: false, reason: 'already_used' };
+  if (error) {
+    console.warn('consumeReveal', error.message);
+    return { success: false, reason: 'rpc_failed', rpcErrorMessage: error.message };
   }
 
-  const lastReveal: string | null = data.last_free_reveal_at ?? null;
-  const todayStr = new Date().toDateString();
-  const dailyAvailable = !lastReveal || new Date(lastReveal).toDateString() !== todayStr;
-  const bonus = Math.max(0, Number(data.bonus_reveal_balance ?? 0));
-
-  if (dailyAvailable) {
-    await supabase
-      .from('profiles')
-      .update({ last_free_reveal_at: new Date().toISOString() })
-      .eq('id', userId);
-    return { success: true, usedBonus: false };
+  const row = data as { success?: boolean; used_bonus?: boolean; reason?: string } | null;
+  if (!row || row.success !== true) {
+    const r = row?.reason;
+    return {
+      success: false,
+      reason: r === 'no_bonus' ? 'no_bonus' : 'already_used',
+    };
   }
 
-  if (bonus <= 0) {
-    return { success: false, reason: 'already_used' };
-  }
-
-  const { error: upErr } = await supabase
-    .from('profiles')
-    .update({ bonus_reveal_balance: bonus - 1 })
-    .eq('id', userId);
-
-  if (upErr) {
-    return { success: false, reason: 'no_bonus' };
-  }
-
-  return { success: true, usedBonus: true };
+  return { success: true, usedBonus: Boolean(row.used_bonus) };
 }
 
 export async function fetchPersistedRevealedIds(userId: string): Promise<Set<string>> {
