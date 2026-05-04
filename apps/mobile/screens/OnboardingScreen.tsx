@@ -1,24 +1,25 @@
 /**
- * OnboardingScreen — 17-step focused onboarding flow.
+ * OnboardingScreen — 18-step focused onboarding flow.
  * One or two inputs per screen, Hinge-style.
  *
  *  0  Name
  *  1  Age
  *  2  Gender          (chips, auto-advance)
  *  3  Ethnicity       (chips, optional)
- *  4  Location        (city + state + zip)
- *  5  Budget          (min + max)
- *  6  Room type       (chips, auto-advance)
- *  7  Move-in date
- *  8  Cleanliness     (1–5 chips, auto-advance)
- *  9  Work schedule   (chips, auto-advance)
- * 10  Social vibe     (chips, auto-advance)
- * 11  Pets & Smoking  (2 yes/no rows)
- * 12  Dealbreakers
- * 13  Interests
- * 14  Prompts
- * 15  Photos
- * 16  Listing         (optional)
+ *  4  Gender pref     (chips, auto-advance)
+ *  5  Location        (city + state + zip)
+ *  6  Budget          (min + max)
+ *  7  Room type       (chips, auto-advance)
+ *  8  Move-in date
+ *  9  Cleanliness     (1–5 chips, auto-advance)
+ * 10  Work schedule   (chips, auto-advance)
+ * 11  Social vibe     (chips, auto-advance)
+ * 12  Pets & Smoking  (2 yes/no rows)
+ * 13  Dealbreakers
+ * 14  Interests
+ * 15  Prompts
+ * 16  Photos
+ * 17  Listing         (optional)
  */
 
 import { useState, useEffect, useRef, useCallback, lazy, Suspense, type ComponentType } from 'react';
@@ -61,7 +62,7 @@ const SearchAreaMapPicker = lazy(() => import('../components/SearchAreaMapPicker
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 17;
+const TOTAL_STEPS = 18;
 
 const GENDER_OPTIONS = ['Man', 'Woman', 'Non-binary', 'Trans man', 'Trans woman', 'Other', 'Prefer not to say'];
 
@@ -226,27 +227,28 @@ type StepDef = { icon: ComponentType<any>; question: string; subtitle: string; o
 
 // Per-step display content
 const STEPS: StepDef[] = [
-  { icon: User,          question: "What's your name?",               subtitle: "This is how you'll appear to others." },
-  { icon: Cake,          question: 'How old are you?',                subtitle: 'You must be 18+ to use RoomPear.' },
-  { icon: Sparkle,       question: 'How do you identify?',            subtitle: 'Helps personalize your matches.' },
-  { icon: Globe,         question: 'A little more about you…',         subtitle: 'Both fields are optional — skip if you prefer.', optional: true },
-  { icon: MapPin,        question: 'Where are you looking?',          subtitle: "We'll show you people in your area." },
-  { icon: CurrencyDollar,question: "What's your monthly budget?",     subtitle: 'Your comfortable range for rent.' },
-  { icon: Door,          question: 'What kind of room?',              subtitle: 'Pick what works for you.' },
-  { icon: CalendarBlank, question: 'When do you want to move in?',    subtitle: 'Approximate is fine — you can update later.', optional: true },
-  { icon: Broom,         question: 'How clean do you keep your space?',subtitle: '1 = relaxed about mess  ·  5 = spotless' },
-  { icon: Clock,         question: "What's your work schedule?",      subtitle: 'Helps us find someone on your rhythm.' },
-  { icon: UsersThree,    question: "What's your social vibe?",        subtitle: 'How often do you have people over?' },
-  { icon: PawPrint,      question: 'About you…',                      subtitle: 'Helps us find compatible matches.' },
-  { icon: ShieldWarning, question: 'Any dealbreakers?',               subtitle: 'Hard = never  ·  Soft = prefer not  ·  None = fine', optional: true },
-  { icon: Star,          question: 'What are you into?',              subtitle: 'Select up to 5 per category.', optional: true },
-  { icon: ChatCircleDots,question: 'In your own words…',              subtitle: 'Answer at least 2 prompts (up to 3).', optional: true },
-  { icon: Camera,        question: 'Show yourself off',               subtitle: 'Your first photo is your first impression.' },
-  { icon: House,         question: 'Got a place to offer?',           subtitle: 'Optional — skip if you are only looking.', optional: true },
+  { icon: User,          question: "What's your name?",                subtitle: "This is how you'll appear to others." },
+  { icon: Cake,          question: 'How old are you?',                 subtitle: 'You must be 18+ to use RoomPear.' },
+  { icon: Sparkle,       question: 'How do you identify?',             subtitle: 'Helps personalize your matches.' },
+  { icon: Globe,         question: 'A little more about you…',          subtitle: 'Both fields are optional — skip if you prefer.', optional: true },
+  { icon: UsersThree,    question: 'Who would you like to live with?',  subtitle: 'Leave blank to see everyone.', optional: true },
+  { icon: MapPin,        question: 'Where are you looking?',           subtitle: "We'll show you people in your area." },
+  { icon: CurrencyDollar,question: "What's your monthly budget?",      subtitle: 'Your comfortable range for rent.' },
+  { icon: Door,          question: 'What kind of room?',               subtitle: 'Pick what works for you.' },
+  { icon: CalendarBlank, question: 'When do you want to move in?',     subtitle: 'Approximate is fine — you can update later.', optional: true },
+  { icon: Broom,         question: 'How clean do you keep your space?', subtitle: '1 = relaxed about mess  ·  5 = spotless' },
+  { icon: Clock,         question: "What's your work schedule?",       subtitle: 'Helps us find someone on your rhythm.' },
+  { icon: UsersThree,    question: "What's your social vibe?",         subtitle: 'How often do you have people over?' },
+  { icon: PawPrint,      question: 'About you…',                       subtitle: 'Helps us find compatible matches.' },
+  { icon: ShieldWarning, question: 'Any dealbreakers?',                subtitle: 'Hard = never  ·  Soft = prefer not  ·  None = fine', optional: true },
+  { icon: Star,          question: 'What are you into?',               subtitle: 'Select up to 5 per category.', optional: true },
+  { icon: ChatCircleDots,question: 'In your own words…',               subtitle: 'Answer at least 2 prompts (up to 3).', optional: true },
+  { icon: Camera,        question: 'Show yourself off',                subtitle: 'Your first photo is your first impression.' },
+  { icon: House,         question: 'Got a place to offer?',            subtitle: 'Optional — skip if you are only looking.', optional: true },
 ];
 
 // Steps that auto-advance when a chip is selected
-const AUTO_ADVANCE_STEPS = new Set([2, 3, 6, 7, 8, 9, 10, 12]);
+const AUTO_ADVANCE_STEPS = new Set([2, 3, 4, 7, 8, 9, 10, 11, 13]);
 
 const US_STATES = [
   { label: 'Alabama', abbr: 'AL' }, { label: 'Alaska', abbr: 'AK' },
@@ -323,10 +325,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [age, setAge] = useState('');
   // Step 2: Gender
   const [gender, setGender] = useState('');
-  // Step 3: Ethnicity + gender preference
+  // Step 3: Ethnicity
   const [ethnicity, setEthnicity] = useState('');
+  // Step 4: Gender preference
   const [genderPref, setGenderPref] = useState('');
-  // Step 4: Location
+  // Step 5: Location
   const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
   const useLegacyLocationUi = !Constants.expoConfig?.extra?.mapboxAccessToken || isExpoGo;
   const [city, setCity] = useState('');
@@ -335,31 +338,31 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [showStatePicker, setShowStatePicker] = useState(false);
   const [stateSearch, setStateSearch] = useState('');
   const [searchArea, setSearchArea] = useState<SearchAreaValue | null>(null);
-  // Step 5: Budget
+  // Step 6: Budget
   const [minBudget, setMinBudget] = useState(0);
-  const [maxBudget, setMaxBudget] = useState(2000);
-  // Step 6: Room type
+  const [maxBudget, setMaxBudget] = useState(10000);
+  // Step 7: Room type
   const [roomType, setRoomType] = useState('');
-  // Step 7: Move-in date
+  // Step 8: Move-in date
   const [moveInDate, setMoveInDate] = useState<Date | null>(null);
   const [moveInOption, setMoveInOption] = useState<string>('');
-  // Step 8: Cleanliness
+  // Step 9: Cleanliness
   const [cleanliness, setCleanliness] = useState<number | null>(null);
-  // Step 9: Work schedule
+  // Step 10: Work schedule
   const [workSchedule, setWorkSchedule] = useState('');
-  // Step 10: Social vibe
+  // Step 11: Social vibe
   const [socialPref, setSocialPref] = useState('');
-  // Step 11: Pets & Smoking
+  // Step 12: Pets & Smoking
   const [petsAllowed, setPetsAllowed] = useState<boolean | null>(null);
   const [smokingAllowed, setSmokingAllowed] = useState<boolean | null>(null);
-  // Step 12: Dealbreakers (sub-flow)
+  // Step 13: Dealbreakers (sub-flow)
   const [dealbreakers, setDealbreakers] = useState<Record<string, DealbreakerLevel>>(
     Object.fromEntries(DEALBREAKER_ITEMS.map((d) => [d.key, 'none' as DealbreakerLevel]))
   );
   const [dbStep, setDbStep] = useState(0);
   const [dbSelected, setDbSelected] = useState<DealbreakerLevel | null>(null);
   const dbCardAnim = useRef(new Animated.Value(1)).current;
-  // Step 13: Interests
+  // Step 14: Interests
   const [interests, setInterests] = useState<Record<string, string[]>>(
     Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, [] as string[]]))
   );
@@ -367,13 +370,13 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [customInputs, setCustomInputs] = useState<Record<string, string>>(
     Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, '']))
   );
-  // Step 14: Prompts
+  // Step 15: Prompts
   const [promptAnswers, setPromptAnswers] = useState<PromptEntry[]>([]);
   const [promptDraft, setPromptDraft] = useState('');
   const [expandedPromptIdx, setExpandedPromptIdx] = useState<number | null>(null);
-  // Step 15: Photos
+  // Step 16: Photos
   const [stagingUris, setStagingUris] = useState<string[]>([]);
-  // Step 16: Listing
+  // Step 17: Listing
   const [hasListing, setHasListing] = useState(false);
   const [listingRent, setListingRent] = useState('');
   const [listingRoomType, setListingRoomType] = useState('');
@@ -502,7 +505,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
   const handleBack = () => {
     if (saving) return;
-    if (step === 12 && dbStep > 0) { setDbStep((s) => s - 1); setDbSelected(null); }
+    if (step === 13 && dbStep > 0) { setDbStep((s) => s - 1); setDbSelected(null); }
     else setStep((s) => Math.max(s - 1, 0));
   };
 
@@ -535,9 +538,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
         // End of about-you steps — save profile
         const ok = await saveAboutYou();
         if (!ok) { Alert.alert('Error', 'Could not save your info. Please try again.'); return; }
-      } else if (step === 14) {
-        await savePrompts();
       } else if (step === 15) {
+        await savePrompts();
+      } else if (step === 16) {
         const ok = await uploadPhotos();
         if (!ok) return;
       }
@@ -552,9 +555,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const canAdvance = (): boolean => {
     if (step === 0) return name.trim().length > 0;
     if (step === 1) return age === '' || parseInt(age, 10) >= 18;
-    if (step === 5) return minBudget <= maxBudget;
-    if (step === 14) return promptAnswers.filter((p) => p.answer.trim()).length >= 2;
-    if (step === 15) return stagingUris.length >= 2;
+    if (step === 6) return minBudget <= maxBudget;
+    if (step === 15) return promptAnswers.filter((p) => p.answer.trim()).length >= 2;
+    if (step === 16) return stagingUris.length >= 2;
     return true;
   };
 
@@ -650,7 +653,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 3: Ethnicity (optional)
+      // 3: Ethnicity (optional, auto-advance)
       case 3:
         return (
           <View style={styles.chipArea}>
@@ -662,25 +665,31 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 onPress={() => { setEthnicity(ethnicity === e ? '' : e); scheduleAutoAdvance(); }}
               />
             ))}
-            <Text style={styles.sectionLabel}>Who would you like to live with?</Text>
+          </View>
+        );
+
+      // 4: Gender preference (auto-advance)
+      case 4:
+        return (
+          <View style={styles.chipArea}>
             {(['Man', 'Woman', 'Non-binary'] as const).map((g) => (
               <Chip
                 key={g}
                 label={g === 'Man' ? 'Men' : g === 'Woman' ? 'Women' : 'Non-binary'}
                 selected={genderPref === g}
-                onPress={() => setGenderPref(genderPref === g ? '' : g)}
+                onPress={() => { setGenderPref(genderPref === g ? '' : g); scheduleAutoAdvance(); }}
               />
             ))}
             <Chip
               label="Anyone"
               selected={genderPref === ''}
-              onPress={() => setGenderPref('')}
+              onPress={() => { setGenderPref(''); scheduleAutoAdvance(); }}
             />
           </View>
         );
 
-      // 4: Location
-      case 4: {
+      // 5: Location
+      case 5: {
         const filteredStates = US_STATES.filter(
           (s) =>
             s.label.toLowerCase().includes(stateSearch.toLowerCase()) ||
@@ -777,8 +786,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
         );
       }
 
-      // 5: Budget
-      case 5:
+      // 6: Budget
+      case 6:
         return (
           <View style={styles.budgetSliderArea}>
             <View style={styles.budgetDisplay}>
@@ -786,40 +795,21 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 <Text style={styles.budgetBadgeLabel}>Min</Text>
                 <View style={styles.budgetInputRow}>
                   <Text style={styles.budgetDollar}>$</Text>
-                  <TextInput
-                    style={styles.budgetBadgeValue}
-                    value={minBudget === 0 ? '' : String(minBudget)}
-                    onChangeText={(t) => {
-                      const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
-                      if (!isNaN(n)) setMinBudget(n);
-                      else if (t === '') setMinBudget(0);
-                    }}
-                    onBlur={() => setMinBudget((v) => Math.min(v, maxBudget - 50))}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor="#4A6358"
-                    returnKeyType="done"
-                  />
+                  <Text style={styles.budgetBadgeValue}>{minBudget.toLocaleString()}</Text>
                 </View>
               </View>
               <Text style={styles.budgetDash}>–</Text>
               <View style={styles.budgetBadge}>
                 <Text style={styles.budgetBadgeLabel}>Max</Text>
                 <View style={styles.budgetInputRow}>
-                  <Text style={styles.budgetDollar}>$</Text>
-                  <TextInput
-                    style={styles.budgetBadgeValue}
-                    value={String(maxBudget)}
-                    onChangeText={(t) => {
-                      const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
-                      if (!isNaN(n)) setMaxBudget(Math.min(n, 50000));
-                    }}
-                    onBlur={() => setMaxBudget((v) => Math.max(v, minBudget + 50))}
-                    keyboardType="number-pad"
-                    placeholder="2000"
-                    placeholderTextColor="#4A6358"
-                    returnKeyType="done"
-                  />
+                  {maxBudget >= 10000 ? (
+                    <Text style={styles.budgetBadgeValue}>Unlimited</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.budgetDollar}>$</Text>
+                      <Text style={styles.budgetBadgeValue}>{maxBudget.toLocaleString()}</Text>
+                    </>
+                  )}
                 </View>
               </View>
             </View>
@@ -827,7 +817,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             <Slider
               style={styles.slider}
               minimumValue={0}
-              maximumValue={50000}
+              maximumValue={10000}
               step={50}
               value={minBudget}
               onValueChange={(v) => setMinBudget(Math.min(v, maxBudget - 50))}
@@ -839,7 +829,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             <Slider
               style={styles.slider}
               minimumValue={0}
-              maximumValue={50000}
+              maximumValue={10000}
               step={50}
               value={maxBudget}
               onValueChange={(v) => setMaxBudget(Math.max(v, minBudget + 50))}
@@ -853,8 +843,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 6: Room type (auto-advance)
-      case 6:
+      // 7: Room type (auto-advance)
+      case 7:
         return (
           <View style={styles.chipArea}>
             {[
@@ -873,8 +863,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 7: Move-in date
-      case 7: {
+      // 8: Move-in date
+      case 8: {
         const moveInOptions = [
           { label: 'ASAP', months: 0 },
           { label: '1 month', months: 1 },
@@ -908,8 +898,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
         );
       }
 
-      // 8: Cleanliness (auto-advance)
-      case 8:
+      // 9: Cleanliness (auto-advance)
+      case 9:
         return (
           <View style={styles.scaleArea}>
             <View style={styles.scaleLabels}>
@@ -933,8 +923,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 9: Work schedule (auto-advance)
-      case 9:
+      // 10: Work schedule (auto-advance)
+      case 10:
         return (
           <View style={styles.chipArea}>
             {[
@@ -956,8 +946,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 10: Social vibe (auto-advance)
-      case 10:
+      // 11: Social vibe (auto-advance)
+      case 11:
         return (
           <View style={styles.chipArea}>
             {[
@@ -978,8 +968,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 11: Pets & Smoking
-      case 11:
+      // 12: Pets & Smoking
+      case 12:
         return (
           <View style={styles.yesNoArea}>
             <View style={styles.yesNoRow}>
@@ -999,8 +989,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
         );
 
-      // 12: Dealbreakers (card sub-flow — one question at a time)
-      case 12:
+      // 13: Dealbreakers (card sub-flow — one question at a time)
+      case 13:
         return (
           <Animated.View style={[styles.dbCardArea, { transform: [{ scale: dbCardAnim }] }]}>
             {/* Sub-progress dots */}
@@ -1035,8 +1025,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </Animated.View>
         );
 
-      // 13: Interests
-      case 13:
+      // 14: Interests
+      case 14:
         return (
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {INTEREST_CATEGORIES.map(({ key, label, options }) => {
@@ -1094,8 +1084,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </ScrollView>
         );
 
-      // 14: Prompts (scrollable list)
-      case 14: {
+      // 15: Prompts (scrollable list)
+      case 15: {
         const answered = promptAnswers.filter((p) => p.answer.trim()).length;
         const maxDone = answered >= 3;
         const counterText = answered === 0
@@ -1191,8 +1181,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
         );
       }
 
-      // 15: Photos
-      case 15:
+      // 16: Photos
+      case 16:
         return (
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
             <PublicProfileCard
@@ -1220,8 +1210,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </ScrollView>
         );
 
-      // 16: Listing (optional)
-      case 16:
+      // 17: Listing (optional)
+      case 17:
         return (
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={styles.chipRow}>
@@ -1251,13 +1241,13 @@ export default function OnboardingScreen({ onComplete }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   const isLastStep = step === TOTAL_STEPS - 1;
-  const progress = step === 12
-    ? (12 + (dbStep + 1) / DEALBREAKER_ITEMS.length) / TOTAL_STEPS
+  const progress = step === 13
+    ? (13 + (dbStep + 1) / DEALBREAKER_ITEMS.length) / TOTAL_STEPS
     : (step + 1) / TOTAL_STEPS;
-  const StepIcon  = step === 12 ? null : STEPS[step].icon;
-  const question  = step === 12 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step].question;
-  const subtitle  = step === 12 ? `${dbStep + 1} of ${DEALBREAKER_ITEMS.length}` : STEPS[step].subtitle;
-  const isScrollStep = step > 12;
+  const StepIcon  = step === 13 ? null : STEPS[step].icon;
+  const question  = step === 13 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step].question;
+  const subtitle  = step === 13 ? `${dbStep + 1} of ${DEALBREAKER_ITEMS.length}` : STEPS[step].subtitle;
+  const isScrollStep = step > 13;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -1290,7 +1280,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         </View>
 
         {/* ── Question block — hidden in prompt answer mode ── */}
-        <View style={[styles.questionBlock, step === 14 && { paddingBottom: 8 }]}>
+        <View style={[styles.questionBlock, step === 15 && { paddingBottom: 8 }]}>
           {StepIcon && <StepIcon size={52} color={D.lime} weight="duotone" />}
           <Text style={styles.stepQuestion}>{question}</Text>
           <Text style={styles.stepSubtitle}>{subtitle}</Text>
