@@ -1,6 +1,5 @@
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -9,9 +8,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { blockUser, reportUser } from '../lib/blockReport';
+import { unmatchPeer } from '../lib/unmatch';
 
 const REASONS = [
   'Fake profile',
@@ -43,11 +43,24 @@ export default function BlockReportModal({
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);
+  const [panel, setPanel] = useState<'report' | 'block_confirm' | 'report_success'>('report');
+  const [inlineError, setInlineError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setPanel('report');
+    setInlineError(null);
+    setBusy(false);
+    setSelectedReason(null);
+    setDetails('');
+  }, [visible]);
 
   function reset() {
     setSelectedReason(null);
     setDetails('');
     setBusy(false);
+    setPanel('report');
+    setInlineError(null);
   }
 
   function handleClose() {
@@ -58,37 +71,30 @@ export default function BlockReportModal({
   async function handleReport() {
     if (!selectedReason) return;
     setBusy(true);
+    setInlineError(null);
     const { success, error } = await reportUser(reporterId, reportedId, selectedReason, details);
     setBusy(false);
     if (!success) {
-      Alert.alert('Error', error ?? 'Could not submit report. Try again.');
+      setInlineError(error ?? 'Could not submit report. Try again.');
+      return;
+    }
+    setPanel('report_success');
+  }
+
+  async function confirmBlock() {
+    setBusy(true);
+    setInlineError(null);
+    const { error: uErr } = await unmatchPeer(reportedId);
+    if (uErr && __DEV__) console.warn('unmatchPeer before block:', uErr);
+    const { success, error: bErr } = await blockUser(reporterId, reportedId);
+    setBusy(false);
+    if (!success) {
+      setInlineError(bErr ?? 'Could not block. Try again.');
       return;
     }
     reset();
     onClose();
-    Alert.alert('Report submitted', 'Thanks for keeping RoomPear safe. We\'ll review this shortly.');
-  }
-
-  async function handleBlock() {
-    Alert.alert(
-      `Block ${reportedName}?`,
-      "They won't appear in your discover and you won't appear in theirs.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            await blockUser(reporterId, reportedId);
-            setBusy(false);
-            reset();
-            onClose();
-            onBlocked();
-          },
-        },
-      ]
-    );
+    onBlocked();
   }
 
   return (
@@ -100,73 +106,126 @@ export default function BlockReportModal({
     >
       <View style={[styles.root, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.cancel}>Cancel</Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (panel === 'block_confirm') {
+                setPanel('report');
+                setInlineError(null);
+                return;
+              }
+              handleClose();
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.cancel}>{panel === 'block_confirm' ? 'Back' : 'Cancel'}</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Report {reportedName}</Text>
+          <Text style={styles.title}>
+            {panel === 'block_confirm'
+              ? `Block ${reportedName}`
+              : panel === 'report_success'
+                ? 'Thanks'
+                : `Report ${reportedName}`}
+          </Text>
           <View style={{ width: 56 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionLabel}>Why are you reporting this profile?</Text>
-          <View style={styles.reasonsGroup}>
-            {REASONS.map((reason, i) => (
-              <TouchableOpacity
-                key={reason}
-                style={[
-                  styles.reasonRow,
-                  i < REASONS.length - 1 && styles.reasonDivider,
-                  selectedReason === reason && styles.reasonRowSelected,
-                ]}
-                onPress={() => setSelectedReason(reason)}
-              >
-                <Text style={[styles.reasonText, selectedReason === reason && styles.reasonTextSelected]}>
-                  {reason}
-                </Text>
-                <View style={[styles.radio, selectedReason === reason && styles.radioSelected]}>
-                  {selectedReason === reason && <View style={styles.radioDot} />}
-                </View>
-              </TouchableOpacity>
-            ))}
+        {panel === 'block_confirm' ? (
+          <View style={styles.body}>
+            <Text style={styles.confirmBlockBody}>
+              They will not appear in your discover and you will not appear in theirs until you unblock them from your
+              profile.
+            </Text>
+            {inlineError ? <Text style={styles.inlineError}>{inlineError}</Text> : null}
+            <TouchableOpacity
+              style={[styles.submitBtn, styles.blockConfirmBtn, busy && styles.submitBtnDisabled]}
+              onPress={confirmBlock}
+              disabled={busy}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitBtnText}>Block {reportedName}</Text>
+              )}
+            </TouchableOpacity>
           </View>
-
-          <Text style={styles.sectionLabel}>Additional details (optional)</Text>
-          <TextInput
-            style={styles.detailsInput}
-            placeholder="Describe what happened…"
-            placeholderTextColor="#A0A8A4"
-            multiline
-            numberOfLines={4}
-            value={details}
-            onChangeText={setDetails}
-            maxLength={500}
-          />
-
-          <TouchableOpacity
-            style={[styles.submitBtn, !selectedReason && styles.submitBtnDisabled]}
-            onPress={handleReport}
-            disabled={!selectedReason || busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitBtnText}>Submit report</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerLabel}>or</Text>
-            <View style={styles.dividerLine} />
+        ) : panel === 'report_success' ? (
+          <View style={styles.body}>
+            <Text style={styles.successTitle}>Report submitted</Text>
+            <Text style={styles.successBody}>Thanks for keeping RoomPear safe. We will review this shortly.</Text>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleClose}>
+              <Text style={styles.submitBtnText}>Done</Text>
+            </TouchableOpacity>
           </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+            {inlineError ? <Text style={styles.inlineError}>{inlineError}</Text> : null}
+            <Text style={styles.sectionLabel}>Why are you reporting this profile?</Text>
+            <View style={styles.reasonsGroup}>
+              {REASONS.map((reason, i) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[
+                    styles.reasonRow,
+                    i < REASONS.length - 1 && styles.reasonDivider,
+                    selectedReason === reason && styles.reasonRowSelected,
+                  ]}
+                  onPress={() => setSelectedReason(reason)}
+                >
+                  <Text style={[styles.reasonText, selectedReason === reason && styles.reasonTextSelected]}>
+                    {reason}
+                  </Text>
+                  <View style={[styles.radio, selectedReason === reason && styles.radioSelected]}>
+                    {selectedReason === reason && <View style={styles.radioDot} />}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          <TouchableOpacity style={styles.blockBtn} onPress={handleBlock} disabled={busy}>
-            <Text style={styles.blockBtnText}>Block {reportedName}</Text>
-          </TouchableOpacity>
-          <Text style={styles.blockHelp}>
-            Blocking removes them from your discover deck and hides you from theirs.
-          </Text>
-        </ScrollView>
+            <Text style={styles.sectionLabel}>Additional details (optional)</Text>
+            <TextInput
+              style={styles.detailsInput}
+              placeholder="Describe what happened…"
+              placeholderTextColor="#A0A8A4"
+              multiline
+              numberOfLines={4}
+              value={details}
+              onChangeText={setDetails}
+              maxLength={500}
+            />
+
+            <TouchableOpacity
+              style={[styles.submitBtn, !selectedReason && styles.submitBtnDisabled]}
+              onPress={handleReport}
+              disabled={!selectedReason || busy}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitBtnText}>Submit report</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerLabel}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.blockBtn}
+              onPress={() => {
+                setInlineError(null);
+                setPanel('block_confirm');
+              }}
+              disabled={busy}
+            >
+              <Text style={styles.blockBtnText}>Block {reportedName}</Text>
+            </TouchableOpacity>
+            <Text style={styles.blockHelp}>
+              Blocking removes them from your discover deck and hides you from theirs.
+            </Text>
+          </ScrollView>
+        )}
       </View>
     </Modal>
   );
@@ -272,5 +331,32 @@ const styles = StyleSheet.create({
     color: '#A0A8A4',
     textAlign: 'center',
     marginTop: 4,
+  },
+  inlineError: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#D4183D',
+    marginBottom: 12,
+  },
+  confirmBlockBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#717182',
+    marginBottom: 20,
+  },
+  blockConfirmBtn: {
+    backgroundColor: '#D4183D',
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A2C24',
+    marginBottom: 10,
+  },
+  successBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#717182',
+    marginBottom: 24,
   },
 });

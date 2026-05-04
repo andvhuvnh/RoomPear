@@ -16,7 +16,10 @@ type Props = {
   onBack: () => void;
   topInset: number;
   backAccessibilityLabel?: string;
+  /** Flag icon — e.g. Discover card report. */
   onReport?: () => void;
+  /** Ellipsis menu — e.g. Chat safety (unmatch / report / block). */
+  onMenu?: () => void;
 };
 
 /** Floating back + title pills (matches Chat screen) — overlay on scroll content. */
@@ -26,6 +29,7 @@ export function ChatStyleTopBar({
   topInset,
   backAccessibilityLabel = 'Go back',
   onReport,
+  onMenu,
 }: Props) {
   return (
     <View style={[styles.wrap, { paddingTop: topInset }]} pointerEvents="box-none">
@@ -48,7 +52,16 @@ export function ChatStyleTopBar({
           </View>
         </View>
 
-        {onReport ? (
+        {onMenu ? (
+          <TouchableOpacity
+            onPress={onMenu}
+            style={styles.roundBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            accessibilityLabel="More options"
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={CHATS_GREEN} />
+          </TouchableOpacity>
+        ) : onReport ? (
           <TouchableOpacity
             onPress={onReport}
             style={styles.roundBtn}
