@@ -31,7 +31,8 @@ import {
 import { recordSwipe } from '../lib/discover';
 import { isSameLaCalendarDay } from '../lib/usageDay';
 import { usePurchases } from '../context/PurchasesContext';
-import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
+import { hasRoomPearPlusEntitlement } from '../lib/purchasesConfig';
+import { fetchProfileIsPremium } from '../lib/profileSubscriptionTier';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import type { LikesStackParamList } from '../navigation/LikesStack';
 import {
@@ -187,12 +188,7 @@ export default function LikesScreen() {
     setUserId(uid);
     // Always re-sync subscription (DB + RC) on every load — must run *before* the stale-focus
     // short-circuit or premium users can stay stuck on blurred / “reveal” UI after purchase.
-    const { data: tierRow } = await supabase
-      .from('profiles')
-      .select('subscription_tier')
-      .eq('id', uid)
-      .maybeSingle();
-    const isPremiumTier = isPremiumProfileTier(tierRow?.subscription_tier as string | undefined);
+    const isPremiumTier = await fetchProfileIsPremium(uid);
     setHasPremiumTier(isPremiumTier);
     const hasPremiumAccess = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || isPremiumTier;
     if (hasPremiumAccess && likersRef.current.length > 0) {
@@ -237,6 +233,19 @@ export default function LikesScreen() {
     if (likers.length === 0) return;
     setRevealedIds(new Set(likers.map((l) => l.id)));
   }, [userId, customerInfo, isRoomPearPlus, hasPremiumTier, likers]);
+
+  /** Keep `profiles.subscription_tier` in sync when RevenueCat updates (purchase / restore) without leaving the tab. */
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void (async () => {
+      const premium = await fetchProfileIsPremium(userId);
+      if (!cancelled) setHasPremiumTier(premium);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, customerInfo]);
 
   useFocusEffect(
     useCallback(() => {

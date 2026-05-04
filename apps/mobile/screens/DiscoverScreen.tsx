@@ -12,19 +12,20 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { DotsThreeVertical } from 'phosphor-react-native';
 import { supabase } from '../lib/supabase';
-import { fetchDiscoverProfiles, recordSwipe, type DiscoverProfile } from '../lib/discover';
+import { recordSwipe } from '../lib/discover';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { getDiscoverUsage } from '../lib/dailyDiscoverUsage';
 import { FREE_TIER_LIMITS, PREMIUM_TIER_LIMITS } from '../lib/freeTierLimits';
 import { usePurchases } from '../context/PurchasesContext';
-import { hasRoomPearPlusEntitlement, isPremiumProfileTier } from '../lib/purchasesConfig';
+import { useDiscoverDeck } from '../context/DiscoverDeckContext';
 import SwipeCard from '../components/SwipeCard';
 import DiscoverFiltersModal from '../components/DiscoverFiltersModal';
 import BlockReportModal from '../components/BlockReportModal';
@@ -85,17 +86,22 @@ function Background({ children }: { children: React.ReactNode }) {
 
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
-  const { isRoomPearPlus, customerInfo, presentPaywall } = usePurchases();
-  const [hasPremiumTier, setHasPremiumTier] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { presentPaywall } = usePurchases();
+  const {
+    userId,
+    profiles,
+    currentIndex,
+    setCurrentIndex,
+    deckInitialLoading,
+    hasPremiumAccess,
+    refreshDeck,
+    removeProfileFromDeck,
+  } = useDiscoverDeck();
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | null>(null);
   const [myHobbies, setMyHobbies] = useState<string[]>([]);
-  const [profiles, setProfiles] = useState<DiscoverProfile[]>([]);
   const [hasActiveRadiusFilter, setHasActiveRadiusFilter] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [actionDisabled, setActionDisabled] = useState(false);
   const [matchData, setMatchData] = useState<MatchData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
   const [isPaused, setIsPaused] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -104,7 +110,6 @@ export default function DiscoverScreen() {
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
-  const hasPremiumAccess = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || hasPremiumTier;
 
   const refreshDailyUsage = useCallback(async (uid: string) => {
     const u = await getDiscoverUsage(uid);
@@ -116,54 +121,49 @@ export default function DiscoverScreen() {
   }, [hasPremiumAccess, presentPaywall]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      const uid = data.session?.user.id ?? null;
-      setUserId(uid);
-      if (uid) {
-        const { data: tierRow } = await supabase
-          .from('profiles')
-          .select('subscription_tier')
-          .eq('id', uid)
-          .maybeSingle();
-        const isPremiumTier = isPremiumProfileTier(tierRow?.subscription_tier as string | undefined);
-        setHasPremiumTier(isPremiumTier);
-        const hasPremiumAtLoad = hasRoomPearPlusEntitlement(customerInfo) || isRoomPearPlus || isPremiumTier;
-        loadProfiles(uid, hasPremiumAtLoad);
-        const { data: me } = await supabase
-          .from('profiles')
-          .select('profile_photo_url, hobbies, is_paused')
-          .eq('id', uid)
-          .single();
-        setIsPaused(me?.is_paused === true);
-        if (me?.profile_photo_url) {
-          const paths = profilePhotoPathsFromRow(me.profile_photo_url);
-          if (paths[0]) {
-            const urls = await getProfileImageUrls(me.profile_photo_url);
-            setMyPhotoUrl(urls?.[0] ?? null);
-          }
+    let cancelled = false;
+    (async () => {
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('profile_photo_url, hobbies, is_paused')
+        .eq('id', userId)
+        .single();
+      if (cancelled) return;
+      setIsPaused(me?.is_paused === true);
+      if (me?.profile_photo_url) {
+        const paths = profilePhotoPathsFromRow(me.profile_photo_url);
+        if (paths[0]) {
+          const urls = await getProfileImageUrls(me.profile_photo_url);
+          if (!cancelled) setMyPhotoUrl(urls?.[0] ?? null);
+        } else {
+          setMyPhotoUrl(null);
         }
-        const { data: myPrefs } = await supabase
-          .from('preferences')
-          .select('interests, search_lat, search_lng, search_radius_miles')
-          .eq('user_id', uid)
-          .single();
-        const radiusMiles = myPrefs?.search_radius_miles;
-        const radiusEnabled =
-          myPrefs?.search_lat != null &&
-          myPrefs?.search_lng != null &&
-          Number.isFinite(radiusMiles) &&
-          radiusMiles > 0;
-        setHasActiveRadiusFilter(radiusEnabled);
-        const interestChips = Object.values(myPrefs?.interests ?? {}).flat() as string[];
-        setMyHobbies(
-          interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : [])
-        );
-        refreshDailyUsage(uid);
       } else {
-        setHasPremiumTier(false);
+        setMyPhotoUrl(null);
       }
-    });
-  }, [isRoomPearPlus, customerInfo, refreshDailyUsage]);
+      const { data: myPrefs } = await supabase
+        .from('preferences')
+        .select('interests, search_lat, search_lng, search_radius_miles')
+        .eq('user_id', userId)
+        .single();
+      if (cancelled) return;
+      const radiusMiles = myPrefs?.search_radius_miles;
+      const radiusEnabled =
+        myPrefs?.search_lat != null &&
+        myPrefs?.search_lng != null &&
+        Number.isFinite(radiusMiles) &&
+        radiusMiles > 0;
+      setHasActiveRadiusFilter(radiusEnabled);
+      const interestChips = Object.values(myPrefs?.interests ?? {}).flat() as string[];
+      setMyHobbies(
+        interestChips.length > 0 ? interestChips : (Array.isArray(me?.hobbies) ? me.hobbies : [])
+      );
+      await refreshDailyUsage(userId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, refreshDailyUsage]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,18 +178,14 @@ export default function DiscoverScreen() {
     }, [userId, refreshDailyUsage])
   );
 
-  async function loadProfiles(uid: string, hasPremiumAccess = false) {
-    setLoading(true);
-    const data = await fetchDiscoverProfiles(uid, 10, { useAdvancedFilters: hasPremiumAccess, isPremium: hasPremiumAccess });
-    setProfiles(data);
-    setCurrentIndex(0);
+  const reloadDiscoverVisual = useCallback(async () => {
     translateX.setValue(0);
     translateY.setValue(0);
     cardOpacity.setValue(1);
-    setLoading(false);
-  }
+    await refreshDeck();
+  }, [refreshDeck, translateX, translateY, cardOpacity]);
 
-  function animateOut(direction: Action, onDone: () => void) {
+  function animateOut(direction: Action, onFlyAwayComplete: () => void) {
     const toX =
       direction === 'like' ? SCREEN_WIDTH * 1.5
       : direction === 'pass' ? -SCREEN_WIDTH * 1.5
@@ -202,8 +198,8 @@ export default function DiscoverScreen() {
     ]).start(() => {
       translateX.setValue(0);
       translateY.setValue(0);
-      cardOpacity.setValue(1);
-      onDone();
+      // Keep opacity at 0 until the next profile is committed + faded in (avoids flashing the old card while recordSwipe runs).
+      onFlyAwayComplete();
     });
   }
 
@@ -228,23 +224,33 @@ export default function DiscoverScreen() {
 
     setActionDisabled(true);
     const current = profiles[currentIndex];
-    animateOut(direction, async () => {
-      if (current && userId) {
-        const { isMatch } = await recordSwipe(userId, current.id, direction);
-        if (isMatch) {
-          const sharedInterests = myHobbies.filter(h => (current.hobbies ?? []).includes(h));
-          setMatchData({
-            name: current.name,
-            otherUserId: current.id,
-            theirPhotoUrl: current.photoUrls?.[0] ?? null,
-            myPhotoUrl,
-            sharedInterests,
-          });
-        }
-        await refreshDailyUsage(userId);
-      }
+    animateOut(direction, () => {
       setCurrentIndex(prev => prev + 1);
-      setActionDisabled(false);
+      Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => {
+        setActionDisabled(false);
+      });
+
+      void (async () => {
+        if (!current || !userId) {
+          await refreshDailyUsage(userId);
+          return;
+        }
+        try {
+          const { isMatch } = await recordSwipe(userId, current.id, direction);
+          if (isMatch) {
+            const sharedInterests = myHobbies.filter(h => (current.hobbies ?? []).includes(h));
+            setMatchData({
+              name: current.name,
+              otherUserId: current.id,
+              theirPhotoUrl: current.photoUrls?.[0] ?? null,
+              myPhotoUrl,
+              sharedInterests,
+            });
+          }
+        } finally {
+          await refreshDailyUsage(userId);
+        }
+      })();
     });
   }
 
@@ -265,8 +271,15 @@ export default function DiscoverScreen() {
   const nextProfile = profiles[currentIndex + 1];
   const remaining = profiles.length - currentIndex;
 
+  useEffect(() => {
+    if (!nextProfile) return;
+    const count = nextProfile.profilePhotoCount || nextProfile.photoUrls.length;
+    const urls = nextProfile.photoUrls.slice(0, Math.min(4, Math.max(0, count)));
+    if (urls.length === 0) return;
+    void ExpoImage.prefetch(urls, 'memory-disk');
+  }, [nextProfile?.id]);
 
-  if (loading) {
+  if (deckInitialLoading) {
     return (
       <Background>
         <View style={styles.centered}>
@@ -318,7 +331,7 @@ export default function DiscoverScreen() {
           </Text>
           <TouchableOpacity
             style={styles.refreshBtn}
-            onPress={() => userId && loadProfiles(userId, hasPremiumAccess)}
+            onPress={() => void reloadDiscoverVisual()}
           >
             <Text style={styles.refreshBtnText}>Refresh</Text>
           </TouchableOpacity>
@@ -336,7 +349,7 @@ export default function DiscoverScreen() {
             visible={filtersOpen}
             userId={userId}
             onClose={() => setFiltersOpen(false)}
-            onApply={() => userId && loadProfiles(userId, hasPremiumAccess)}
+            onApply={() => void reloadDiscoverVisual()}
             isPremium={hasPremiumAccess}
             onUpgrade={openPaywallIfNeeded}
           />
@@ -379,7 +392,7 @@ export default function DiscoverScreen() {
           {/* Back card */}
           {nextProfile && (
             <View style={styles.backCardWrap} pointerEvents="none">
-              <SwipeCard profile={nextProfile} />
+              <SwipeCard key={`deck-back-${nextProfile.id}`} profile={nextProfile} />
             </View>
           )}
 
@@ -391,6 +404,7 @@ export default function DiscoverScreen() {
             ]}
           >
             <SwipeCard
+              key={`deck-front-${currentProfile.id}`}
               profile={currentProfile}
               onPass={() => handleAction('pass')}
               onLike={() => handleAction('like')}
@@ -413,7 +427,7 @@ export default function DiscoverScreen() {
           visible={filtersOpen}
           userId={userId}
           onClose={() => setFiltersOpen(false)}
-          onApply={() => userId && loadProfiles(userId, hasPremiumAccess)}
+          onApply={() => void reloadDiscoverVisual()}
           isPremium={hasPremiumAccess}
           onUpgrade={openPaywallIfNeeded}
         />
@@ -479,8 +493,9 @@ export default function DiscoverScreen() {
           reportedName={reportTarget.name}
           onClose={() => setReportTarget(null)}
           onBlocked={() => {
+            const id = reportTarget?.id;
             setReportTarget(null);
-            setCurrentIndex(i => i + 1);
+            if (id) removeProfileFromDeck(id);
           }}
         />
       )}
