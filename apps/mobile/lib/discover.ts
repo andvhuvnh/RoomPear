@@ -99,7 +99,12 @@ async function getNearbyCandidateIds(
 export async function fetchDiscoverProfiles(
   userId: string,
   limit = 10,
-  options?: { useAdvancedFilters?: boolean; isPremium?: boolean }
+  options?: {
+    useAdvancedFilters?: boolean;
+    isPremium?: boolean;
+    /** Already in the deck (or otherwise excluded) — merged with swipes/blocks for this fetch. */
+    excludeIds?: string[];
+  }
 ): Promise<DiscoverProfile[]> {
   // Fetch viewer's own preferences for filtering + scoring
   const myPrefs = await getPreferences(userId);
@@ -118,7 +123,9 @@ export async function fetchDiscoverProfiles(
   ]);
 
   const swipedIds = swipedRows?.map((r: any) => r.swiped_id) ?? [];
-  const excludedIds = Array.from(new Set([...swipedIds, ...blockedIds]));
+  const excludedIds = Array.from(
+    new Set([...swipedIds, ...blockedIds, ...(options?.excludeIds ?? [])])
+  );
 
   // Fetch a larger candidate pool so filtering still leaves enough results
   let query = supabase

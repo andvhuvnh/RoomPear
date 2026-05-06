@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePurchases } from '../context/PurchasesContext';
+import { useDiscoverDeck } from '../context/DiscoverDeckContext';
 import { formatPlanLabel, SUBSCRIPTION_TIER_PREMIUM } from '../lib/purchasesConfig';
 import { setDevPremiumForced } from '../lib/devPremiumOverride';
 import { supabase } from '../lib/supabase';
@@ -102,6 +103,7 @@ export default function UserProfileScreen({ route }: Props) {
     presentCustomerCenter,
     logoutPurchases,
   } = usePurchases();
+  const { syncPremiumFromDatabase } = useDiscoverDeck();
   /** Pull dock flush with tab bar — tab scenes often leave a gap above the bar. */
   const profileSheetDockBottom = -Math.min(insets.bottom + 18, 36);
   const { width: windowWidth } = useWindowDimensions();
@@ -732,6 +734,7 @@ export default function UserProfileScreen({ route }: Props) {
         return;
       }
       await loadProfile(user.id);
+      await syncPremiumFromDatabase();
       // Do not call refreshCustomerInfo() when enabling premium: it syncs RC → DB as free without a purchase.
       if (!premiumEnabled) {
         await refreshCustomerInfo();

@@ -22,6 +22,7 @@ import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
 import { PurchasesProvider } from './context/PurchasesContext';
+import { DiscoverDeckProvider } from './context/DiscoverDeckContext';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -122,9 +123,11 @@ export default function App() {
         )}
         {appState === 'home' && session?.user && (
           <PurchasesProvider userId={session.user.id}>
-            <NavigationContainer>
-              <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-            </NavigationContainer>
+            <DiscoverDeckProvider userId={session.user.id}>
+              <NavigationContainer>
+                <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
+              </NavigationContainer>
+            </DiscoverDeckProvider>
           </PurchasesProvider>
         )}
       </SafeAreaProvider>

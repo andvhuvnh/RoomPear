@@ -1,8 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  Image,
   FlatList,
   ScrollView,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
   type NativeScrollEvent,
   type ListRenderItemInfo,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, ArrowCounterClockwise, X, Star, Heart, Flag } from 'phosphor-react-native';
 import type { DiscoverProfile } from '../lib/discover';
@@ -48,6 +48,12 @@ export default function SwipeCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const listRef = useRef<FlatList<string>>(null);
 
+  useEffect(() => {
+    setPhotoTab('profile');
+    setPhotoIndex(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [profile.id]);
+
   const profilePhotos = profile.photoUrls.slice(0, profile.profilePhotoCount);
   const listingPhotos = profile.photoUrls.slice(profile.profilePhotoCount);
   const activePhotos = photoTab === 'profile' ? profilePhotos : listingPhotos;
@@ -68,13 +74,16 @@ export default function SwipeCard({
 
   const renderPhoto = useCallback(
     ({ item }: ListRenderItemInfo<string>) => (
-      <Image
+      <ExpoImage
         source={{ uri: item }}
         style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
-        resizeMode="cover"
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        transition={0}
+        recyclingKey={`${profile.id}-${item}`}
       />
     ),
-    []
+    [profile.id]
   );
 
   const firstName = profile.name.split(' ')[0];
@@ -99,10 +108,10 @@ export default function SwipeCard({
         ) : (
           <>
             <FlatList
-              key={photoTab}
+              key={`${profile.id}-${photoTab}`}
               ref={listRef}
               data={activePhotos}
-              keyExtractor={(_, i) => `${photoTab}-${i}`}
+              keyExtractor={(_, i) => `${profile.id}-${photoTab}-${i}`}
               renderItem={renderPhoto}
               horizontal
               pagingEnabled
