@@ -56,6 +56,7 @@ import { BlurView } from 'expo-blur';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { fonts } from '../lib/typography';
 import Slider from '@react-native-community/slider';
 import { savePreferences } from '../lib/preferences';
 import { uploadStagedPhotosAndMerge } from '../lib/profilePhotos';
@@ -1285,13 +1286,17 @@ export default function OnboardingScreen({ onComplete }: Props) {
   // ── Step 0: Name — Lovable-style light layout ─────────────────────────────
   if (step === 0) {
     return (
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: '#C8EAC0' }}>
         <LinearGradient
-          colors={['#B8DCAC', '#C4DCA0', '#D2D478']}
+          colors={['#C8EAC0', '#D4EEB8', '#E2EC9A']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
+        {/* Pear-colored ambient blobs */}
+        <View style={{ position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: '#E8B84B', opacity: 0.15, top: -60, right: -60 }} />
+        <View style={{ position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#D4A028', opacity: 0.12, bottom: 80, left: -60 }} />
+        <View style={{ position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: '#F0C860', opacity: 0.10, bottom: 260, right: 20 }} />
       <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={['top', 'bottom']}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
           <View style={{ flex: 1 }}>
@@ -2093,20 +2098,22 @@ const s0 = StyleSheet.create({
   },
   stepBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fonts.extraBold,
     color: '#2D4A35',
     letterSpacing: 0.8,
   },
 
   heading: {
-    fontSize: 40,
-    fontWeight: '800',
+    fontSize: 38,
+    fontFamily: fonts.extraBold,
     color: '#1A2C24',
-    lineHeight: 46,
-    marginBottom: 14,
+    lineHeight: 40,
+    marginBottom: 10,
+    letterSpacing: -0.5,
   },
   subheading: {
     fontSize: 15,
+    fontFamily: fonts.regular,
     color: '#4A6A58',
     lineHeight: 22,
   },
@@ -2118,7 +2125,7 @@ const s0 = StyleSheet.create({
     paddingHorizontal: 0,
     paddingVertical: 10,
     fontSize: 26,
-    fontWeight: '600',
+    fontFamily: fonts.semiBold,
     color: '#1A2C24',
   },
   inputHint: {
@@ -2148,7 +2155,7 @@ const s0 = StyleSheet.create({
   },
   continueBtnText: {
     fontSize: 17,
-    fontWeight: '600',
+    fontFamily: fonts.semiBold,
     color: '#FFFFFF',
   },
   continueBtnTextDim: {
