@@ -29,14 +29,17 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+
   ScrollView,
   KeyboardAvoidingView,
+  Easing,
   Platform,
   Alert,
   ActivityIndicator,
   Image,
   Modal,
   FlatList,
+  Keyboard,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,6 +50,7 @@ import {
   Prohibit, MusicNote, Sun, Moon, Bed,
   XCircle, MinusCircle, CheckCircle,
 } from 'phosphor-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
@@ -362,6 +366,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [dbStep, setDbStep] = useState(0);
   const [dbSelected, setDbSelected] = useState<DealbreakerLevel | null>(null);
   const dbCardAnim = useRef(new Animated.Value(1)).current;
+  const logoBobAnim = useRef(new Animated.Value(0)).current;
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Step 14: Interests
   const [interests, setInterests] = useState<Record<string, string[]>>(
     Object.fromEntries(INTEREST_CATEGORIES.map((c) => [c.key, [] as string[]]))
@@ -391,6 +397,27 @@ export default function OnboardingScreen({ onComplete }: Props) {
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
     };
   }, []);
+
+  // ── Keyboard height tracking ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', e => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // ── Logo bob animation (step 0) ─────────────────────────────────────────────
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoBobAnim, { toValue: -6, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(logoBobAnim, { toValue: 0,  duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [logoBobAnim]);
 
   // ── Auto-advance ────────────────────────────────────────────────────────────
 
@@ -1240,6 +1267,12 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  const PHASE_LABEL =
+    step <= 4  ? 'ABOUT YOU' :
+    step <= 8  ? 'YOUR SPACE' :
+    step <= 13 ? 'YOUR VIBE' :
+                 'YOUR STORY';
+
   const isLastStep = step === TOTAL_STEPS - 1;
   const progress = step === 13
     ? (13 + (dbStep + 1) / DEALBREAKER_ITEMS.length) / TOTAL_STEPS
@@ -1248,6 +1281,85 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const question  = step === 13 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step].question;
   const subtitle  = step === 13 ? `${dbStep + 1} of ${DEALBREAKER_ITEMS.length}` : STEPS[step].subtitle;
   const isScrollStep = step > 13;
+
+  // ── Step 0: Name — Lovable-style light layout ─────────────────────────────
+  if (step === 0) {
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient
+          colors={['#B8DCAC', '#C4DCA0', '#D2D478']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+          <View style={{ flex: 1 }}>
+
+
+              {/* ── Floating logo card ── */}
+              <Animated.View style={[s0.logoWrap, { transform: [{ translateY: logoBobAnim }] }]}>
+                <View style={s0.logoCard}>
+                  <Image
+                    source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+                    style={s0.logoImg}
+                    resizeMode="contain"
+                  />
+                </View>
+              </Animated.View>
+
+              {/* ── Phase badge ── */}
+              <View style={{ paddingHorizontal: 24, marginBottom: 16, marginTop: -16 }}>
+                <View style={s0.stepBadge}>
+                  <View style={s0.stepBadgeDot} />
+                  <Text style={s0.stepBadgeText}>{PHASE_LABEL}</Text>
+                </View>
+              </View>
+
+              {/* ── Heading + subtitle ── */}
+              <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+                <Text style={s0.heading}>
+                  {name.trim() ? `Hey,\n${name.trim()}!` : 'What should\nwe call you?'}
+                </Text>
+                <Text style={s0.subheading}>
+                  Your name is what your future roommates will see.
+                </Text>
+              </View>
+
+              {/* ── Input ── */}
+              <View style={{ paddingHorizontal: 24 }}>
+                <TextInput
+                  style={s0.input}
+                  placeholder="Your name"
+                  placeholderTextColor="rgba(45,74,53,0.4)"
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => canAdvance() && handleNext()}
+                />
+              </View>
+
+            </View>
+          </KeyboardAvoidingView>
+
+        {/* ── Continue button — absolutely above keyboard, always visible ── */}
+        <TouchableOpacity
+          style={[s0.continueBtn, !name.trim() && s0.continueBtnDim, { position: 'absolute', right: 24, bottom: keyboardHeight + 24 }]}
+          onPress={handleNext}
+          disabled={!canAdvance() || saving}
+          activeOpacity={0.85}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Ionicons name="arrow-forward" size={24} color={name.trim() ? '#fff' : 'rgba(255,255,255,0.5)'} />
+          }
+        </TouchableOpacity>
+      </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -1274,15 +1386,34 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </TouchableOpacity>
           <View style={styles.progressWrap}>
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
+              <LinearGradient
+                colors={['#4CAF50', '#81C784']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.progressFill, { width: `${progress * 100}%` as any }]}
+              />
             </View>
           </View>
+          <Text style={styles.stepCounter}>{step + 1} / {TOTAL_STEPS}</Text>
         </View>
 
+        {/* ── Floating logo on name step ── */}
+        {step === 0 && (
+          <Animated.View style={[styles.floatingLogo, { transform: [{ translateY: logoBobAnim }] }]}>
+            <Image
+              source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+              style={styles.floatingLogoImg}
+              resizeMode="contain"
+            />
+          </Animated.View>
+        )}
+
         {/* ── Question block — hidden in prompt answer mode ── */}
-        <View style={[styles.questionBlock, step === 15 && { paddingBottom: 8 }]}>
-          {StepIcon && <StepIcon size={52} color={D.lime} weight="duotone" />}
-          <Text style={styles.stepQuestion}>{question}</Text>
+        <View style={[styles.questionBlock, step === 15 && { paddingBottom: 8 }, step === 0 && { paddingTop: 0 }]}>
+          {StepIcon && step !== 0 && <StepIcon size={52} color={D.lime} weight="duotone" />}
+          <Text style={styles.stepQuestion}>
+            {step === 0 && name.trim() ? `Hey, ${name.trim()} 👋` : question}
+          </Text>
           <Text style={styles.stepSubtitle}>{subtitle}</Text>
         </View>
 
@@ -1358,7 +1489,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: { height: '100%', backgroundColor: D.lime, borderRadius: 3 },
-  stepCounter: { fontSize: 12, color: D.gray, fontWeight: '600', minWidth: 38, textAlign: 'right' },
+  stepCounter: { fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '600', minWidth: 38, textAlign: 'right' },
+
+  // Floating logo (step 0)
+  floatingLogo: { alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
+  floatingLogoImg: { width: 72, height: 72 },
 
   // Question block
   questionBlock: {
@@ -1426,7 +1561,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
-    borderWidth: 0,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.55)',
     backgroundColor: D.surface,
     marginRight: 8,
     marginBottom: 8,
@@ -1571,24 +1707,25 @@ const styles = StyleSheet.create({
   },
   skipBtn: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: 50,
+    paddingVertical: 17,
     alignItems: 'center',
-    backgroundColor: D.inputBg,
-    borderWidth: 0,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   skipBtnText: { fontSize: 16, fontWeight: '600', color: D.gray },
   nextBtn: {
     flex: 2,
-    borderRadius: 14,
-    paddingVertical: 16,
+    borderRadius: 50,
+    paddingVertical: 17,
     alignItems: 'center',
     backgroundColor: D.lime,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 5,
   },
   nextBtnFlex: { flex: 1 },
   nextBtnDisabled: { opacity: 0.35, shadowOpacity: 0 },
@@ -1873,4 +2010,154 @@ const styles = StyleSheet.create({
   budgetInputRow: { flexDirection: 'row', alignItems: 'center' },
   budgetDollar: { fontSize: 26, fontWeight: '800', color: '#1A3329' },
   slider: { width: '100%', height: 40 },
+});
+
+// ─── Step 0 styles (Lovable-match) ────────────────────────────────────────────
+const s0 = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  backCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segments: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 3,
+  },
+  segment: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
+  segmentActive: {
+    backgroundColor: '#3B6B44',
+  },
+  stepCount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2D4A35',
+    minWidth: 32,
+    textAlign: 'right',
+  },
+
+  logoWrap: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 28,
+  },
+  logoCard: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  logoImg: {
+    width: 58,
+    height: 58,
+  },
+
+  stepBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  stepBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#3B6B44',
+  },
+  stepBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2D4A35',
+    letterSpacing: 0.8,
+  },
+
+  heading: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: '#1A2C24',
+    lineHeight: 46,
+    marginBottom: 14,
+  },
+  subheading: {
+    fontSize: 15,
+    color: '#4A6A58',
+    lineHeight: 22,
+  },
+
+  input: {
+    backgroundColor: 'transparent',
+    borderBottomWidth: 2,
+    borderBottomColor: 'rgba(45,74,53,0.35)',
+    paddingHorizontal: 0,
+    paddingVertical: 10,
+    fontSize: 26,
+    fontWeight: '600',
+    color: '#1A2C24',
+  },
+  inputHint: {
+    fontSize: 13,
+    color: '#5A7A68',
+    marginTop: 10,
+    marginLeft: 4,
+  },
+
+  continueBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B6B44',
+    shadowColor: '#1A3329',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  continueBtnDim: {
+    backgroundColor: 'rgba(59,107,68,0.4)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  continueBtnText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  continueBtnTextDim: {
+    color: 'rgba(255,255,255,0.65)',
+  },
+  disclaimer: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#5A7A68',
+    marginTop: 14,
+  },
 });
