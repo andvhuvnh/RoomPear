@@ -62,6 +62,7 @@ export default function SwipeCard({
   const switchTab = useCallback((tab: PhotoTab) => {
     setPhotoTab(tab);
     setPhotoIndex(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, []);
 
   const onMomentumScrollEnd = useCallback(
@@ -69,7 +70,7 @@ export default function SwipeCard({
       const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
       setPhotoIndex(Math.max(0, Math.min(idx, activePhotos.length - 1)));
     },
-    [activePhotos.length]
+    [activePhotos.length, photoTab]
   );
 
   const renderPhoto = useCallback(
@@ -147,6 +148,14 @@ export default function SwipeCard({
               <TouchableOpacity style={styles.flagBtn} onPress={onReport} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Flag size={18} color="rgba(255,255,255,0.85)" weight="fill" />
               </TouchableOpacity>
+            )}
+
+            {photoTab === 'place' && !!profile.listingRoomType && (
+              <View style={styles.overlay} pointerEvents="none">
+                <View style={styles.budgetRow}>
+                  <Text style={styles.overlayBudget}>🏠 {profile.listingRoomType.charAt(0).toUpperCase() + profile.listingRoomType.slice(1)} room</Text>
+                </View>
+              </View>
             )}
 
             {photoTab === 'profile' && (

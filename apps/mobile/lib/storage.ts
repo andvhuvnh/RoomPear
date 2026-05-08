@@ -153,13 +153,11 @@ export async function getProfileImageUrl(imagePathOrUrl: string | null | undefin
       .createSignedUrl(filePath, SIGNED_URL_EXPIRY);
 
     if (error || !data) {
-      console.error('Error creating signed URL:', error);
       return null;
     }
 
     return data.signedUrl;
-  } catch (error: any) {
-    console.error('Error in getProfileImageUrl:', error);
+  } catch {
     return null;
   }
 }

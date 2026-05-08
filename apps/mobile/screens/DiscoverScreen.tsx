@@ -365,7 +365,11 @@ export default function DiscoverScreen() {
         {/* ── Header ── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.pearLogo}>🍐</Text>
+            <Image
+              source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+              style={styles.pearLogo}
+              resizeMode="contain"
+            />
             {hasPremiumAccess ? (
               <Text style={styles.headerMetricsPremium}>
                 RoomPear+ · Unlimited swipes, advanced filters, and boosted profile
@@ -540,7 +544,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  pearLogo: { fontSize: 32 },
+  pearLogo: { width: 36, height: 36 },
   headerMetrics: {
     marginTop: 4,
     fontSize: 12,
