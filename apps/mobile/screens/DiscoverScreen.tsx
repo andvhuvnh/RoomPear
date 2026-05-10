@@ -43,7 +43,6 @@ const C = {
   cta:           '#030213',
   pass:          '#D4183D',
   like:          '#2D6A4F',
-  top:           '#FF9500',
 };
 
 const GRAD = ['#C8EAC0','#D4EEB8','#E2F0C8','#EEF6E0','#F6FAF0','#FFFFFF'] as const;
@@ -622,7 +621,6 @@ const styles = StyleSheet.create({
     top: 16,
   },
 
-  // ── Floating action buttons ──
   // ── Action bar ──
   actionBar: {
     flexDirection: 'row',
@@ -632,11 +630,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   actionBarDisabled: { opacity: 0.4 },
-  actionCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
   actionBtn: {
     borderRadius: 100,
     justifyContent: 'center',
@@ -655,97 +648,6 @@ const styles = StyleSheet.create({
   actionLike:   { width: 68, height: 68 },
   actionTop:    { width: 58, height: 58 },
   actionLocked: { opacity: 0.35 },
-
-  // ── Full profile modal ──
-  profileModal: { flex: 1, backgroundColor: '#FFFFFF' },
-  heroWrap: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.62, position: 'relative' },
-  heroImage: { width: '100%', height: '100%' },
-  heroOverlay: {
-    position: 'absolute', left: 20, right: 20, bottom: 24,
-  },
-  heroName: {
-    fontFamily: fonts.extraBold, fontSize: 32, color: '#FFFFFF', letterSpacing: -0.5,
-    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
-  },
-  heroLocation: { fontFamily: fonts.semiBold, fontSize: 15, color: 'rgba(255,255,255,0.88)', marginTop: 4 },
-  heroBudget: { fontFamily: fonts.regular, fontSize: 13, color: 'rgba(255,255,255,0.72)', marginTop: 3 },
-  profileInfoBlock: { paddingHorizontal: 20, paddingVertical: 16 },
-  stackedPhoto: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.55 },
-  profileInfo: { padding: 24, paddingBottom: 16 },
-  profileName: { fontFamily: fonts.extraBold, fontSize: 28, color: C.text },
-  profileLocation: { fontFamily: fonts.semiBold, fontSize: 15, color: C.gray, marginTop: 4 },
-  profileBio: { fontFamily: fonts.regular, fontSize: 15, color: C.gray, lineHeight: 22 },
-  profileSectionLabel: {
-    fontFamily: fonts.bold, fontSize: 11, color: C.grayDim,
-    marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1,
-  },
-  profileChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  profileChip: {
-    backgroundColor: 'rgba(45,106,79,0.08)',
-    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.30)',
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50,
-  },
-  profileChipText: { fontFamily: fonts.semiBold, fontSize: 13, color: '#2D6A4F' },
-  interestCategory: { marginBottom: 10 },
-  placePhotoLabel: {
-    position: 'absolute',
-    top: 18,
-    left: 20,
-  },
-  placePhotoLabelText: {
-    fontFamily: fonts.bold, fontSize: 17,
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0,0,0,0.4)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  interestCategoryLabel: {
-    fontFamily: fonts.bold, fontSize: 10,
-    color: '#A0A0B0',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  promptCard: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(45,106,79,0.06)',
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  promptAccent: {
-    width: 3,
-    backgroundColor: '#2D6A4F',
-  },
-  promptContent: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  promptQuestion: {
-    fontFamily: fonts.semiBold, fontSize: 11,
-    color: '#A0A0B0',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 5,
-  },
-  promptAnswer: {
-    fontFamily: fonts.semiBold, fontSize: 15,
-    color: C.text,
-    lineHeight: 22,
-  },
-  modalActions: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    gap: 20, paddingVertical: 20, paddingBottom: 36,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.08)',
-  },
-  closeBtn: {
-    position: 'absolute', top: 52, right: 16,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center', alignItems: 'center',
-  },
 
   // ── Match modal ──
   matchOverlay: {
