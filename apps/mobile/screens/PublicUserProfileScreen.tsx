@@ -87,6 +87,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const [location, setLocation] = useState('');
   const [bio, setBio] = useState<string | null>(null);
   const [interestChips, setInterestChips] = useState<string[]>([]);
+  const [workSchedule, setWorkSchedule] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<PromptEntry[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
@@ -135,6 +136,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
 
       setLocation(formatLocationLine(prefs));
       setInterestChips(mergeInterestChips(prefs, hobbyList));
+      setWorkSchedule(prefs?.work_schedule ?? null);
 
       setLoading(false);
     }
@@ -207,6 +209,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           age={age}
           location={location}
           bio={bio}
+          workSchedule={workSchedule}
           hobbies={interestChips}
           chipsSectionTitle={interestChips.length > 0 ? 'Interests' : null}
         />

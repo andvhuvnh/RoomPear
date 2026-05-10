@@ -21,6 +21,7 @@ export type DiscoverProfile = {
   location: string;
   hasListing: boolean;
   roomType: string | null;
+  listingRoomType: string | null;
   maxBudget: number | null;
   compatibilityScore: number;  // 0–100, display as "XX% Match"
   matchReasons: string[];      // why these profiles match (premium display)
@@ -205,23 +206,24 @@ export async function fetchDiscoverProfiles(
     options?.isPremium ?? false,
   );
 
-  // Ethnicity cap: no more than 65% of the feed should match the viewer's ethnicity preference.
+  // Ethnicity cap: no more than 75% of the feed should match the viewer's ethnicity preference.
   // This ensures diversity and prevents ethnicity from dominating the feed.
   const ethPref = myPrefs?.ethnicity_preference ?? [];
   if (ethPref.length > 0 && mixed.length > 0) {
-    const CAP = 0.65;
+    const CAP = 0.75;
     const maxEthMatch = Math.floor(mixed.length * CAP);
-    let ethCount = mixed.filter(x => ethPref.includes(x.item.ethnicity)).length;
+    const ethMatch = (eth: string | string[]) => Array.isArray(eth) ? eth.some(e => ethPref.includes(e)) : ethPref.includes(eth);
+    let ethCount = mixed.filter(x => ethMatch(x.item.ethnicity)).length;
     if (ethCount > maxEthMatch) {
       // Swap excess ethnicity-matches with non-matching rows from scored pool
       const nonEthRows = scored
-        .filter(s => !ethPref.includes(s.row.ethnicity) && !mixed.find(m => m.item === s.row))
+        .filter(s => !ethMatch(s.row.ethnicity) && !mixed.find(m => m.item === s.row))
         .sort((a, b) => b.score - a.score);
       const toSwap = ethCount - maxEthMatch;
       let swapped = 0;
       mixed = mixed.map(entry => {
         if (swapped >= toSwap) return entry;
-        if (ethPref.includes(entry.item.ethnicity) && nonEthRows.length > 0) {
+        if (ethMatch(entry.item.ethnicity) && nonEthRows.length > 0) {
           const replacement = nonEthRows.shift()!;
           swapped++;
           return { item: replacement.row, score: replacement.score };
@@ -245,13 +247,15 @@ export async function fetchDiscoverProfiles(
     const interestChips = Object.values(interests).flat() as string[];
     const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
+    let listingRoomType: string | null = null;
     const listingFetch: Promise<string[]> = row.has_listing === true
       ? (async () => {
           const { data: listing } = await supabase
             .from('listings')
-            .select('listing_photos')
+            .select('listing_photos, room_type')
             .eq('user_id', row.id)
             .maybeSingle();
+          listingRoomType = listing?.room_type ?? null;
           const paths: string[] = Array.isArray(listing?.listing_photos)
             ? listing.listing_photos
             : [];
@@ -284,6 +288,7 @@ export async function fetchDiscoverProfiles(
       hasListing: row.has_listing === true,
       location,
       roomType: prefs?.room_type ?? null,
+      listingRoomType,
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),
       matchReasons: reasonsByRow.get(row) ?? [],
@@ -328,7 +333,6 @@ function passesPremiumAdvancedFilters(mine: Preferences, theirs: Preferences): b
     if (severity !== 'hard' && severity !== 'soft') continue;
     if (key === 'smoking'    && theirs.smoking_allowed === true) return false;
     if (key === 'pets'       && theirs.pets_allowed === true) return false;
-    if (key === 'parties'    && theirs.social_preference === 'social') return false;
     if (key === 'early_bird' && theirs.work_schedule === 'Night Shift') return false;
     if (key === 'night_owl'  && theirs.work_schedule === '9-to-5') return false;
     if (key === 'messy'      && theirs.cleanliness_level != null && theirs.cleanliness_level <= 2) return false;

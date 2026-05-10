@@ -23,6 +23,7 @@ export type PublicProfileCardProps = {
   name: string;
   age: number | null;
   location: string;
+  workSchedule?: string | null;
   /** Short intro shown under age / location */
   bio?: string | null;
   hobbies?: string[] | null;
@@ -38,6 +39,7 @@ export default function PublicProfileCard({
   name,
   age,
   location,
+  workSchedule,
   bio,
   hobbies,
   chipsSectionTitle,
@@ -88,6 +90,11 @@ export default function PublicProfileCard({
 
   const detailsSection = (
     <>
+      {workSchedule ? (
+        <View style={styles.scheduleTag}>
+          <Text style={styles.scheduleTagText}>💼 {workSchedule}</Text>
+        </View>
+      ) : null}
       {bioText ? <Text style={styles.bio}>{bioText}</Text> : null}
       {hobbyList.length > 0 ? (
         <>
@@ -410,6 +417,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#1A2C24',
+  },
+  scheduleTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(45,106,79,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  scheduleTagText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2D6A4F',
   },
   emptyCover: {
     height: IMAGE_HEIGHT,
