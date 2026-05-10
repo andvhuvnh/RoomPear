@@ -41,13 +41,34 @@ const ROOM_TYPE_OPTIONS = [
 ];
 
 const MOVE_IN_OPTIONS = [
-  { val: 'Immediately',    label: 'Immediately' },
-  { val: 'Within 2 weeks', label: 'Within 2 weeks' },
-  { val: 'Within 1 month', label: 'Within 1 month' },
-  { val: '1–3 months',     label: '1–3 months' },
-  { val: '3–6 months',     label: '3–6 months' },
-  { val: 'Flexible',       label: 'Flexible' },
+  { label: 'Immediately',    offsetDays: 0 },
+  { label: 'Within 2 weeks', offsetDays: 14 },
+  { label: 'Within 1 month', offsetDays: 30 },
+  { label: '1–3 months',     offsetDays: 60 },
+  { label: '3–6 months',     offsetDays: 120 },
+  { label: 'Flexible',       offsetDays: -1 },
 ];
+
+function moveInLabelToDate(label: string): string | null {
+  const opt = MOVE_IN_OPTIONS.find(o => o.label === label);
+  if (!opt || opt.offsetDays === -1) return null;
+  const d = new Date();
+  d.setDate(d.getDate() + opt.offsetDays);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().split('T')[0];
+}
+
+function moveInDateToLabel(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Flexible';
+  const stored = new Date(dateStr).getTime();
+  const now = Date.now();
+  const diffDays = (stored - now) / 86_400_000;
+  if (diffDays <= 1)   return 'Immediately';
+  if (diffDays <= 21)  return 'Within 2 weeks';
+  if (diffDays <= 45)  return 'Within 1 month';
+  if (diffDays <= 90)  return '1–3 months';
+  return '3–6 months';
+}
 
 
 interface Props {
@@ -85,7 +106,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
     getPreferences(userId).then((prefs) => {
       setEthnicityPref(prefs?.ethnicity_preference ?? []);
       setRoomType(prefs?.room_type ?? '');
-      setMoveIn(prefs?.move_in_date ?? '');
+      setMoveIn(prefs?.move_in_date ? moveInDateToLabel(prefs.move_in_date) : '');
       setGenderPref(prefs?.gender_preference ?? '');
       setHasListingOnly(prefs?.has_listing_only ?? false);
       setMinBudget(prefs?.min_budget ?? 0);
@@ -124,7 +145,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
         gender_preference: genderPref || '',
         ethnicity_preference: ethnicityPref,
         room_type: (roomType as any) || undefined,
-        move_in_date: moveIn || undefined,
+        move_in_date: moveIn ? (moveInLabelToDate(moveIn) ?? undefined) : undefined,
         has_listing_only: hasListingOnly,
         min_budget: minBudget,
         max_budget: maxBudget,
@@ -175,7 +196,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
               {/* Gender preference */}
               <Text style={styles.sectionTitle}>I want to live with</Text>
-              <View style={[styles.chipsRow, { marginBottom: 4 }]}>
+              <View style={styles.chipsRow}>
                 {GENDER_PREF_OPTIONS.map(({ val, label }) => {
                   const on = genderPref === val;
                   return (
@@ -194,17 +215,20 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
               <View style={styles.divider} />
 
               {/* Has listing toggle */}
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleLeft}>
-                  <Text style={styles.sectionTitle}>Has a place listed</Text>
-                  <Text style={styles.sectionSub}>Only show people who have a place to offer</Text>
-                </View>
-                <Switch
-                  value={hasListingOnly}
-                  onValueChange={setHasListingOnly}
-                  trackColor={{ false: '#D8D8E0', true: '#1A1A2E' }}
-                  thumbColor="#FFFFFF"
-                />
+              <Text style={styles.sectionTitle}>Has a place listed</Text>
+              <View style={styles.chipsRow}>
+                {(['Yes', 'No preference'] as const).map((opt) => {
+                  const on = opt === 'Yes' ? hasListingOnly : !hasListingOnly;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setHasListingOnly(opt === 'Yes')}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <View style={styles.divider} />
@@ -287,13 +311,13 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
               {/* Move-in date */}
               <Text style={styles.sectionTitle}>Move-in date</Text>
               <View style={styles.chipsRow}>
-                {MOVE_IN_OPTIONS.map(({ val, label }) => {
-                  const on = moveIn === val;
+                {MOVE_IN_OPTIONS.map(({ label }) => {
+                  const on = moveIn === label;
                   return (
                     <TouchableOpacity
-                      key={val}
+                      key={label}
                       style={[styles.chip, on && styles.chipOn]}
-                      onPress={() => setMoveIn(on ? '' : val)}
+                      onPress={() => setMoveIn(on ? '' : label)}
                     >
                       <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
                     </TouchableOpacity>
@@ -305,7 +329,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
               {/* Ethnicity preference */}
               <Text style={styles.sectionTitle}>Ethnicity preference</Text>
-              <Text style={styles.sectionSub}>
+              <Text style={[styles.sectionSub, { marginTop: -6, marginBottom: 12 }]}>
                 Matching profiles rank higher in your feed. Leave blank for no preference.
               </Text>
               <View style={styles.chipsRow}>
@@ -334,7 +358,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
                   </View>
                 )}
               </View>
-              <Text style={styles.sectionSub}>Strictly exclude profiles that don't meet these criteria.</Text>
+              <Text style={[styles.sectionSub, { marginTop: -6, marginBottom: 12 }]}>Strictly exclude profiles that don't meet these criteria.</Text>
 
               <View style={[styles.advancedControls, !isPremium && styles.advancedControlsLocked]}>
                 {[
@@ -442,15 +466,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8E8EC',
     marginVertical: 22,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  toggleLeft: {
-    flex: 1,
-  },
   sectionTitle: {
     fontFamily: fonts.bold,
     fontSize: 15,
@@ -462,8 +477,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#A0A0B0',
     lineHeight: 18,
-    marginBottom: 12,
-    marginTop: -4,
+    marginBottom: 0,
+    marginTop: 6,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -539,7 +554,7 @@ const styles = StyleSheet.create({
   },
   advancedHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     gap: 8,
     marginBottom: 6,
   },
