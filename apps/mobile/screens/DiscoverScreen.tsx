@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { DotsThreeVertical, ArrowCounterClockwise, X, Heart, Star } from 'phosphor-react-native';
+import { DotsThreeVertical, ArrowCounterClockwise, X, Heart } from 'phosphor-react-native';
 import { fonts } from '../lib/typography';
 import { supabase } from '../lib/supabase';
 import { recordSwipe } from '../lib/discover';
@@ -441,7 +441,7 @@ export default function DiscoverScreen() {
             onPress={() => handleAction('top_pick')}
             disabled={actionDisabled}
           >
-            <Star size={22} color="#FF9500" weight="regular" />
+            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={{ width: 26, height: 26 }} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
