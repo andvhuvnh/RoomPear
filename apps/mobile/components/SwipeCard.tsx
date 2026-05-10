@@ -1,13 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
+  Animated,
   View,
   Text,
-  FlatList,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
-  type ListRenderItemInfo,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MapPin, Flag, User, Buildings, Briefcase } from 'phosphor-react-native';
@@ -22,7 +21,7 @@ const CARD_GAP = 8;
 
 export const CARD_WIDTH = SCREEN_WIDTH - SIDE_MARGIN * 2;
 export const CARD_HEIGHT = SCREEN_HEIGHT * 0.78;
-const PHOTO_HEIGHT = Math.round(SCREEN_HEIGHT * 0.52);
+const PHOTO_HEIGHT = Math.round(CARD_WIDTH * (4 / 3));
 
 type PhotoTab = 'profile' | 'place';
 
@@ -40,11 +39,12 @@ export default function SwipeCard({
   onUnlockReasons,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
-  const photoListRef = useRef<FlatList<string>>(null);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const opacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setPhotoTab('profile');
-    photoListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    setPhotoIndex(0);
   }, [profile.id]);
 
   const profilePhotos = profile.photoUrls.slice(0, profile.profilePhotoCount);
@@ -53,22 +53,19 @@ export default function SwipeCard({
 
   const switchTab = useCallback((tab: PhotoTab) => {
     setPhotoTab(tab);
-    photoListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    setPhotoIndex(0);
   }, []);
 
-  const renderPhoto = useCallback(
-    ({ item }: ListRenderItemInfo<string>) => (
-      <ExpoImage
-        source={{ uri: item }}
-        style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        transition={0}
-        recyclingKey={`${profile.id}-${photoTab}-${item}`}
-      />
-    ),
-    [profile.id, photoTab]
-  );
+  const advancePhoto = useCallback((direction: 'next' | 'prev') => {
+    const next = direction === 'next'
+      ? Math.min(photoIndex + 1, activePhotos.length - 1)
+      : Math.max(photoIndex - 1, 0);
+    if (next === photoIndex) return;
+
+    opacityAnim.setValue(0);
+    setPhotoIndex(next);
+    Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  }, [photoIndex, activePhotos.length, opacityAnim]);
 
   const score = profile.compatibilityScore;
   const matchDotColor = score < 30 ? '#D4183D' : score <= 70 ? '#FF9500' : '#2D6A4F';
@@ -89,19 +86,38 @@ export default function SwipeCard({
       >
         {/* ── Photo card ── */}
         <View style={styles.photoCard}>
-          <FlatList
-            key={`${profile.id}-${photoTab}`}
-            ref={photoListRef}
-            data={activePhotos}
-            keyExtractor={(_, i) => `${profile.id}-${photoTab}-${i}`}
-            renderItem={renderPhoto}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            getItemLayout={(_, i) => ({ length: CARD_WIDTH, offset: CARD_WIDTH * i, index: i })}
-            scrollEventThrottle={16}
-          />
+          <Animated.View style={{ opacity: opacityAnim }}>
+            <ExpoImage
+              source={{ uri: activePhotos[photoIndex] }}
+              style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
+            />
+          </Animated.View>
+
+          {/* Tap zones */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.tapZoneLeft}
+              onPress={() => advancePhoto('prev')}
+              activeOpacity={1}
+            />
+            <TouchableOpacity
+              style={styles.tapZoneRight}
+              onPress={() => advancePhoto('next')}
+              activeOpacity={1}
+            />
+          </View>
+
+          {/* Dot indicators */}
+          {activePhotos.length > 1 && (
+            <View style={styles.dotsRow} pointerEvents="none">
+              {activePhotos.map((_, i) => (
+                <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
+              ))}
+            </View>
+          )}
 
           {/* Tab pill */}
           {profile.hasListing && (
@@ -273,13 +289,13 @@ const styles = StyleSheet.create({
   // ── Photo card ──
   photoCard: {
     height: PHOTO_HEIGHT,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#1A1A2E',
     borderRadius: 20,
     overflow: 'hidden',
   },
   tabPill: {
     position: 'absolute',
-    top: 14,
+    top: 10,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -307,7 +323,43 @@ const styles = StyleSheet.create({
     width: 1,
     height: 16,
     backgroundColor: 'rgba(255,255,255,0.25)',
-    marginHorizontal: 2,
+    marginHorizontal: 8,
+  },
+  tapZoneLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '40%',
+  },
+  tapZoneRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '60%',
+  },
+  dotsRow: {
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+    zIndex: 3,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
+  dotActive: {
+    backgroundColor: '#FFFFFF',
+    width: 18,
+    borderRadius: 3,
   },
   scrollHint: {
     position: 'absolute',
