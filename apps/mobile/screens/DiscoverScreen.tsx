@@ -4,20 +4,19 @@ import {
   Dimensions,
   Image,
   Modal,
-  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { DotsThreeVertical } from 'phosphor-react-native';
+import { DotsThreeVertical, ArrowCounterClockwise, X, Heart, Star } from 'phosphor-react-native';
+import { fonts } from '../lib/typography';
 import { supabase } from '../lib/supabase';
 import { recordSwipe } from '../lib/discover';
 import { getProfileImageUrls } from '../lib/storage';
@@ -47,11 +46,9 @@ const C = {
   top:           '#FF9500',
 };
 
-const GRAD = ['#C8E6C9','#DCEDC8','#E8F5E9','#F1F8F2','#F8FBF8','#FFFFFF'] as const;
+const GRAD = ['#C8EAC0','#D4EEB8','#E2F0C8','#EEF6E0','#F6FAF0','#FFFFFF'] as const;
 const LOCS = [0, 0.18, 0.40, 0.62, 0.82, 1] as const;
 
-// How far the buttons float up over the card's bottom edge
-const BTN_OVERLAP = 52;
 
 type Action = 'like' | 'pass' | 'top_pick';
 
@@ -73,12 +70,10 @@ function Background({ children }: { children: React.ReactNode }) {
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 52 : 34}
-        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterial' : 'light'}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+      {/* Ambient pear-colored blobs — matches onboarding palette */}
+      <View style={{ position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: '#E8B84B', opacity: 0.13, top: -60, right: -60 }} pointerEvents="none" />
+      <View style={{ position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#D4A028', opacity: 0.10, bottom: 120, left: -60 }} pointerEvents="none" />
+      <View style={{ position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: '#4A9060', opacity: 0.09, bottom: 320, right: 10 }} pointerEvents="none" />
       {children}
     </View>
   );
@@ -400,7 +395,7 @@ export default function DiscoverScreen() {
             </View>
           )}
 
-          {/* Front card — actions integrated inside */}
+          {/* Front card */}
           <Animated.View
             style={[
               styles.frontCardWrap,
@@ -410,17 +405,44 @@ export default function DiscoverScreen() {
             <SwipeCard
               key={`deck-front-${currentProfile.id}`}
               profile={currentProfile}
-              onPass={() => handleAction('pass')}
-              onLike={() => handleAction('like')}
-              onTopPick={() => handleAction('top_pick')}
-              onUndo={handleUndo}
-              canUndo={currentIndex > 0}
-              actionDisabled={actionDisabled}
               onReport={() => setReportTarget({ id: currentProfile.id, name: currentProfile.name })}
               showMatchReasons={hasPremiumAccess}
               onUnlockReasons={hasPremiumAccess ? undefined : openPaywallIfNeeded}
             />
           </Animated.View>
+        </View>
+
+        {/* ── Action bar ── */}
+        <View style={[styles.actionBar, actionDisabled && styles.actionBarDisabled]}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionUndo, (currentIndex === 0 || actionDisabled) && styles.actionLocked]}
+            onPress={handleUndo}
+            disabled={currentIndex === 0 || actionDisabled}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionPass]}
+            onPress={() => handleAction('pass')}
+            disabled={actionDisabled}
+          >
+            <X size={24} color="#E5334B" weight="regular" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionLike]}
+            onPress={() => handleAction('like')}
+            disabled={actionDisabled}
+          >
+            <Heart size={28} color="#2D6A4F" weight="regular" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionTop]}
+            onPress={() => handleAction('top_pick')}
+            disabled={actionDisabled}
+          >
+            <Star size={22} color="#FF9500" weight="regular" />
+          </TouchableOpacity>
         </View>
 
       </SafeAreaView>
@@ -513,23 +535,23 @@ const styles = StyleSheet.create({
   centered: {
     flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
   },
-  emptyTitle: { fontSize: 22, fontWeight: '800', color: C.text, marginBottom: 8 },
-  emptyText: { fontSize: 15, color: C.gray, textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { fontFamily: fonts.extraBold, fontSize: 22, color: C.text, marginBottom: 8 },
+  emptyText: { fontFamily: fonts.regular, fontSize: 15, color: C.gray, textAlign: 'center', lineHeight: 22 },
   refreshBtn: {
-    marginTop: 24, backgroundColor: C.cta,
+    marginTop: 24, backgroundColor: '#2D6A4F',
     paddingHorizontal: 28, paddingVertical: 13, borderRadius: 50,
   },
-  refreshBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
+  refreshBtnText: { fontFamily: fonts.bold, color: C.white, fontSize: 15 },
   secondaryBtn: {
     marginTop: 10,
-    backgroundColor: 'rgba(26,44,36,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.55)',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 50,
-    borderWidth: 1,
-    borderColor: 'rgba(26,44,36,0.20)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.70)',
   },
-  secondaryBtnText: { color: C.text, fontWeight: '700', fontSize: 14 },
+  secondaryBtnText: { fontFamily: fonts.semiBold, color: C.text, fontSize: 14 },
 
   // ── Header ──
   header: {
@@ -537,33 +559,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 10,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   headerLeft: {
     flex: 1,
     marginRight: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   pearLogo: { width: 36, height: 36 },
   headerMetrics: {
-    marginTop: 4,
+    flex: 1,
     fontSize: 12,
+    fontFamily: fonts.semiBold,
     color: 'rgba(26,44,36,0.65)',
-    fontWeight: '600',
     lineHeight: 16,
   },
   headerMetricsPremium: {
-    marginTop: 4,
+    flex: 1,
     fontSize: 12,
+    fontFamily: fonts.bold,
     color: '#1A2C24',
-    fontWeight: '700',
   },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   nearbyPill: {
+    fontFamily: fonts.semiBold,
     fontSize: 12,
-    fontWeight: '600',
     color: '#1A2C24',
-    backgroundColor: 'rgba(26,44,36,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.60)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.80)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -571,7 +598,9 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(26,44,36,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.60)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.80)',
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -579,51 +608,53 @@ const styles = StyleSheet.create({
   cardArea: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    justifyContent: 'flex-start',
+    paddingTop: 4,
   },
   backCardWrap: {
     position: 'absolute',
+    top: 16,
     transform: [{ scale: 0.94 }, { translateY: 14 }, { rotate: '1.5deg' }],
     opacity: 0.6,
   },
   frontCardWrap: {
     position: 'absolute',
-    // Cards sit BTN_OVERLAP px above center so buttons float on the bottom edge
-    transform: [{ translateY: -(BTN_OVERLAP / 2) }],
+    top: 16,
   },
 
   // ── Floating action buttons ──
-  floatingActions: {
-    position: 'absolute',
-    bottom: 16,
-    left: 0,
-    right: 0,
+  // ── Action bar ──
+  actionBar: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 14,
+    gap: 16,
+    paddingVertical: 12,
   },
-  btn: {
+  actionBarDisabled: { opacity: 0.4 },
+  actionCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  actionBtn: {
     borderRadius: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: C.surface,
-    borderWidth: 1.5,
-    borderColor: C.surfaceBorder,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8E8EC',
     shadowColor: '#000',
-    shadowOpacity: 0.10,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
   },
-  btnDisabled: { opacity: 0.3 },
-  btnUndoLocked: { opacity: 0.55 },
-  btnUndo: { width: 48, height: 48 },
-  btnPass: { width: 62, height: 62, borderColor: 'rgba(212,24,61,0.30)' },
-  btnTop:  { width: 62, height: 62, borderColor: 'rgba(255,149,0,0.30)' },
-  btnLike: { width: 70, height: 70, borderColor: 'rgba(45,106,79,0.30)' },
+  actionUndo:   { width: 44, height: 44 },
+  actionPass:   { width: 58, height: 58 },
+  actionLike:   { width: 68, height: 68 },
+  actionTop:    { width: 58, height: 58 },
+  actionLocked: { opacity: 0.35 },
 
   // ── Full profile modal ──
   profileModal: { flex: 1, backgroundColor: '#FFFFFF' },
@@ -633,27 +664,28 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 20, right: 20, bottom: 24,
   },
   heroName: {
-    fontSize: 32, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5,
+    fontFamily: fonts.extraBold, fontSize: 32, color: '#FFFFFF', letterSpacing: -0.5,
     textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
   },
-  heroLocation: { fontSize: 15, color: 'rgba(255,255,255,0.88)', fontWeight: '500', marginTop: 4 },
-  heroBudget: { fontSize: 13, color: 'rgba(255,255,255,0.72)', fontWeight: '500', marginTop: 3 },
+  heroLocation: { fontFamily: fonts.semiBold, fontSize: 15, color: 'rgba(255,255,255,0.88)', marginTop: 4 },
+  heroBudget: { fontFamily: fonts.regular, fontSize: 13, color: 'rgba(255,255,255,0.72)', marginTop: 3 },
   profileInfoBlock: { paddingHorizontal: 20, paddingVertical: 16 },
   stackedPhoto: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.55 },
   profileInfo: { padding: 24, paddingBottom: 16 },
-  profileName: { fontSize: 28, fontWeight: '800', color: C.text },
-  profileLocation: { fontSize: 15, color: C.gray, fontWeight: '500', marginTop: 4 },
-  profileBio: { fontSize: 15, color: C.gray, lineHeight: 22 },
+  profileName: { fontFamily: fonts.extraBold, fontSize: 28, color: C.text },
+  profileLocation: { fontFamily: fonts.semiBold, fontSize: 15, color: C.gray, marginTop: 4 },
+  profileBio: { fontFamily: fonts.regular, fontSize: 15, color: C.gray, lineHeight: 22 },
   profileSectionLabel: {
-    fontSize: 11, fontWeight: '700', color: C.grayDim,
+    fontFamily: fonts.bold, fontSize: 11, color: C.grayDim,
     marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1,
   },
   profileChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   profileChip: {
-    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.40)',
+    backgroundColor: 'rgba(45,106,79,0.08)',
+    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.30)',
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50,
   },
-  profileChipText: { fontSize: 13, fontWeight: '600', color: '#2D6A4F' },
+  profileChipText: { fontFamily: fonts.semiBold, fontSize: 13, color: '#2D6A4F' },
   interestCategory: { marginBottom: 10 },
   placePhotoLabel: {
     position: 'absolute',
@@ -661,16 +693,14 @@ const styles = StyleSheet.create({
     left: 20,
   },
   placePhotoLabelText: {
-    fontSize: 17,
-    fontWeight: '700',
+    fontFamily: fonts.bold, fontSize: 17,
     color: '#FFFFFF',
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   interestCategoryLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontFamily: fonts.bold, fontSize: 10,
     color: '#A0A0B0',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -678,7 +708,7 @@ const styles = StyleSheet.create({
   },
   promptCard: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(45,106,79,0.05)',
+    backgroundColor: 'rgba(45,106,79,0.06)',
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
@@ -693,16 +723,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   promptQuestion: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.semiBold, fontSize: 11,
     color: '#A0A0B0',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 5,
   },
   promptAnswer: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fonts.semiBold, fontSize: 15,
     color: C.text,
     lineHeight: 22,
   },
@@ -721,48 +749,53 @@ const styles = StyleSheet.create({
 
   // ── Match modal ──
   matchOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    flex: 1, backgroundColor: 'rgba(10,40,24,0.55)',
     justifyContent: 'center', alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 28,
     paddingHorizontal: 28, paddingVertical: 32,
     alignItems: 'center', width: '86%',
-    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, elevation: 12,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#0A2818', shadowOpacity: 0.18, shadowRadius: 28, elevation: 14,
   },
   matchEmoji: { fontSize: 48, marginBottom: 6 },
-  matchTitle: { fontSize: 28, fontWeight: '900', color: C.text, marginBottom: 16 },
+  matchTitle: { fontFamily: fonts.extraBold, fontSize: 28, color: C.text, marginBottom: 16 },
   matchSub: {
-    fontSize: 15, color: C.gray, textAlign: 'center',
+    fontFamily: fonts.regular, fontSize: 15, color: C.gray, textAlign: 'center',
     lineHeight: 22, marginBottom: 16,
   },
   matchAvatars: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
   matchAvatarWrap: {
     width: 90, height: 90, borderRadius: 45,
-    borderWidth: 3, borderColor: '#FFFFFF',
+    borderWidth: 3, borderColor: 'rgba(255,255,255,0.95)',
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
     overflow: 'hidden',
   },
   matchAvatarRight: { marginLeft: -20 },
   matchAvatar: { width: '100%', height: '100%', borderRadius: 45 },
-  matchAvatarPlaceholder: { backgroundColor: '#E0E0E0' },
+  matchAvatarPlaceholder: { backgroundColor: '#D4E8D0' },
   matchInterestsWrap: { alignItems: 'center', marginBottom: 20 },
   matchInterestsLabel: {
-    fontSize: 11, fontWeight: '700', color: C.grayDim,
+    fontFamily: fonts.bold, fontSize: 11, color: C.grayDim,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8,
   },
   matchChips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
   matchChip: {
-    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.40)',
+    backgroundColor: 'rgba(45,106,79,0.10)',
+    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.30)',
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 50,
   },
-  matchChipText: { fontSize: 13, fontWeight: '600', color: '#2D6A4F' },
+  matchChipText: { fontFamily: fonts.semiBold, fontSize: 13, color: '#2D6A4F' },
   matchBtn: {
-    backgroundColor: C.cta, paddingHorizontal: 28, paddingVertical: 14,
+    backgroundColor: '#2D6A4F', paddingHorizontal: 28, paddingVertical: 14,
     borderRadius: 50, width: '100%', alignItems: 'center', marginBottom: 10,
   },
-  matchBtnText: { color: C.white, fontWeight: '700', fontSize: 16 },
-  matchBtnSecondary: { paddingVertical: 10, width: '100%', alignItems: 'center' },
-  matchBtnSecondaryText: { color: C.gray, fontSize: 15, fontWeight: '500' },
+  matchBtnText: { fontFamily: fonts.bold, color: C.white, fontSize: 16 },
+  matchBtnSecondary: {
+    paddingVertical: 10, paddingHorizontal: 28, width: '100%', alignItems: 'center',
+    backgroundColor: 'rgba(26,44,36,0.07)', borderRadius: 50,
+  },
+  matchBtnSecondaryText: { fontFamily: fonts.semiBold, color: C.text, fontSize: 15 },
 
 });

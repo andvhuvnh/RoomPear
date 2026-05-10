@@ -334,8 +334,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [gender, setGender] = useState('');
   // Step 3: Ethnicity
   const [ethnicity, setEthnicity] = useState<string[]>([]);
-  // Step 4: Gender preference
+  // Step 4: Gender preference + ethnicity preference
   const [genderPref, setGenderPref] = useState<string | null>(null);
+  const [ethnicityPref, setEthnicityPref] = useState<string[]>([]);
   // Step 5: Location
   const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
   const useLegacyLocationUi = !Constants.expoConfig?.extra?.mapboxAccessToken || isExpoGo;
@@ -521,6 +522,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         interests: Object.values(interests).some((v) => v.length > 0) ? interests : undefined,
         dealbreakers,
         gender_preference: (genderPref === null || genderPref === 'anyone') ? '' : genderPref,
+        ethnicity_preference: ethnicityPref.length > 0 ? ethnicityPref : undefined,
       });
 
       if (!result.success) { Alert.alert('Error', result.error ?? 'Could not save preferences.'); setSaving(false); return; }
@@ -1668,11 +1670,6 @@ const question  = step === 13 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step]
               </View>
             </View>
 
-            <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
-              <Text style={[s0.heading, { color: '#2A1400' }]}>When do you{'\n'}want to move in?</Text>
-              <Text style={[s0.subheading, { color: '#7A4010' }]}>Approximate is fine — you can update later.</Text>
-            </View>
-
             <View style={{ paddingHorizontal: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               {moveInOptions.map(({ label, months }) => (
                 <TouchableOpacity
@@ -1682,7 +1679,7 @@ const question  = step === 13 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step]
                     if (months === -1) { setMoveInDate(null); }
                     else if (months === 0.5) { const d = new Date(); d.setDate(d.getDate() + 14); d.setHours(0,0,0,0); setMoveInDate(d); }
                     else { const d = new Date(); d.setMonth(d.getMonth() + months); d.setHours(0,0,0,0); setMoveInDate(d); }
-                    
+
                   }}
                   activeOpacity={0.75}
                   style={{ paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, backgroundColor: moveInOption === label ? '#B86010' : 'rgba(255,255,255,0.70)', borderWidth: 1.5, borderColor: moveInOption === label ? '#B86010' : 'rgba(255,255,255,0.60)' }}
@@ -2016,33 +2013,48 @@ const question  = step === 13 ? DEALBREAKER_ITEMS[dbStep].question : STEPS[step]
               </View>
             </View>
 
-            <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
-              <Text style={[s0.heading, { color: '#2A2808' }]}>Who would you{'\n'}like to live with?</Text>
-              <Text style={[s0.subheading, { color: '#6A6020' }]}>Leave blank to see everyone.</Text>
-            </View>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+              <View style={{ marginBottom: 24 }}>
+                <Text style={[s0.heading, { color: '#2A2808' }]}>Who would you{'\n'}like to live with?</Text>
+                <Text style={[s0.subheading, { color: '#6A6020' }]}>Leave blank to see everyone.</Text>
+              </View>
 
-            <View style={{ paddingHorizontal: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              {(['Man', 'Woman', 'Non-binary', 'Anyone'] as const).map((g) => {
-                const label = g === 'Man' ? 'Men' : g === 'Woman' ? 'Women' : g;
-                const val = g === 'Anyone' ? 'anyone' : g;
-                const selected = g === 'Anyone' ? genderPref === 'anyone' : genderPref === val;
-                return (
-                  <TouchableOpacity
-                    key={g}
-                    onPress={() => { setGenderPref(val); }}
-                    activeOpacity={0.75}
-                    style={{
-                      paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12,
-                      backgroundColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.70)',
-                      borderWidth: 1.5,
-                      borderColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.60)',
-                    }}
-                  >
-                    <Text style={{ fontFamily: fonts.semiBold, fontSize: 15, color: selected ? '#FFFFFF' : '#2A2808' }}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 32 }}>
+                {(['Man', 'Woman', 'Non-binary', 'Anyone'] as const).map((g) => {
+                  const label = g === 'Man' ? 'Men' : g === 'Woman' ? 'Women' : g;
+                  const val = g === 'Anyone' ? 'anyone' : g;
+                  const selected = g === 'Anyone' ? genderPref === 'anyone' : genderPref === val;
+                  return (
+                    <TouchableOpacity
+                      key={g}
+                      onPress={() => { setGenderPref(val); }}
+                      activeOpacity={0.75}
+                      style={{ paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, backgroundColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.70)', borderWidth: 1.5, borderColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.60)' }}
+                    >
+                      <Text style={{ fontFamily: fonts.semiBold, fontSize: 15, color: selected ? '#FFFFFF' : '#2A2808' }}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[s0.subheading, { color: '#2A2808', fontFamily: fonts.bold, marginBottom: 12 }]}>Any ethnicity preference?</Text>
+              <Text style={[s0.subheading, { color: '#6A6020', marginBottom: 12, marginTop: -8 }]}>Optional — select all that apply.</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {ETHNICITY_OPTIONS.map((e) => {
+                  const selected = ethnicityPref.includes(e);
+                  return (
+                    <TouchableOpacity
+                      key={e}
+                      onPress={() => setEthnicityPref(prev => selected ? prev.filter(x => x !== e) : [...prev, e])}
+                      activeOpacity={0.75}
+                      style={{ paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, backgroundColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.70)', borderWidth: 1.5, borderColor: selected ? '#4A6A10' : 'rgba(255,255,255,0.60)' }}
+                    >
+                      <Text style={{ fontFamily: fonts.semiBold, fontSize: 15, color: selected ? '#FFFFFF' : '#2A2808' }}>{e}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
           </View>
           <TouchableOpacity
             style={[s0.continueBtn, { backgroundColor: '#4A6A10' }, { position: 'absolute', right: 24, bottom: keyboardHeight + 24 }]}

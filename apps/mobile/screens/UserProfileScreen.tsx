@@ -145,6 +145,7 @@ export default function UserProfileScreen({ route }: Props) {
 
   // Edit basics state
   const [editBio, setEditBio] = useState('');
+  const [editOccupation, setEditOccupation] = useState('');
   const [editGender, setEditGender] = useState('');
   const [editEthnicity, setEditEthnicity] = useState('');
   const [editWorkSchedule, setEditWorkSchedule] = useState('');
@@ -280,6 +281,7 @@ export default function UserProfileScreen({ route }: Props) {
       }
       if (section === 'basics') {
         setEditBio(profile?.bio ?? '');
+        setEditOccupation(profile?.occupation ?? '');
         setEditGender(profile?.gender ?? '');
         setEditEthnicity(profile?.ethnicity ?? '');
         setEditWorkSchedule(prefs?.work_schedule ?? '');
@@ -570,6 +572,7 @@ export default function UserProfileScreen({ route }: Props) {
     try {
       const profileUpdates: Record<string, any> = {};
       if (editBio.trim() !== (profile?.bio ?? '')) profileUpdates.bio = editBio.trim() || null;
+      if (editOccupation.trim() !== (profile?.occupation ?? '')) profileUpdates.occupation = editOccupation.trim() || null;
       if (editGender !== (profile?.gender ?? '')) profileUpdates.gender = editGender || null;
       if (editEthnicity !== (profile?.ethnicity ?? '')) profileUpdates.ethnicity = editEthnicity || null;
       if (Object.keys(profileUpdates).length > 0) {
@@ -1360,6 +1363,17 @@ export default function UserProfileScreen({ route }: Props) {
                       placeholderTextColor={theme.mutedForeground}
                       multiline
                       maxLength={300}
+                    />
+
+                    {/* Occupation */}
+                    <Text style={styles.basicsLabel}>Occupation <Text style={styles.basicsOptional}>(optional)</Text></Text>
+                    <TextInput
+                      style={styles.basicsTextInput}
+                      value={editOccupation}
+                      onChangeText={setEditOccupation}
+                      placeholder="e.g. Student, Software Engineer…"
+                      placeholderTextColor={theme.mutedForeground}
+                      maxLength={60}
                     />
 
                     {/* Gender */}

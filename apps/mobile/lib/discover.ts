@@ -12,6 +12,7 @@ export type DiscoverProfile = {
   id: string;
   name: string;
   age: number | null;
+  occupation: string | null;
   bio: string | null;
   hobbies: string[] | null;
   interests: Record<string, string[]>;  // grouped by category e.g. { fitness: ['Gym', 'Yoga'] }
@@ -22,6 +23,7 @@ export type DiscoverProfile = {
   hasListing: boolean;
   roomType: string | null;
   listingRoomType: string | null;
+  minBudget: number | null;
   maxBudget: number | null;
   compatibilityScore: number;  // 0–100, display as "XX% Match"
   matchReasons: string[];      // why these profiles match (premium display)
@@ -132,9 +134,9 @@ export async function fetchDiscoverProfiles(
   let query = supabase
     .from('profiles')
     .select(
-      'id, name, age, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, last_active_at, ' +
+      'id, name, age, occupation, bio, hobbies, prompts, has_listing, profile_photo_url, subscription_tier, ethnicity, created_at, updated_at, last_active_at, ' +
       'preferences(city, state, min_budget, max_budget, cleanliness_level, social_preference, ' +
-      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, move_in_date, lease_duration_months, search_lat, search_lng, ethnicity_preference)'
+      'work_schedule, interests, dealbreakers, pets_allowed, smoking_allowed, room_type, move_in_date, search_lat, search_lng, ethnicity_preference)'
     )
     .neq('id', userId)
     .not('profile_photo_url', 'is', null)
@@ -146,7 +148,7 @@ export async function fetchDiscoverProfiles(
   }
 
   if (myPrefs?.gender_preference) {
-    query = query.eq('gender', myPrefs.gender_preference);
+    query = query.or(`gender.eq.${myPrefs.gender_preference},gender.is.null`);
   }
 
   if (excludedIds.length > 0) {
@@ -279,6 +281,7 @@ export async function fetchDiscoverProfiles(
       id: row.id,
       name: row.name ?? 'Unknown',
       age: row.age ?? null,
+      occupation: row.occupation ?? null,
       bio: row.bio ?? null,
       hobbies,
       interests,
@@ -289,6 +292,7 @@ export async function fetchDiscoverProfiles(
       location,
       roomType: prefs?.room_type ?? null,
       listingRoomType,
+      minBudget: prefs?.min_budget ?? null,
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),
       matchReasons: reasonsByRow.get(row) ?? [],
