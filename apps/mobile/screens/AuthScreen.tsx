@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -10,59 +11,29 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
-  ScrollView,
   KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { AntDesign, FontAwesome } from '@expo/vector-icons';
+import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { setPendingReferralCode } from '../lib/referrals';
 
 type AuthMode = 'welcome' | 'signin' | 'signup';
 
-const C = {
-  bg:            '#1A3329',
-  surface:       'rgba(255,255,255,0.82)',
-  surfaceBorder: 'rgba(255,255,255,0.45)',
-  inputBg:       'rgba(255,255,255,0.70)',
-  inputBorder:   'rgba(0,0,0,0.08)',
-  text:          '#1A2C24',
-  gray:          '#717182',
-  grayDim:       '#A0A0B0',
-  cta:           '#030213',
-  danger:        '#D4183D',
-  accent:        '#2D4F42',
-};
-
-const GRAD = ['#1A3329','#2D4F42','#5A806B','#9CB8A8','#D8E8DF','#F5FAF7','#FFFFFF'] as const;
-const LOCS = [0, 0.06, 0.14, 0.28, 0.48, 0.72, 1] as const;
-
-function Background({ children }: { children: React.ReactNode }) {
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <LinearGradient
-        colors={GRAD}
-        locations={LOCS}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 52 : 34}
-        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterial' : 'light'}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      {children}
-    </View>
-  );
-}
+const HERO_TOP = '#C8E6C9';
+const HERO_BOT = '#E8F5E9';
+const TEXT     = '#1A2C24';
+const GRAY     = '#6B7C75';
+const GRAY_DIM = '#A0B0A8';
+const DANGER   = '#D4183D';
+const BORDER   = 'rgba(45,106,79,0.18)';
 
 export default function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('welcome');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [referralCode, setReferralCode] = useState('');
@@ -70,14 +41,12 @@ export default function AuthScreen() {
   const clearForm = () => {
     setEmail(''); setPassword('');
     setReferralCode(''); setError(null);
+    setShowPassword(false);
   };
 
-  const handleGooglePlaceholder = () =>
-    Alert.alert('Coming soon', 'Google sign-in will be available soon.');
-  const handleApplePlaceholder = () =>
-    Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
-  const handleFacebookPlaceholder = () =>
-    Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
+  const handleGooglePlaceholder   = () => Alert.alert('Coming soon', 'Google sign-in will be available soon.');
+  const handleApplePlaceholder    = () => Alert.alert('Coming soon', 'Apple sign-in will be available soon.');
+  const handleFacebookPlaceholder = () => Alert.alert('Coming soon', 'Facebook sign-in will be available soon.');
 
   const handleSignIn = async () => {
     setError(null);
@@ -88,21 +57,15 @@ export default function AuthScreen() {
       if (error) throw error;
     } catch (e: any) {
       setError(e.message || 'Failed to sign in');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleSignUp = async () => {
     setError(null);
-    if (!email || !password) {
-      setError('Please fill in all required fields'); return;
-    }
+    if (!email || !password) { setError('Please fill in all required fields'); return; }
     setLoading(true);
     try {
-      if (referralCode.trim()) {
-        await setPendingReferralCode(referralCode.trim());
-      }
+      if (referralCode.trim()) await setPendingReferralCode(referralCode.trim());
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
       Alert.alert('Almost there!', 'Check your email to verify your account.', [
@@ -110,323 +73,388 @@ export default function AuthScreen() {
       ]);
     } catch (e: any) {
       setError(e.message || 'Failed to sign up');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
+  // ── Welcome ────────────────────────────────────────────────────────────────
   if (mode === 'welcome') {
     return (
-      <Background>
-        <View style={styles.welcomeContainer}>
-          <View style={styles.welcomeTop}>
-            <Text style={styles.pearEmoji}>🍐</Text>
-            <Text style={styles.welcomeTitle}>RoomPear</Text>
-            <Text style={styles.welcomeTagline}>Find roommates you actually vibe with</Text>
-            <Text style={styles.welcomeSub}>Match based on lifestyle, not just rent.</Text>
-          </View>
+      <View style={{ flex: 1, backgroundColor: HERO_TOP }}>
+        <LinearGradient
+          colors={[HERO_TOP, HERO_BOT]}
+          start={{ x: 0.3, y: 0 }}
+          end={{ x: 0.7, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
 
-          <View style={styles.welcomeBottom}>
+        <SafeAreaView edges={['top']} style={s.heroArea}>
+          <Image
+            source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+            style={s.heroLogo}
+            resizeMode="contain"
+          />
+          <Text style={s.heroTitle}>RoomPear</Text>
+          <Text style={s.heroTagline}>Find roommates you actually vibe with</Text>
+          <Text style={s.heroSub}>Match based on lifestyle, not just rent.</Text>
+        </SafeAreaView>
+
+        <View style={s.card}>
+          <SafeAreaView edges={['bottom']} style={s.cardInner}>
             <TouchableOpacity
-              style={styles.ctaBtn}
+              style={s.primaryBtn}
               onPress={() => { clearForm(); setMode('signup'); }}
               activeOpacity={0.85}
             >
-              <Text style={styles.ctaBtnText}>Get Started</Text>
+              <Text style={s.primaryBtnText}>Get Started</Text>
             </TouchableOpacity>
 
-            <View style={styles.orRow}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>or</Text>
-              <View style={styles.orLine} />
+            <View style={[s.orRow, { marginTop: 16 }]}>
+              <View style={s.orLine} />
+              <Text style={s.orText}>or continue with</Text>
+              <View style={s.orLine} />
             </View>
 
-            <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder}>
-                <AntDesign name="google" size={20} color={C.text} />
+            <View style={s.socialRow}>
+              <TouchableOpacity style={s.socialBtn} onPress={handleGooglePlaceholder}>
+                <AntDesign name="google" size={20} color={TEXT} />
               </TouchableOpacity>
               {Platform.OS === 'ios' && (
-                <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder}>
-                  <AntDesign name="apple" size={20} color={C.text} />
+                <TouchableOpacity style={s.socialBtn} onPress={handleApplePlaceholder}>
+                  <AntDesign name="apple" size={22} color={TEXT} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder}>
-                <FontAwesome name="facebook" size={20} color={C.text} />
+              <TouchableOpacity style={s.socialBtn} onPress={handleFacebookPlaceholder}>
+                <FontAwesome name="facebook" size={20} color={TEXT} />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity onPress={() => { clearForm(); setMode('signin'); }}>
-              <Text style={styles.switchLink}>
+              <Text style={s.switchText}>
                 Already have an account?{'  '}
-                <Text style={styles.switchLinkBold}>Log in</Text>
+                <Text style={s.switchLink}>Log in</Text>
               </Text>
             </TouchableOpacity>
-          </View>
+          </SafeAreaView>
         </View>
-      </Background>
+      </View>
     );
   }
 
+  // ── Sign in / Sign up ──────────────────────────────────────────────────────
   return (
-    <Background>
+    <View style={{ flex: 1, backgroundColor: HERO_TOP }}>
+      <LinearGradient
+        colors={[HERO_TOP, HERO_BOT]}
+        start={{ x: 0.3, y: 0 }}
+        end={{ x: 0.7, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <SafeAreaView edges={['top']} style={s.formHero}>
+        <TouchableOpacity style={s.backBtn} onPress={() => { clearForm(); setMode('welcome'); }}>
+          <Ionicons name="arrow-back" size={22} color={TEXT} />
+        </TouchableOpacity>
+        <Image
+          source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+          style={s.formHeroLogo}
+          resizeMode="contain"
+        />
+        <Text style={s.formHeroTitle}>
+          {mode === 'signin' ? 'Welcome back' : 'Create account'}
+        </Text>
+        <Text style={s.formHeroSub}>
+          {mode === 'signin' ? 'Sign in to continue matching' : 'Join RoomPear and find your match'}
+        </Text>
+      </SafeAreaView>
+
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView
-            contentContainerStyle={styles.formScroll}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <TouchableOpacity style={styles.backBtn} onPress={() => { clearForm(); setMode('welcome'); }}>
-              <AntDesign name="arrow-left" size={20} color={C.text} />
-            </TouchableOpacity>
+          <View style={[s.card, { flex: 1 }]}>
+            <SafeAreaView edges={['bottom']} style={s.formScroll}>
+              {error && (
+                <View style={s.errorBox}>
+                  <Ionicons name="alert-circle-outline" size={16} color={DANGER} style={{ marginRight: 6 }} />
+                  <Text style={s.errorText}>{error}</Text>
+                </View>
+              )}
 
-            <View style={styles.formHeader}>
-              <Text style={styles.pearEmoji}>🍐</Text>
-              <Text style={styles.formTitle}>
-                {mode === 'signin' ? 'Welcome back' : 'Create account'}
-              </Text>
-              <Text style={styles.formSub}>
-                {mode === 'signin'
-                  ? 'Sign in to continue matching'
-                  : 'Join RoomPear and find your match'}
-              </Text>
-            </View>
+              <TextInput
+                style={s.input}
+                placeholder="Email"
+                placeholderTextColor={GRAY_DIM}
+                value={email}
+                onChangeText={t => { setEmail(t); setError(null); }}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                editable={!loading}
+              />
 
-            {error && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={C.grayDim}
-              value={email}
-              onChangeText={t => { setEmail(t); setError(null); }}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!loading}
-            />
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={C.grayDim}
-              value={password}
-              onChangeText={t => { setPassword(t); setError(null); }}
-              secureTextEntry
-              editable={!loading}
-            />
-
-            {mode === 'signup' && (
-              <>
-                <Text style={styles.label}>Referral code (optional)</Text>
+              <View style={s.inputRow}>
                 <TextInput
-                  style={styles.input}
-                  placeholder="e.g. A1B2C3D4"
-                  placeholderTextColor={C.grayDim}
+                  style={[s.input, { flex: 1, marginBottom: 0 }]}
+                  placeholder="Password"
+                  placeholderTextColor={GRAY_DIM}
+                  value={password}
+                  onChangeText={t => { setPassword(t); setError(null); }}
+                  secureTextEntry={!showPassword}
+                  editable={!loading}
+                />
+                <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPassword(v => !v)}>
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={GRAY_DIM} />
+                </TouchableOpacity>
+              </View>
+
+              {mode === 'signup' && (
+                <TextInput
+                  style={s.input}
+                  placeholder="Referral code (optional)"
+                  placeholderTextColor={GRAY_DIM}
                   value={referralCode}
                   onChangeText={t => { setReferralCode(t.toUpperCase()); setError(null); }}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   editable={!loading}
                 />
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[styles.ctaBtn, styles.formCta, loading && { opacity: 0.6 }]}
-              onPress={mode === 'signin' ? handleSignIn : handleSignUp}
-              disabled={loading}
-            >
-              {loading
-                ? <ActivityIndicator color="#FFFFFF" />
-                : <Text style={styles.ctaBtnText}>
-                    {mode === 'signin' ? 'Sign In' : 'Create Account'}
-                  </Text>
-              }
-            </TouchableOpacity>
-
-            <View style={[styles.orRow, { marginTop: 8 }]}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>or continue with</Text>
-              <View style={styles.orLine} />
-            </View>
-
-            <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleGooglePlaceholder} disabled={loading}>
-                <AntDesign name="google" size={20} color={C.text} />
-              </TouchableOpacity>
-              {Platform.OS === 'ios' && (
-                <TouchableOpacity style={styles.socialBtn} onPress={handleApplePlaceholder} disabled={loading}>
-                  <AntDesign name="apple" size={20} color={C.text} />
-                </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookPlaceholder} disabled={loading}>
-                <FontAwesome name="facebook" size={20} color={C.text} />
+
+              <TouchableOpacity
+                style={[s.primaryBtn, { marginTop: 8 }, loading && { opacity: 0.6 }]}
+                onPress={mode === 'signin' ? handleSignIn : handleSignUp}
+                disabled={loading}
+              >
+                {loading
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : <Text style={s.primaryBtnText}>
+                      {mode === 'signin' ? 'Sign In' : 'Create Account'}
+                    </Text>
+                }
               </TouchableOpacity>
-            </View>
 
-            <TouchableOpacity
-              style={styles.switchModeBtn}
-              onPress={() => { clearForm(); setMode(mode === 'signin' ? 'signup' : 'signin'); }}
-              disabled={loading}
-            >
-              <Text style={styles.switchLink}>
-                {mode === 'signin' ? "Don't have an account?  " : 'Already have an account?  '}
-                <Text style={styles.switchLinkBold}>
-                  {mode === 'signin' ? 'Sign Up' : 'Log In'}
+              <View style={[s.orRow, { marginTop: 24 }]}>
+                <View style={s.orLine} />
+                <Text style={s.orText}>or continue with</Text>
+                <View style={s.orLine} />
+              </View>
+
+              <View style={s.socialRow}>
+                <TouchableOpacity style={s.socialBtn} onPress={handleGooglePlaceholder} disabled={loading}>
+                  <AntDesign name="google" size={20} color={TEXT} />
+                </TouchableOpacity>
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity style={s.socialBtn} onPress={handleApplePlaceholder} disabled={loading}>
+                    <AntDesign name="apple" size={22} color={TEXT} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={s.socialBtn} onPress={handleFacebookPlaceholder} disabled={loading}>
+                  <FontAwesome name="facebook" size={20} color={TEXT} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={{ paddingVertical: 8 }}
+                onPress={() => { clearForm(); setMode(mode === 'signin' ? 'signup' : 'signin'); }}
+                disabled={loading}
+              >
+                <Text style={s.switchText}>
+                  {mode === 'signin' ? "Don't have an account?  " : 'Already have an account?  '}
+                  <Text style={s.switchLink}>
+                    {mode === 'signin' ? 'Sign Up' : 'Log In'}
+                  </Text>
                 </Text>
-              </Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <Text style={styles.disclaimer}>
-              By continuing, you agree to RoomPear's Terms and Privacy Policy.
-            </Text>
-          </ScrollView>
+              <Text style={s.disclaimer}>
+                By continuing, you agree to RoomPear's Terms and Privacy Policy.
+              </Text>
+            </SafeAreaView>
+          </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </Background>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  // ── Welcome ─────────────────────────────────────────────────
-  welcomeContainer: {
+const s = StyleSheet.create({
+  heroArea: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 28,
-    paddingTop: 100,
-    paddingBottom: 52,
-  },
-  welcomeTop: {
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  pearEmoji: {
-    fontSize: 64,
-    marginBottom: 10,
+  heroLogo: {
+    width: 100,
+    height: 100,
+    marginBottom: 20,
   },
-  welcomeTitle: {
-    fontSize: 44,
+  heroTitle: {
+    fontSize: 40,
     fontWeight: '800',
-    color: C.text,
-    letterSpacing: 0.5,
-    marginBottom: 14,
+    color: TEXT,
+    letterSpacing: -0.8,
+    marginBottom: 12,
   },
-  welcomeTagline: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: C.text,
+  heroTagline: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: TEXT,
     textAlign: 'center',
+    lineHeight: 26,
     marginBottom: 8,
-    lineHeight: 28,
+    maxWidth: 260,
   },
-  welcomeSub: {
-    fontSize: 15,
-    color: C.gray,
+  heroSub: {
+    fontSize: 14,
+    color: GRAY,
     textAlign: 'center',
-  },
-  welcomeBottom: {
-    width: '100%',
   },
 
-  // ── Shared ──────────────────────────────────────────────────
-  ctaBtn: {
-    width: '100%',
-    backgroundColor: C.cta,
-    borderRadius: 50,
-    paddingVertical: 17,
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  cardInner: {
+    paddingHorizontal: 28,
+    paddingTop: 32,
+    paddingBottom: 12,
+  },
+
+  formHero: {
+    paddingHorizontal: 28,
+    paddingBottom: 32,
+    paddingTop: 8,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.07)',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 20,
+  },
+  formHeroLogo: {
+    width: 56,
+    height: 56,
+    marginBottom: 12,
+  },
+  formHeroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: TEXT,
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  formHeroSub: {
+    fontSize: 14,
+    color: GRAY,
+  },
+
+  formScroll: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+
+  input: {
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    height: 50,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: GRAY,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: 14,
+    padding: 4,
+  },
+
+  primaryBtn: {
+    width: '100%',
+    backgroundColor: '#111111',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  ctaBtnText: {
+  primaryBtnText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   orRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
     marginBottom: 20,
   },
-  orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.15)' },
-  orText: { marginHorizontal: 12, fontSize: 13, color: C.gray, fontWeight: '500' },
+  orLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(0,0,0,0.20)',
+  },
+  orText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    color: GRAY,
+    fontWeight: '500',
+  },
 
   socialRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 28,
+    gap: 12,
     justifyContent: 'center',
+    marginBottom: 16,
   },
   socialBtn: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: C.surface,
+    borderRadius: 14,
+    backgroundColor: '#F5F8F6',
     borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  switchLink: {
-    fontSize: 15,
-    color: C.gray,
+  switchText: {
+    fontSize: 14,
+    color: GRAY,
     textAlign: 'center',
   },
-  switchLinkBold: {
-    color: C.text,
+  switchLink: {
+    color: TEXT,
     fontWeight: '700',
   },
 
-  // ── Form ────────────────────────────────────────────────────
-  formScroll: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
-  },
-
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
-  },
-
-  formHeader: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  formTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: C.text,
-    marginBottom: 6,
-  },
-  formSub: {
-    fontSize: 15,
-    color: C.gray,
-    textAlign: 'center',
-  },
-
   errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(212,24,61,0.08)',
     borderRadius: 12,
     borderWidth: 1,
@@ -434,39 +462,12 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
   },
-  errorText: { color: C.danger, fontSize: 14 },
+  errorText: { color: DANGER, fontSize: 14, flex: 1 },
 
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.gray,
-    marginBottom: 6,
-    marginTop: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  input: {
-    backgroundColor: C.inputBg,
-    borderRadius: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: C.inputBorder,
-    color: C.text,
-  },
-
-  formCta: {
-    marginTop: 36,
-  },
-  switchModeBtn: {
-    marginTop: 8,
-    paddingVertical: 8,
-  },
   disclaimer: {
-    marginTop: 20,
+    marginTop: 10,
     fontSize: 12,
-    color: C.grayDim,
+    color: GRAY_DIM,
     textAlign: 'center',
     lineHeight: 16,
   },
