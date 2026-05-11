@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: fonts.extraBold, fontSize: 22, color: C.text, marginBottom: 8 },
   emptyText: { fontFamily: fonts.regular, fontSize: 15, color: C.gray, textAlign: 'center', lineHeight: 22 },
   refreshBtn: {
-    marginTop: 24, backgroundColor: '#2D6A4F',
+    marginTop: 24, backgroundColor: '#000000',
     paddingHorizontal: 28, paddingVertical: 13, borderRadius: 50,
   },
   refreshBtnText: { fontFamily: fonts.bold, color: C.white, fontSize: 15 },
