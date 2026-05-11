@@ -96,6 +96,7 @@ export default function DiscoverScreen() {
   const [myHobbies, setMyHobbies] = useState<string[]>([]);
   const [hasActiveRadiusFilter, setHasActiveRadiusFilter] = useState(false);
   const [actionDisabled, setActionDisabled] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [dailyUsage, setDailyUsage] = useState({ swipes: 0, topPicks: 0 });
   const [isPaused, setIsPaused] = useState(false);
@@ -230,9 +231,11 @@ export default function DiscoverScreen() {
     }
 
     setActionDisabled(true);
+    setCanUndo(false);
     const current = profiles[currentIndex];
     animateOut(direction, () => {
       setCurrentIndex(prev => prev + 1);
+      setCanUndo(true);
       Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => {
         setActionDisabled(false);
       });
@@ -262,7 +265,8 @@ export default function DiscoverScreen() {
   }
 
   async function handleUndo() {
-    if (actionDisabled || currentIndex === 0) return;
+    if (actionDisabled || !canUndo) return;
+    setCanUndo(false);
     setActionDisabled(true);
     cardOpacity.setValue(0);
     setCurrentIndex(prev => prev - 1);
@@ -429,9 +433,9 @@ export default function DiscoverScreen() {
         {/* ── Action bar ── */}
         <View style={[styles.actionBar, actionDisabled && styles.actionBarDisabled]}>
           <TouchableOpacity
-            style={[styles.actionBtn, styles.actionUndo, (currentIndex === 0 || actionDisabled) && styles.actionLocked]}
+            style={[styles.actionBtn, styles.actionUndo, (!canUndo || actionDisabled) && styles.actionLocked]}
             onPress={handleUndo}
-            disabled={currentIndex === 0 || actionDisabled}
+            disabled={!canUndo || actionDisabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
