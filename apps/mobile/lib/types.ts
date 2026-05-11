@@ -19,10 +19,6 @@ export type Listing = {
   user_id: string;
   title: string;
   description: string;
-  address: string;
-  city: string;
-  state: string;
-  zip_code: string;
   latitude?: number;
   longitude?: number;
   price: number;

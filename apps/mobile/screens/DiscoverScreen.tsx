@@ -481,7 +481,7 @@ export default function DiscoverScreen() {
       <Modal visible={!!matchData} transparent animationType="fade">
         <View style={styles.matchOverlay}>
           <View style={styles.matchCard}>
-            <Text style={styles.matchEmoji}>🍐</Text>
+            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={styles.matchPearLogo} resizeMode="contain" />
             <Text style={styles.matchTitle}>It's a Match!</Text>
             <View style={styles.matchAvatars}>
               <View style={styles.matchAvatarWrap}>
@@ -680,7 +680,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)',
     shadowColor: '#0A2818', shadowOpacity: 0.18, shadowRadius: 28, elevation: 14,
   },
-  matchEmoji: { fontSize: 48, marginBottom: 6 },
+  matchPearLogo: { width: 56, height: 56, marginBottom: 6 },
   matchTitle: { fontFamily: fonts.extraBold, fontSize: 28, color: C.text, marginBottom: 16 },
   matchSub: {
     fontFamily: fonts.regular, fontSize: 15, color: C.gray, textAlign: 'center',

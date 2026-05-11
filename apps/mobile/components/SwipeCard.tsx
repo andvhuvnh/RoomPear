@@ -208,7 +208,7 @@ export default function SwipeCard({
         {/* ── Responses card ── */}
         {hasResponses && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardLabel}>✦  RESPONSES</Text>
+            <Text style={styles.sectionCardLabel}>RESPONSES</Text>
             {profile.prompts.length > 0 ? (
               profile.prompts.map((p, i) => (
                 <View key={i} style={i > 0 ? styles.promptItemSpaced : styles.promptItem}>
@@ -226,7 +226,7 @@ export default function SwipeCard({
         {/* ── Interests card ── */}
         {hasInterests && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardLabel}>✦  INTERESTS</Text>
+            <Text style={styles.sectionCardLabel}>INTERESTS</Text>
             {activeCategories.map((cat, i) => (
               <View key={cat.key} style={i > 0 ? { marginTop: 6 } : undefined}>
                 {i > 0 && <View style={styles.promptDivider} />}

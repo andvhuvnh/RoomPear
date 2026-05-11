@@ -1347,7 +1347,6 @@ export default function OnboardingScreen({ onComplete }: Props) {
                   )}
                 </ScrollView>
                 <Text style={styles.photoCount}>{listingPhotos.length} / 6 photos{listingPhotos.length === 0 ? ' — optional but recommended' : ''}</Text>
-                <Text style={[styles.hint, { color: 'rgba(26,44,36,0.6)' }]}>You can add your full address later.</Text>
               </View>
             )}
           </ScrollView>

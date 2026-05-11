@@ -1,7 +1,6 @@
 import { ActivityIndicator, Modal, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Listing } from '../../lib/listings';
-import { formatAvailabilityForDisplay } from './listingFormUtils';
 
 type Props = {
   visible: boolean;
@@ -111,11 +110,6 @@ export default function SettingsModal({
                   {listing.rent != null && (
                     <Text style={styles.settingsListingMeta as object}>${listing.rent}/mo</Text>
                   )}
-                  {listing.move_in_date ? (
-                    <Text style={styles.settingsListingSub as object}>
-                      Available {formatAvailabilityForDisplay(listing.move_in_date)}
-                    </Text>
-                  ) : null}
                 </View>
                 <View style={styles.settingsRowDivider as object} />
                 <TouchableOpacity
