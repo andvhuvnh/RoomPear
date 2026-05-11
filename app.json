@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "3bd4beb6-0e38-4c19-8465-99d1fe6c79c7"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.ajhuynh.roompear",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
