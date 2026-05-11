@@ -27,7 +27,7 @@ type DiscoverDeckContextValue = {
   hasPremiumAccess: boolean;
   /** Re-read `profiles.subscription_tier` so Discover limits / filters match after dev toggle or RC sync. */
   syncPremiumFromDatabase: () => Promise<void>;
-  refreshDeck: () => Promise<void>;
+  refreshDeck: (opts?: { silent?: boolean }) => Promise<void>;
   removeProfileFromDeck: (profileId: string) => void;
 };
 
@@ -104,10 +104,10 @@ export function DiscoverDeckProvider({ userId, children }: Props) {
     void syncPremiumFromDatabase();
   }, [userId, customerInfo, syncPremiumFromDatabase]);
 
-  const refreshDeck = useCallback(async () => {
+  const refreshDeck = useCallback(async (opts?: { silent?: boolean }) => {
     appendExhausted.current = false;
     prefetchInFlight.current = false;
-    setDeckInitialLoading(true);
+    if (!opts?.silent) setDeckInitialLoading(true);
     try {
       const premium = await resolvePremiumForFetch();
       const data = await fetchDiscoverProfiles(userId, BATCH_SIZE, {
@@ -117,7 +117,7 @@ export function DiscoverDeckProvider({ userId, children }: Props) {
       setProfiles(data);
       setCurrentIndex(0);
     } finally {
-      setDeckInitialLoading(false);
+      if (!opts?.silent) setDeckInitialLoading(false);
     }
   }, [userId, resolvePremiumForFetch]);
 

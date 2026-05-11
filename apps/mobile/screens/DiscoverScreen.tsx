@@ -172,11 +172,11 @@ export default function DiscoverScreen() {
     }, [userId, refreshDailyUsage])
   );
 
-  const reloadDiscoverVisual = useCallback(async () => {
+  const reloadDiscoverVisual = useCallback(async (opts?: { silent?: boolean }) => {
     translateX.setValue(0);
     translateY.setValue(0);
     cardOpacity.setValue(1);
-    await refreshDeck();
+    await refreshDeck(opts);
   }, [refreshDeck, translateX, translateY, cardOpacity]);
 
   function animateOut(direction: Action, onFlyAwayComplete: () => void) {
@@ -250,10 +250,6 @@ export default function DiscoverScreen() {
 
   async function handleUndo() {
     if (actionDisabled || currentIndex === 0) return;
-    if (!hasPremiumAccess) {
-      await openPaywallIfNeeded();
-      return;
-    }
     setActionDisabled(true);
     cardOpacity.setValue(0);
     setCurrentIndex(prev => prev - 1);
@@ -343,7 +339,7 @@ export default function DiscoverScreen() {
             visible={filtersOpen}
             userId={userId}
             onClose={() => setFiltersOpen(false)}
-            onApply={() => void reloadDiscoverVisual()}
+            onApply={() => void reloadDiscoverVisual({ silent: true })}
             isPremium={hasPremiumAccess}
             onUpgrade={openPaywallIfNeeded}
           />
@@ -452,7 +448,7 @@ export default function DiscoverScreen() {
           visible={filtersOpen}
           userId={userId}
           onClose={() => setFiltersOpen(false)}
-          onApply={() => void reloadDiscoverVisual()}
+          onApply={() => void reloadDiscoverVisual({ silent: true })}
           isPremium={hasPremiumAccess}
           onUpgrade={openPaywallIfNeeded}
         />

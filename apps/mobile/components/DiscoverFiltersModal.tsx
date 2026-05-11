@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   ScrollView,
   StyleSheet,
@@ -97,31 +96,35 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [strictCleanliness, setStrictCleanliness] = useState(false);
   const [strictEarlyBird, setStrictEarlyBird] = useState(false);
   const [strictNightOwl, setStrictNightOwl] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
+  function applyPrefs(prefs: Awaited<ReturnType<typeof getPreferences>>) {
+    setEthnicityPref(prefs?.ethnicity_preference ?? []);
+    setRoomType(prefs?.room_type ?? '');
+    setMoveIn(prefs?.move_in_date ? moveInDateToLabel(prefs.move_in_date) : '');
+    setGenderPref(prefs?.gender_preference ?? '');
+    setHasListingOnly(prefs?.has_listing_only ?? false);
+    setMinBudget(prefs?.min_budget ?? 0);
+    setMaxBudget(prefs?.max_budget ?? 10000);
+    setMinAge(prefs?.min_age ?? 18);
+    setMaxAge(prefs?.max_age ?? 50);
+    const db = prefs?.discover_filter_dealbreakers ?? prefs?.dealbreakers ?? {};
+    setStrictPets(db.pets === 'hard');
+    setStrictSmoking(db.smoking === 'hard');
+    setStrictParties(db.parties === 'hard');
+    setStrictCleanliness(db.messy === 'hard');
+    setStrictEarlyBird(db.early_bird === 'hard');
+    setStrictNightOwl(db.night_owl === 'hard');
+  }
+
+  // Pre-fetch on mount so data is ready before the modal first opens
+  useEffect(() => {
+    getPreferences(userId).then(applyPrefs);
+  }, [userId]);
+
+  // Silently refresh whenever modal re-opens (no spinner)
   useEffect(() => {
     if (!visible) return;
-    setLoading(true);
-    getPreferences(userId).then((prefs) => {
-      setEthnicityPref(prefs?.ethnicity_preference ?? []);
-      setRoomType(prefs?.room_type ?? '');
-      setMoveIn(prefs?.move_in_date ? moveInDateToLabel(prefs.move_in_date) : '');
-      setGenderPref(prefs?.gender_preference ?? '');
-      setHasListingOnly(prefs?.has_listing_only ?? false);
-      setMinBudget(prefs?.min_budget ?? 0);
-      setMaxBudget(prefs?.max_budget ?? 10000);
-      setMinAge(prefs?.min_age ?? 18);
-      setMaxAge(prefs?.max_age ?? 50);
-      const db = prefs?.discover_filter_dealbreakers ?? prefs?.dealbreakers ?? {};
-      setStrictPets(db.pets === 'hard');
-      setStrictSmoking(db.smoking === 'hard');
-      setStrictParties(db.parties === 'hard');
-      setStrictCleanliness(db.messy === 'hard');
-      setStrictEarlyBird(db.early_bird === 'hard');
-      setStrictNightOwl(db.night_owl === 'hard');
-      setLoading(false);
-    });
+    getPreferences(userId).then(applyPrefs);
   }, [visible, userId]);
 
   const toggleEthnicity = (opt: string) =>
@@ -129,35 +132,30 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       prev.includes(opt) ? prev.filter((e) => e !== opt) : [...prev, opt]
     );
 
-  const handleApply = async () => {
-    setSaving(true);
-    try {
-      const discover_filter_dealbreakers: Record<string, string> = {};
-      if (isPremium) {
-        discover_filter_dealbreakers.pets       = strictPets        ? 'hard' : 'none';
-        discover_filter_dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
-        discover_filter_dealbreakers.parties    = strictParties     ? 'hard' : 'none';
-        discover_filter_dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
-        discover_filter_dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
-        discover_filter_dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
-      }
-      await savePreferences(userId, {
-        gender_preference: genderPref || '',
-        ethnicity_preference: ethnicityPref,
-        room_type: (roomType as any) || undefined,
-        move_in_date: moveIn ? (moveInLabelToDate(moveIn) ?? undefined) : undefined,
-        has_listing_only: hasListingOnly,
-        min_budget: minBudget,
-        max_budget: maxBudget,
-        min_age: minAge,
-        max_age: maxAge,
-        ...(isPremium ? { discover_filter_dealbreakers } : {}),
-      });
-      onApply();
-      onClose();
-    } finally {
-      setSaving(false);
+  const handleApply = () => {
+    // Close instantly — save + refresh happen in the background
+    onClose();
+    const discover_filter_dealbreakers: Record<string, 'hard' | 'soft' | 'none'> = {};
+    if (isPremium) {
+      discover_filter_dealbreakers.pets       = strictPets        ? 'hard' : 'none';
+      discover_filter_dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
+      discover_filter_dealbreakers.parties    = strictParties     ? 'hard' : 'none';
+      discover_filter_dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
+      discover_filter_dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
+      discover_filter_dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
     }
+    void savePreferences(userId, {
+      gender_preference: genderPref || '',
+      ethnicity_preference: ethnicityPref,
+      room_type: (roomType as any) || undefined,
+      move_in_date: moveIn ? (moveInLabelToDate(moveIn) ?? undefined) : undefined,
+      has_listing_only: hasListingOnly,
+      min_budget: minBudget,
+      max_budget: maxBudget,
+      min_age: minAge,
+      max_age: maxAge,
+      ...(isPremium ? { discover_filter_dealbreakers } : {}),
+    }).then(() => onApply());
   };
 
   const handleClear = () => {
@@ -189,10 +187,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
             <Text style={styles.title}>Filters</Text>
           </View>
 
-          {loading ? (
-            <ActivityIndicator style={{ marginVertical: 40 }} color="#1A1A2E" />
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
               {/* Gender preference */}
               <Text style={styles.sectionTitle}>I want to live with</Text>
@@ -397,18 +392,13 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
               </View>
 
             </ScrollView>
-          )}
 
           <TouchableOpacity
             style={styles.applyBtn}
             onPress={handleApply}
-            disabled={saving}
             activeOpacity={0.85}
           >
-            {saving
-              ? <ActivityIndicator color="#FFFFFF" />
-              : <Text style={styles.applyBtnText}>Apply</Text>
-            }
+            <Text style={styles.applyBtnText}>Apply</Text>
           </TouchableOpacity>
         </View>
       </View>

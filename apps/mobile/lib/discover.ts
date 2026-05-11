@@ -3,8 +3,6 @@ import { getProfileImageUrls, getProfileImageUrl } from './storage';
 import { getPreferences, type Preferences } from './preferences';
 import { passesHardFilters, scoreCompatibility, applyWildcardMix, getMatchReasons } from './matching';
 import { sendPushNotification } from './pushNotifications';
-import { isWithinRadiusMiles } from './distance';
-import { getBlockedIds } from './blockReport';
 
 export type PromptEntry = { question: string; answer: string };
 
@@ -29,74 +27,12 @@ export type DiscoverProfile = {
   matchReasons: string[];      // why these profiles match (premium display)
 };
 
-type PreferenceCoordinateRow = {
-  user_id: string;
-  search_lat: number | null;
-  search_lng: number | null;
-};
-
-type NearbyRpcRow = {
-  user_id: string;
-  distance_miles: number;
-};
-
-async function getNearbyCandidateIdsViaRpc(): Promise<string[] | null> {
-  const { data, error } = await supabase.rpc('get_nearby_preference_user_ids');
-
-  if (error || !data) {
-    return null;
-  }
-
-  const nearbyRows = data as NearbyRpcRow[];
-  return nearbyRows.map((row) => row.user_id);
-}
-
-async function getNearbyCandidateIds(
-  viewerId: string,
-  viewerPreferences: Preferences | null
-): Promise<string[] | null> {
-  const centerLat = viewerPreferences?.search_lat;
-  const centerLng = viewerPreferences?.search_lng;
-  const rawRadius = viewerPreferences?.search_radius_miles;
-  const radiusMiles = (rawRadius != null && Number.isFinite(rawRadius) && rawRadius > 0)
-    ? rawRadius
-    : 25; // default 25-mile radius
-
-  // If no location coords, skip distance filtering entirely.
-  if (centerLat == null || centerLng == null) {
-    return null;
-  }
-
-  const rpcNearbyIds = await getNearbyCandidateIdsViaRpc();
-  if (Array.isArray(rpcNearbyIds)) {
-    return rpcNearbyIds;
-  }
-
-  const { data, error } = await supabase
-    .from('preferences')
-    .select('user_id, search_lat, search_lng')
-    .neq('user_id', viewerId)
-    .not('search_lat', 'is', null)
-    .not('search_lng', 'is', null);
-
-  if (error || !data) {
-    return null;
-  }
-
-  const center = { lat: centerLat, lng: centerLng };
-  const nearbyIds: string[] = [];
-
-  for (const row of data as PreferenceCoordinateRow[]) {
-    if (row.search_lat == null || row.search_lng == null) continue;
-    const withinRadius = isWithinRadiusMiles(
-      center,
-      { lat: row.search_lat, lng: row.search_lng },
-      radiusMiles
-    );
-    if (withinRadius) nearbyIds.push(row.user_id);
-  }
-
-  return nearbyIds;
+/** Returns candidate IDs from the server — nearby filtering, swipe exclusion, and block
+ *  exclusion all handled in Postgres. Returns null on error (caller falls back gracefully). */
+async function getCandidateIds(limit: number): Promise<string[] | null> {
+  const { data, error } = await supabase.rpc('get_discover_candidates', { p_limit: limit });
+  if (error || !data) return null;
+  return (data as { user_id: string }[]).map((r) => r.user_id);
 }
 
 export async function fetchDiscoverProfiles(
@@ -105,32 +41,24 @@ export async function fetchDiscoverProfiles(
   options?: {
     useAdvancedFilters?: boolean;
     isPremium?: boolean;
-    /** Already in the deck (or otherwise excluded) — merged with swipes/blocks for this fetch. */
+    /** Profiles already in the deck — excluded from this fetch to avoid duplicates. */
     excludeIds?: string[];
   }
 ): Promise<DiscoverProfile[]> {
-  // Fetch viewer's own preferences for filtering + scoring
-  const myPrefs = await getPreferences(userId);
-  const nearbyIds = await getNearbyCandidateIds(userId, myPrefs);
-
-  if (Array.isArray(nearbyIds) && nearbyIds.length === 0) {
-    return [];
-  }
-
-  // Get IDs the user has already swiped on + blocked (either direction)
-  // All swipes recycle after 30 days — situations change (new listing, updated budget, etc.)
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [{ data: swipedRows }, blockedIds] = await Promise.all([
-    supabase.from('swipes').select('swiped_id').eq('swiper_id', userId).gte('created_at', thirtyDaysAgo),
-    getBlockedIds(userId),
+  // Fetch viewer's prefs + server-side candidate IDs in parallel
+  const [myPrefs, candidateIds] = await Promise.all([
+    getPreferences(userId),
+    getCandidateIds(limit),
   ]);
 
-  const swipedIds = swipedRows?.map((r: any) => r.swiped_id) ?? [];
-  const excludedIds = Array.from(
-    new Set([...swipedIds, ...blockedIds, ...(options?.excludeIds ?? [])])
-  );
+  // RPC returned empty — no one nearby / all swiped
+  if (Array.isArray(candidateIds) && candidateIds.length === 0) return [];
 
-  // Fetch a larger candidate pool so filtering still leaves enough results
+  // Filter out profiles already in the deck (client-side excludeIds only — swipes/blocks are server-side)
+  const deckExcludeSet = new Set(options?.excludeIds ?? []);
+  const allowedIds = candidateIds?.filter((id) => !deckExcludeSet.has(id));
+
+  // If RPC failed (null), fall back gracefully with no candidate filter
   let query = supabase
     .from('profiles')
     .select(
@@ -151,12 +79,9 @@ export async function fetchDiscoverProfiles(
     query = query.or(`gender.eq.${myPrefs.gender_preference},gender.is.null`);
   }
 
-  if (excludedIds.length > 0) {
-    query = query.not('id', 'in', `(${excludedIds.join(',')})`);
-  }
-
-  if (Array.isArray(nearbyIds)) {
-    query = query.in('id', nearbyIds);
+  if (Array.isArray(allowedIds)) {
+    if (allowedIds.length === 0) return [];
+    query = query.in('id', allowedIds);
   }
 
   const { data: rows, error } = await query as any;
