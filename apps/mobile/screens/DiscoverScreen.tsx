@@ -286,11 +286,13 @@ export default function DiscoverScreen() {
     return (
       <Background>
         <View style={styles.centered}>
-          <Animated.Image
-            source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
-            style={{ width: 72, height: 72, transform: [{ translateY: logoBobAnim }] }}
-            resizeMode="contain"
-          />
+          <Animated.View style={{ transform: [{ translateY: logoBobAnim }] }}>
+            <Image
+              source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+              style={{ width: 72, height: 72 }}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
       </Background>
     );
