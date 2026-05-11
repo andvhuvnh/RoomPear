@@ -1,335 +1,266 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
+  Animated,
   View,
   Text,
-  FlatList,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
-  type NativeSyntheticEvent,
-  type NativeScrollEvent,
-  type ListRenderItemInfo,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ArrowCounterClockwise, X, Star, Heart, Flag } from 'phosphor-react-native';
+import { MapPin, Flag, User, Buildings, Briefcase } from 'phosphor-react-native';
+import { fonts, serifFonts } from '../lib/typography';
+import { INTEREST_CATEGORIES as CATEGORY_META } from '../screens/profile/userProfileConstants';
 import type { DiscoverProfile } from '../lib/discover';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export const CARD_WIDTH = SCREEN_WIDTH - 32;
-export const CARD_HEIGHT = SCREEN_HEIGHT * 0.70;
-const TAB_HEIGHT = 48;
-const PHOTO_HEIGHT = Math.round(CARD_HEIGHT * 0.55);
+const SIDE_MARGIN = 10;
+const CARD_GAP = 8;
+
+export const CARD_WIDTH = SCREEN_WIDTH - SIDE_MARGIN * 2;
+export const CARD_HEIGHT = SCREEN_HEIGHT * 0.78;
+const PHOTO_HEIGHT = Math.round(CARD_WIDTH * (4 / 3));
 
 type PhotoTab = 'profile' | 'place';
 
 interface Props {
   profile: DiscoverProfile;
-  onPass?: () => void;
-  onLike?: () => void;
-  onTopPick?: () => void;
-  onUndo?: () => void;
   onReport?: () => void;
-  canUndo?: boolean;
-  actionDisabled?: boolean;
   showMatchReasons?: boolean;
   onUnlockReasons?: () => void;
 }
 
 export default function SwipeCard({
   profile,
-  onPass, onLike, onTopPick, onUndo, onReport,
-  canUndo = false, actionDisabled = false,
-  showMatchReasons = false, onUnlockReasons,
+  onReport,
+  showMatchReasons = false,
+  onUnlockReasons,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
-  const listRef = useRef<FlatList<string>>(null);
+  const opacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setPhotoTab('profile');
     setPhotoIndex(0);
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [profile.id]);
 
   const profilePhotos = profile.photoUrls.slice(0, profile.profilePhotoCount);
   const listingPhotos = profile.photoUrls.slice(profile.profilePhotoCount);
   const activePhotos = photoTab === 'profile' ? profilePhotos : listingPhotos;
-  const hasListingPhotos = listingPhotos.length > 0;
 
   const switchTab = useCallback((tab: PhotoTab) => {
     setPhotoTab(tab);
     setPhotoIndex(0);
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, []);
 
-  const onMomentumScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-      setPhotoIndex(Math.max(0, Math.min(idx, activePhotos.length - 1)));
-    },
-    [activePhotos.length, photoTab]
-  );
+  const advancePhoto = useCallback((direction: 'next' | 'prev') => {
+    const next = direction === 'next'
+      ? Math.min(photoIndex + 1, activePhotos.length - 1)
+      : Math.max(photoIndex - 1, 0);
+    if (next === photoIndex) return;
 
-  const renderPhoto = useCallback(
-    ({ item }: ListRenderItemInfo<string>) => (
-      <ExpoImage
-        source={{ uri: item }}
-        style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        transition={0}
-        recyclingKey={`${profile.id}-${item}`}
-      />
-    ),
-    [profile.id]
-  );
+    opacityAnim.setValue(0);
+    setPhotoIndex(next);
+    Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  }, [photoIndex, activePhotos.length, opacityAnim]);
 
-  const firstName = profile.name.split(' ')[0];
+  const score = profile.compatibilityScore;
+  const matchDotColor = score < 30 ? '#D4183D' : score <= 70 ? '#FF9500' : '#2D6A4F';
+
+  const activeCategories = CATEGORY_META.filter(cat => (profile.interests[cat.key]?.length ?? 0) > 0);
+  const fallbackChips = activeCategories.length === 0 ? (profile.hobbies ?? []) : [];
+  const hasInterests = activeCategories.length > 0 || fallbackChips.length > 0;
+  const hasResponses = profile.prompts.length > 0 || !!profile.bio;
 
   return (
     <View style={styles.card}>
-
-      {/* ── Photo section ── */}
-      <View style={[styles.photoSection, { height: PHOTO_HEIGHT }]}>
-        {photoTab === 'place' && !hasListingPhotos ? (
-          <View style={styles.noListingWrap}>
-            <Text style={styles.noListingIcon}>🏠</Text>
-            <Text style={styles.noListingTitle}>
-              {profile.hasListing ? 'No photos yet' : 'No place listed'}
-            </Text>
-            <Text style={styles.noListingSubtitle}>
-              {profile.hasListing
-                ? `${firstName} hasn't added place photos`
-                : `${firstName} hasn't listed a place`}
-            </Text>
-          </View>
-        ) : (
-          <>
-            <FlatList
-              key={`${profile.id}-${photoTab}`}
-              ref={listRef}
-              data={activePhotos}
-              keyExtractor={(_, i) => `${profile.id}-${photoTab}-${i}`}
-              renderItem={renderPhoto}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              onMomentumScrollEnd={onMomentumScrollEnd}
-              getItemLayout={(_, index) => ({
-                length: CARD_WIDTH,
-                offset: CARD_WIDTH * index,
-                index,
-              })}
-              scrollEventThrottle={16}
-            />
-
-            {activePhotos.length > 1 && (
-              <View style={styles.progressBars} pointerEvents="none">
-                {activePhotos.map((_, i) => (
-                  <View key={i} style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: i <= photoIndex ? '100%' : '0%' }]} />
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.68)']}
-              locations={[0.4, 0.68, 1]}
-              style={styles.scrim}
-              pointerEvents="none"
-            />
-
-            {onReport && (
-              <TouchableOpacity style={styles.flagBtn} onPress={onReport} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Flag size={18} color="rgba(255,255,255,0.85)" weight="fill" />
-              </TouchableOpacity>
-            )}
-
-            {photoTab === 'place' && !!profile.listingRoomType && (
-              <View style={styles.overlay} pointerEvents="none">
-                <View style={styles.budgetRow}>
-                  <Text style={styles.overlayBudget}>🏠 {profile.listingRoomType.charAt(0).toUpperCase() + profile.listingRoomType.slice(1)} room</Text>
-                </View>
-              </View>
-            )}
-
-            {photoTab === 'profile' && (
-              <View style={styles.overlay} pointerEvents="none">
-                <View style={styles.nameRow}>
-                  <Text style={styles.overlayName}>{profile.name}</Text>
-                  {profile.age != null && (
-                    <Text style={styles.overlayAge}>{profile.age}</Text>
-                  )}
-                  {profile.compatibilityScore > 0 && (
-                    <View style={styles.matchBadge}>
-                      <Text style={styles.matchBadgeText}>{profile.compatibilityScore}% Match</Text>
-                    </View>
-                  )}
-                </View>
-                {!!profile.location && (
-                  <View style={styles.locationRow}>
-                    <MapPin size={13} color="rgba(255,255,255,0.85)" weight="fill" />
-                    <Text style={styles.overlayLocation}>{profile.location}</Text>
-                  </View>
-                )}
-                {(!!profile.roomType || profile.maxBudget != null) && (
-                  <View style={styles.budgetRow}>
-                    {!!profile.roomType && (
-                      <Text style={styles.overlayBudget}>{profile.roomType}</Text>
-                    )}
-                    {!!profile.roomType && profile.maxBudget != null && (
-                      <Text style={styles.overlayBudgetDot}>·</Text>
-                    )}
-                    {profile.maxBudget != null && (
-                      <Text style={styles.overlayBudget}>Up to ${profile.maxBudget.toLocaleString()}/mo</Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-          </>
-        )}
-      </View>
-
-      {/* ── Tab strip ── */}
-      <View style={styles.tabStrip}>
-        <TouchableOpacity
-          style={[styles.tabPill, photoTab === 'profile' && styles.tabPillActive]}
-          onPress={() => switchTab('profile')}
-          activeOpacity={0.75}
-        >
-          <Text style={[styles.tabText, photoTab === 'profile' && styles.tabTextActive]}>
-            {firstName}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.tabPill,
-            photoTab === 'place' && styles.tabPillActive,
-            !profile.hasListing && styles.tabPillDimmed,
-          ]}
-          onPress={() => switchTab('place')}
-          activeOpacity={0.75}
-        >
-          <Text style={[styles.tabText, photoTab === 'place' && styles.tabTextActive]}>
-            🏠  Place
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Info section — scrollable ── */}
       <ScrollView
-        style={styles.infoScroll}
-        contentContainerStyle={styles.infoContent}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
+        nestedScrollEnabled
+        bounces={false}
       >
-        {showMatchReasons && profile.matchReasons.length > 0 ? (
-          <View style={styles.reasonsRow}>
-            {profile.matchReasons.map((r, i) => (
-              <View key={i} style={styles.reasonChip}>
-                <Text style={styles.reasonChipText}>{r}</Text>
-              </View>
-            ))}
+        {/* ── Photo card ── */}
+        <View style={styles.photoCard}>
+          <Animated.View style={{ opacity: opacityAnim }}>
+            <ExpoImage
+              source={{ uri: activePhotos[photoIndex] }}
+              style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
+            />
+          </Animated.View>
+
+          {/* Tap zones */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.tapZoneLeft}
+              onPress={() => advancePhoto('prev')}
+              activeOpacity={1}
+            />
+            <TouchableOpacity
+              style={styles.tapZoneRight}
+              onPress={() => advancePhoto('next')}
+              activeOpacity={1}
+            />
           </View>
-        ) : !showMatchReasons && profile.matchReasons.length > 0 && onUnlockReasons ? (
-          <TouchableOpacity style={styles.reasonsLock} onPress={onUnlockReasons} activeOpacity={0.75}>
-            <Text style={styles.reasonsLockText}>🔒 See why you match</Text>
-          </TouchableOpacity>
-        ) : null}
 
-        {profile.prompts.length > 0 ? (
-          <>
-            {profile.prompts.map((p, i) => (
-              <View key={i} style={styles.promptCard}>
-                <View style={styles.promptAccent} />
-                <View style={styles.promptContent}>
-                  <Text style={styles.promptQuestion} numberOfLines={2}>
-                    {p.question}
-                  </Text>
-                  <Text style={styles.promptAnswer} numberOfLines={3}>
-                    {p.answer}
-                  </Text>
-                </View>
+          {/* Dot indicators */}
+          {activePhotos.length > 1 && (
+            <View style={styles.dotsRow} pointerEvents="none">
+              {activePhotos.map((_, i) => (
+                <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
+              ))}
+            </View>
+          )}
+
+          {/* Tab pill */}
+          {profile.hasListing && (
+            <View style={styles.tabPill} pointerEvents="box-none">
+              <View style={styles.tabPillInner}>
+                <TouchableOpacity
+                  style={[styles.tabOption, photoTab === 'profile' && styles.tabOptionActive]}
+                  onPress={() => switchTab('profile')}
+                  activeOpacity={0.8}
+                >
+                  <User size={18} color={photoTab === 'profile' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                </TouchableOpacity>
+                <View style={styles.tabDivider} />
+                <TouchableOpacity
+                  style={[styles.tabOption, photoTab === 'place' && styles.tabOptionActive]}
+                  onPress={() => switchTab('place')}
+                  activeOpacity={0.8}
+                >
+                  <Buildings size={18} color={photoTab === 'place' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                </TouchableOpacity>
               </View>
-            ))}
-          </>
-        ) : !!profile.bio ? (
-          <Text style={styles.bio}>{profile.bio}</Text>
-        ) : null}
+            </View>
+          )}
 
-        {Object.keys(profile.interests).length > 0 ? (
-          Object.entries(profile.interests).map(([cat, chips]) =>
-            chips.length > 0 ? (
-              <View key={cat} style={styles.categoryBlock}>
-                <Text style={styles.categoryLabel}>{cat}</Text>
+        </View>
+
+        {/* ── Info card ── */}
+        <View style={styles.sectionCard}>
+          <View style={styles.nameRow}>
+            <Text style={styles.infoName}>{profile.name}</Text>
+            {profile.age != null && <Text style={styles.infoAge}>{profile.age}</Text>}
+          </View>
+
+          {!!profile.location && (
+            <View style={styles.metaRow}>
+              <MapPin size={12} color="#A0A0B0" weight="fill" />
+              <Text style={styles.metaText}>{profile.location}</Text>
+            </View>
+          )}
+
+          {!!profile.occupation && (
+            <View style={styles.metaRow}>
+              <Briefcase size={12} color="#A0A0B0" weight="fill" />
+              <Text style={styles.metaText}>{profile.occupation}</Text>
+            </View>
+          )}
+
+          {(!!profile.roomType || profile.maxBudget != null) && (
+            <View style={styles.metaRow}>
+              {!!profile.roomType && <Text style={styles.metaText}>{profile.roomType} room</Text>}
+              {!!profile.roomType && profile.maxBudget != null && <Text style={styles.metaDot}>·</Text>}
+              {profile.maxBudget != null && (
+                <Text style={styles.metaText}>
+                  {profile.minBudget != null
+                    ? `$${profile.minBudget.toLocaleString()} – $${profile.maxBudget.toLocaleString()}/mo`
+                    : `Up to $${profile.maxBudget.toLocaleString()}/mo`}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {profile.compatibilityScore > 0 && (
+            <View style={styles.matchRow}>
+              {showMatchReasons && profile.matchReasons.length > 0 ? (
+                <View style={styles.matchPill}>
+                  <View style={[styles.matchDot, { backgroundColor: matchDotColor }]} />
+                  <Text style={styles.matchScore}>{profile.compatibilityScore}% match</Text>
+                  <View style={styles.matchPillDivider} />
+                  <Text style={styles.matchReasons}>You both like: {profile.matchReasons.join(', ')}</Text>
+                </View>
+              ) : onUnlockReasons ? (
+                <TouchableOpacity style={styles.matchPill} onPress={onUnlockReasons} activeOpacity={0.75}>
+                  <View style={[styles.matchDot, { backgroundColor: matchDotColor }]} />
+                  <Text style={styles.matchScore}>{profile.compatibilityScore}% match</Text>
+                  <View style={styles.matchPillDivider} />
+                  <Text style={styles.matchReasons}>See why you match</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.matchPill}>
+                  <View style={[styles.matchDot, { backgroundColor: matchDotColor }]} />
+                  <Text style={styles.matchScore}>{profile.compatibilityScore}% match</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* ── Responses card ── */}
+        {hasResponses && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionCardLabel}>✦  RESPONSES</Text>
+            {profile.prompts.length > 0 ? (
+              profile.prompts.map((p, i) => (
+                <View key={i} style={i > 0 ? styles.promptItemSpaced : styles.promptItem}>
+                  {i > 0 && <View style={styles.promptDivider} />}
+                  <Text style={styles.promptQuestion}>{p.question.toUpperCase()}</Text>
+                  <Text style={styles.promptAnswer}>{p.answer}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.bio}>{profile.bio}</Text>
+            )}
+          </View>
+        )}
+
+        {/* ── Interests card ── */}
+        {hasInterests && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionCardLabel}>✦  INTERESTS</Text>
+            {activeCategories.map((cat, i) => (
+              <View key={cat.key} style={i > 0 ? { marginTop: 6 } : undefined}>
+                {i > 0 && <View style={styles.promptDivider} />}
+                <Text style={styles.categoryLabel}>{cat.label.split(' ').slice(1).join(' ').toUpperCase()}</Text>
                 <View style={styles.chipsRow}>
-                  {chips.map((h, i) => (
-                    <View key={i} style={styles.chip}>
-                      <Text style={styles.chipText}>{h}</Text>
+                  {profile.interests[cat.key].map((item, j) => (
+                    <View key={j} style={styles.chip}>
+                      <Text style={styles.chipText}>{item}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-            ) : null
-          )
-        ) : profile.hobbies && profile.hobbies.length > 0 ? (
-          <>
-            <Text style={styles.interestsLabel}>Interests</Text>
-            <View style={styles.chipsRow}>
-              {profile.hobbies.map((h, i) => (
-                <View key={i} style={styles.chip}>
-                  <Text style={styles.chipText}>{h}</Text>
-                </View>
-              ))}
-            </View>
-          </>
-        ) : null}
+            ))}
+            {fallbackChips.length > 0 && (
+              <View style={styles.chipsRow}>
+                {fallbackChips.map((h, i) => (
+                  <View key={i} style={styles.chip}>
+                    <Text style={styles.chipText}>{h}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ── Report ── */}
+        {onReport && (
+          <TouchableOpacity style={styles.reportBtn} onPress={onReport} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
+            <Flag size={13} color="#C0C0C8" weight="fill" />
+            <Text style={styles.reportBtnText}>Report</Text>
+          </TouchableOpacity>
+        )}
+
       </ScrollView>
-
-      {/* ── Vertical action column (bottom-right, absolutely positioned) ── */}
-      {onPass && (
-        <View style={[styles.actionColumn, actionDisabled && styles.actionBarDisabled]}>
-          <TouchableOpacity
-            style={styles.actionCircle}
-            onPress={onLike}
-            disabled={actionDisabled}
-          >
-            <Heart size={22} color="#2D6A4F" weight="fill" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCircle}
-            onPress={onTopPick}
-            disabled={actionDisabled}
-          >
-            <Star size={20} color="#FF9500" weight="fill" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCircle}
-            onPress={onPass}
-            disabled={actionDisabled}
-          >
-            <X size={20} color="#D4183D" weight="bold" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionCircle, (!canUndo || actionDisabled) && styles.actionBtnDimmed]}
-            onPress={onUndo}
-            disabled={!canUndo || actionDisabled}
-          >
-            <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
-          </TouchableOpacity>
-        </View>
-      )}
-
     </View>
   );
 }
@@ -338,320 +269,287 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    backgroundColor: '#F7F7F7',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
     shadowRadius: 24,
-    elevation: 12,
+    elevation: 14,
+  },
+  scroll: { flex: 1 },
+  scrollContent: {
+    paddingBottom: 120,
+    gap: CARD_GAP,
   },
 
-  // ── Photo ──
-  photoSection: {
-    width: CARD_WIDTH,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#E8E8E8',
-  },
-  progressBars: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    gap: 4,
-    zIndex: 3,
-  },
-  progressBar: {
-    flex: 1,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.35)',
+  // ── Photo card ──
+  photoCard: {
+    height: PHOTO_HEIGHT,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 20,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 2,
-  },
-  scrim: {
+  tabPill: {
     position: 'absolute',
+    top: 10,
     left: 0,
     right: 0,
-    bottom: 0,
-    height: PHOTO_HEIGHT * 0.55,
-    zIndex: 1,
-  },
-  overlay: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 16,
-    zIndex: 2,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    marginBottom: 4,
-  },
-  overlayName: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  overlayAge: {
-    fontSize: 24,
-    fontWeight: '400',
-    color: 'rgba(255,255,255,0.88)',
-  },
-  locationRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    zIndex: 4,
   },
-  overlayLocation: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.85)',
-  },
-  budgetRow: {
+  tabPillInner: {
     flexDirection: 'row',
+    backgroundColor: 'rgba(20,20,20,0.72)',
+    borderRadius: 50,
     alignItems: 'center',
-    gap: 5,
-    marginTop: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
   },
-  overlayBudget: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.78)',
-  },
-  overlayBudgetDot: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-  },
-
-  // ── No listing placeholder ──
-  noListingWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F2F2F2',
-    gap: 6,
-  },
-  noListingIcon: { fontSize: 40 },
-  noListingTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1A2C24',
-  },
-  noListingSubtitle: {
-    fontSize: 14,
-    color: '#717182',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-
-  // ── Tab strip ──
-  tabStrip: {
-    height: TAB_HEIGHT,
+  tabOption: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
-  },
-  tabPill: {
-    flex: 1,
-    height: 32,
+    paddingVertical: 6,
     borderRadius: 50,
-    alignItems: 'center',
+  },
+  tabOptionActive: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  tabDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    marginHorizontal: 8,
+  },
+  tapZoneLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '40%',
+  },
+  tapZoneRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '60%',
+  },
+  dotsRow: {
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.04)',
+    alignItems: 'center',
+    gap: 5,
+    zIndex: 3,
   },
-  tabPillActive: {
-    backgroundColor: '#1A2C24',
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.45)',
   },
-  tabPillDimmed: {
-    opacity: 0.4,
+  dotActive: {
+    backgroundColor: '#FFFFFF',
+    width: 18,
+    borderRadius: 3,
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#717182',
+  scrollHint: {
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 3,
   },
-  tabTextActive: {
-    color: '#FFFFFF',
+  scrollHintText: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.60)',
+    letterSpacing: 2,
   },
 
-  // ── Info (scrollable) ──
-  infoScroll: {
-    flex: 1,
+  // ── Section cards ──
+  sectionCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginHorizontal: 6,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  infoContent: {
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 16,
+  sectionCardLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: '#717182',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+
+  // ── Info card ──
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginBottom: 4,
+  },
+  infoName: {
+    fontFamily: fonts.extraBold,
+    fontSize: 28,
+    color: '#1A1A2E',
+    letterSpacing: -0.5,
+  },
+  infoAge: {
+    fontFamily: fonts.semiBold,
+    fontSize: 20,
+    color: '#A0A0B0',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  metaText: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: '#A0A0B0',
+  },
+  metaDot: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: '#C8C8D0',
+  },
+  matchRow: {
+    marginTop: 8,
+  },
+  matchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: '#F5F5F8',
+    borderRadius: 50,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  matchScore: {
+    fontFamily: fonts.semiBold,
+    fontSize: 12,
+    color: '#1A1A2E',
+  },
+  matchPillDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#D8D8E0',
+  },
+  matchReasons: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: '#717182',
+    flexShrink: 1,
+  },
+  matchDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  // ── Responses card ──
+  promptItem: {
+    paddingVertical: 0,
+  },
+  promptItemSpaced: {
+    paddingVertical: 0,
+  },
+  promptDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F5',
+    marginVertical: 5,
+  },
+  promptQuestion: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: '#C0C0C8',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  promptAnswer: {
+    fontFamily: serifFonts.bold,
+    fontSize: 20,
+    color: '#1A1A2E',
+    lineHeight: 26,
   },
   bio: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: '#717182',
-    lineHeight: 20,
-    marginBottom: 10,
+    lineHeight: 21,
   },
-  interestsLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#A0A0B0',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 7,
-  },
-  categoryBlock: {
-    marginBottom: 10,
-  },
+
+  // ── Interests card ──
+  interestItem: {},
+  interestItemSpaced: {},
   categoryLabel: {
+    fontFamily: fonts.bold,
     fontSize: 10,
-    fontWeight: '700',
-    color: '#A0A0B0',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 5,
+    color: '#C0C0C8',
+    letterSpacing: 1,
+    marginBottom: 3,
+  },
+  interestItems: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: '#1A1A2E',
+    lineHeight: 22,
+  },
+  interestDivider: {
+    fontFamily: fonts.regular,
+    color: '#C0C0C8',
+  },
+
+  // ── Report ──
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    gap: 5,
   },
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 7,
+    gap: 6,
+    marginTop: 5,
   },
   chip: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: 'rgba(45,106,79,0.45)',
+    borderColor: '#D8D8E0',
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 50,
-    backgroundColor: 'rgba(45,106,79,0.04)',
   },
   chipText: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '600',
-    color: '#2D6A4F',
+    color: '#1A1A2E',
   },
-
-  // ── Prompt card ──
-  promptCard: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(45,106,79,0.05)',
-    borderRadius: 12,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  promptAccent: {
-    width: 3,
-    backgroundColor: '#2D6A4F',
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
-  promptContent: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  promptQuestion: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#A0A0B0',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  promptAnswer: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1A2C24',
-    lineHeight: 20,
-  },
-
-  // ── Action column (bottom-right, absolutely positioned) ──
-  actionColumn: {
-    position: 'absolute',
-    right: 12,
-    bottom: 16,
-    alignItems: 'center',
-    gap: 8,
-    zIndex: 10,
-  },
-  actionBarDisabled: { opacity: 0.4 },
-  actionCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtnDimmed: { opacity: 0.3 },
-  flagBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  matchBadge: {
-    backgroundColor: 'rgba(12,83,137,0.82)',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    marginLeft: 6,
-  },
-  matchBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
-  },
-  reasonsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  reasonChip: {
-    backgroundColor: 'rgba(45,106,79,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(45,106,79,0.25)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  reasonChipText: {
-    fontSize: 11,
-    fontFamily: 'Nunito_600SemiBold',
-    color: '#2D6A4F',
-  },
-  reasonsLock: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0,0,0,0.06)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 12,
-  },
-  reasonsLockText: {
+  reportBtnText: {
+    fontFamily: fonts.medium,
     fontSize: 12,
-    fontFamily: 'Nunito_600SemiBold',
-    color: '#717182',
+    color: '#C0C0C8',
   },
 });

@@ -92,14 +92,9 @@ export async function getProfileImageUrls(imagePathOrUrl: string | null | undefi
       paths = [imagePathOrUrl];
     }
 
-    // Generate signed URLs for all paths
-    const signedUrls: string[] = [];
-    for (const path of paths) {
-      const url = await getProfileImageUrl(path);
-      if (url) {
-        signedUrls.push(url);
-      }
-    }
+    // Generate signed URLs for all paths in parallel
+    const results = await Promise.all(paths.map(p => getProfileImageUrl(p)));
+    const signedUrls = results.filter((u): u is string => u !== null);
 
     return signedUrls.length > 0 ? signedUrls : null;
   } catch (error: any) {

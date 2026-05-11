@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   ScrollView,
   StyleSheet,
@@ -9,9 +8,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
+import { Slider } from '@miblanchard/react-native-slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPreferences, savePreferences } from '../lib/preferences';
+import { fonts } from '../lib/typography';
 
 const GENDER_PREF_OPTIONS = [
   { val: 'Man',        label: 'Men' },
@@ -20,14 +20,16 @@ const GENDER_PREF_OPTIONS = [
 ];
 
 const ETHNICITY_OPTIONS = [
-  'Asian',
-  'Black / African American',
+  'Black / African descent',
+  'East Asian',
   'Hispanic / Latino',
   'Middle Eastern',
   'Native American',
   'Pacific Islander',
+  'South Asian',
+  'Southeast Asian',
   'White / Caucasian',
-  'Multiracial',
+  'Other',
 ];
 
 const ROOM_TYPE_OPTIONS = [
@@ -38,18 +40,35 @@ const ROOM_TYPE_OPTIONS = [
 ];
 
 const MOVE_IN_OPTIONS = [
-  { val: 'ASAP',       label: 'ASAP' },
-  { val: '1-3 months', label: '1–3 months' },
-  { val: '3-6 months', label: '3–6 months' },
-  { val: 'Flexible',   label: 'Flexible' },
+  { label: 'Immediately',    offsetDays: 0 },
+  { label: 'Within 2 weeks', offsetDays: 14 },
+  { label: 'Within 1 month', offsetDays: 30 },
+  { label: '1–3 months',     offsetDays: 60 },
+  { label: '3–6 months',     offsetDays: 120 },
+  { label: 'Flexible',       offsetDays: -1 },
 ];
 
-const LEASE_OPTIONS = [
-  { val: 1,  label: 'Month-to-month' },
-  { val: 6,  label: '6 months' },
-  { val: 12, label: '1 year' },
-  { val: 0,  label: 'Flexible' },
-];
+function moveInLabelToDate(label: string): string | null {
+  const opt = MOVE_IN_OPTIONS.find(o => o.label === label);
+  if (!opt || opt.offsetDays === -1) return null;
+  const d = new Date();
+  d.setDate(d.getDate() + opt.offsetDays);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().split('T')[0];
+}
+
+function moveInDateToLabel(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Flexible';
+  const stored = new Date(dateStr).getTime();
+  const now = Date.now();
+  const diffDays = (stored - now) / 86_400_000;
+  if (diffDays <= 1)   return 'Immediately';
+  if (diffDays <= 21)  return 'Within 2 weeks';
+  if (diffDays <= 45)  return 'Within 1 month';
+  if (diffDays <= 90)  return '1–3 months';
+  return '3–6 months';
+}
+
 
 interface Props {
   visible: boolean;
@@ -65,7 +84,6 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [ethnicityPref, setEthnicityPref] = useState<string[]>([]);
   const [roomType, setRoomType] = useState('');
   const [moveIn, setMoveIn] = useState('');
-  const [leaseDuration, setLeaseDuration] = useState<number | null>(null);
   const [genderPref, setGenderPref] = useState('');
   const [hasListingOnly, setHasListingOnly] = useState(false);
   const [minBudget, setMinBudget] = useState(0);
@@ -78,32 +96,35 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   const [strictCleanliness, setStrictCleanliness] = useState(false);
   const [strictEarlyBird, setStrictEarlyBird] = useState(false);
   const [strictNightOwl, setStrictNightOwl] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
+  function applyPrefs(prefs: Awaited<ReturnType<typeof getPreferences>>) {
+    setEthnicityPref(prefs?.ethnicity_preference ?? []);
+    setRoomType(prefs?.room_type ?? '');
+    setMoveIn(prefs?.move_in_date ? moveInDateToLabel(prefs.move_in_date) : '');
+    setGenderPref(prefs?.gender_preference ?? '');
+    setHasListingOnly(prefs?.has_listing_only ?? false);
+    setMinBudget(prefs?.min_budget ?? 0);
+    setMaxBudget(prefs?.max_budget ?? 10000);
+    setMinAge(prefs?.min_age ?? 18);
+    setMaxAge(prefs?.max_age ?? 50);
+    const db = prefs?.discover_filter_dealbreakers ?? prefs?.dealbreakers ?? {};
+    setStrictPets(db.pets === 'hard');
+    setStrictSmoking(db.smoking === 'hard');
+    setStrictParties(db.parties === 'hard');
+    setStrictCleanliness(db.messy === 'hard');
+    setStrictEarlyBird(db.early_bird === 'hard');
+    setStrictNightOwl(db.night_owl === 'hard');
+  }
+
+  // Pre-fetch on mount so data is ready before the modal first opens
+  useEffect(() => {
+    getPreferences(userId).then(applyPrefs);
+  }, [userId]);
+
+  // Silently refresh whenever modal re-opens (no spinner)
   useEffect(() => {
     if (!visible) return;
-    setLoading(true);
-    getPreferences(userId).then((prefs) => {
-      setEthnicityPref(prefs?.ethnicity_preference ?? []);
-      setRoomType(prefs?.room_type ?? '');
-      setMoveIn(prefs?.move_in_date ?? '');
-      setLeaseDuration(prefs?.lease_duration_months ?? null);
-      setGenderPref(prefs?.gender_preference ?? '');
-      setHasListingOnly(prefs?.has_listing_only ?? false);
-      setMinBudget(prefs?.min_budget ?? 0);
-      setMaxBudget(prefs?.max_budget ?? 10000);
-      setMinAge(prefs?.min_age ?? 18);
-      setMaxAge(prefs?.max_age ?? 99);
-      const db = prefs?.discover_filter_dealbreakers ?? prefs?.dealbreakers ?? {};
-      setStrictPets(db.pets === 'hard');
-      setStrictSmoking(db.smoking === 'hard');
-      setStrictParties(db.parties === 'hard');
-      setStrictCleanliness(db.messy === 'hard');
-      setStrictEarlyBird(db.early_bird === 'hard');
-      setStrictNightOwl(db.night_owl === 'hard');
-      setLoading(false);
-    });
+    getPreferences(userId).then(applyPrefs);
   }, [visible, userId]);
 
   const toggleEthnicity = (opt: string) =>
@@ -111,50 +132,42 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
       prev.includes(opt) ? prev.filter((e) => e !== opt) : [...prev, opt]
     );
 
-  const handleApply = async () => {
-    setSaving(true);
-    try {
-      const discover_filter_dealbreakers: Record<string, string> = {};
-      if (isPremium) {
-        discover_filter_dealbreakers.pets       = strictPets        ? 'hard' : 'none';
-        discover_filter_dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
-        discover_filter_dealbreakers.parties    = strictParties     ? 'hard' : 'none';
-        discover_filter_dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
-        discover_filter_dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
-        discover_filter_dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
-      }
-
-      await savePreferences(userId, {
-        gender_preference: genderPref || '',
-        ethnicity_preference: ethnicityPref,
-        room_type: (roomType as any) || undefined,
-        move_in_date: moveIn || undefined,
-        lease_duration_months: leaseDuration ?? undefined,
-        has_listing_only: hasListingOnly,
-        min_budget: minBudget,
-        max_budget: maxBudget,
-        min_age: minAge,
-        max_age: maxAge,
-        ...(isPremium ? { discover_filter_dealbreakers } : {}),
-      });
-      onApply();
-      onClose();
-    } finally {
-      setSaving(false);
+  const handleApply = () => {
+    // Close instantly — save + refresh happen in the background
+    onClose();
+    const discover_filter_dealbreakers: Record<string, 'hard' | 'soft' | 'none'> = {};
+    if (isPremium) {
+      discover_filter_dealbreakers.pets       = strictPets        ? 'hard' : 'none';
+      discover_filter_dealbreakers.smoking    = strictSmoking     ? 'hard' : 'none';
+      discover_filter_dealbreakers.parties    = strictParties     ? 'hard' : 'none';
+      discover_filter_dealbreakers.messy      = strictCleanliness ? 'hard' : 'none';
+      discover_filter_dealbreakers.early_bird = strictEarlyBird   ? 'hard' : 'none';
+      discover_filter_dealbreakers.night_owl  = strictNightOwl    ? 'hard' : 'none';
     }
+    void savePreferences(userId, {
+      gender_preference: genderPref || '',
+      ethnicity_preference: ethnicityPref,
+      room_type: (roomType as any) || undefined,
+      move_in_date: moveIn ? (moveInLabelToDate(moveIn) ?? undefined) : undefined,
+      has_listing_only: hasListingOnly,
+      min_budget: minBudget,
+      max_budget: maxBudget,
+      min_age: minAge,
+      max_age: maxAge,
+      ...(isPremium ? { discover_filter_dealbreakers } : {}),
+    }).then(() => onApply());
   };
 
   const handleClear = () => {
     setEthnicityPref([]);
     setRoomType('');
     setMoveIn('');
-    setLeaseDuration(null);
     setGenderPref('');
     setHasListingOnly(false);
     setMinBudget(0);
     setMaxBudget(10000);
     setMinAge(18);
-    setMaxAge(99);
+    setMaxAge(50);
     setStrictPets(false);
     setStrictSmoking(false);
     setStrictParties(false);
@@ -171,20 +184,14 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
           <View style={styles.handle} />
 
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Discover Filters</Text>
-            <TouchableOpacity onPress={handleClear}>
-              <Text style={styles.clearBtn}>Clear all</Text>
-            </TouchableOpacity>
+            <Text style={styles.title}>Filters</Text>
           </View>
 
-          {loading ? (
-            <ActivityIndicator style={{ marginVertical: 40 }} color="#1A3329" />
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
               {/* Gender preference */}
               <Text style={styles.sectionTitle}>I want to live with</Text>
-              <View style={[styles.chipsRow, { marginBottom: 4 }]}>
+              <View style={styles.chipsRow}>
                 {GENDER_PREF_OPTIONS.map(({ val, label }) => {
                   const on = genderPref === val;
                   return (
@@ -203,136 +210,77 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
               <View style={styles.divider} />
 
               {/* Has listing toggle */}
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleLeft}>
-                  <Text style={styles.sectionTitle}>Has a place listed</Text>
-                  <Text style={styles.sectionSub}>Only show people who already have a place to offer</Text>
-                </View>
-                <Switch
-                  value={hasListingOnly}
-                  onValueChange={setHasListingOnly}
-                  trackColor={{ false: '#D0D0D8', true: '#1A3329' }}
-                  thumbColor="#FFFFFF"
-                />
+              <Text style={styles.sectionTitle}>Has a place listed</Text>
+              <View style={styles.chipsRow}>
+                {(['Yes', 'No preference'] as const).map((opt) => {
+                  const on = opt === 'Yes' ? hasListingOnly : !hasListingOnly;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setHasListingOnly(opt === 'Yes')}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <View style={styles.divider} />
 
               {/* Budget range */}
               <Text style={styles.sectionTitle}>Monthly budget</Text>
-              <View style={styles.budgetDisplay}>
-                <View style={styles.budgetBadge}>
-                  <Text style={styles.budgetBadgeLabel}>Min</Text>
-                  <Text style={styles.budgetBadgeValue}>${minBudget.toLocaleString()}</Text>
+              <View style={styles.rangeDisplay}>
+                <View style={[styles.rangeBadge, (minBudget === 0 && maxBudget >= 10000) && { opacity: 0.3 }]}>
+                  <Text style={styles.rangeBadgeLabel}>MIN</Text>
+                  <Text style={styles.rangeBadgeValue}>${minBudget.toLocaleString()}</Text>
                 </View>
-                <View style={styles.budgetDash} />
-                <View style={styles.budgetBadge}>
-                  <Text style={styles.budgetBadgeLabel}>Max</Text>
-                  <Text style={styles.budgetBadgeValue}>{maxBudget >= 10000 ? 'Unlimited' : `$${maxBudget.toLocaleString()}`}</Text>
+                <View style={[styles.rangeDash, (minBudget === 0 && maxBudget >= 10000) && { opacity: 0.3 }]} />
+                <View style={styles.rangeBadge}>
+                  <Text style={styles.rangeBadgeLabel}>MAX</Text>
+                  <Text style={styles.rangeBadgeValue}>{maxBudget >= 10000 ? '$10,000+' : `$${maxBudget.toLocaleString()}`}</Text>
                 </View>
               </View>
-              <Text style={styles.sliderLabel}>Minimum</Text>
               <Slider
-                style={styles.slider}
                 minimumValue={0}
-                maximumValue={maxBudget}
-                step={50}
-                value={minBudget}
-                onValueChange={(v) => setMinBudget(Math.min(v, maxBudget - 50))}
-                minimumTrackTintColor="#1A3329"
-                maximumTrackTintColor="#D0D8D4"
-                thumbTintColor="#1A3329"
-              />
-              <Text style={styles.sliderLabel}>Maximum</Text>
-              <Slider
-                style={styles.slider}
-                minimumValue={minBudget + 50}
                 maximumValue={10000}
                 step={50}
-                value={maxBudget}
-                onValueChange={(v) => setMaxBudget(Math.max(v, minBudget + 50))}
-                minimumTrackTintColor="#1A3329"
-                maximumTrackTintColor="#D0D8D4"
-                thumbTintColor="#1A3329"
+                value={[minBudget, maxBudget]}
+                onValueChange={(v) => { const [lo, hi] = v as number[]; setMinBudget(lo); setMaxBudget(hi); }}
+                minimumTrackTintColor="#1A1A2E"
+                maximumTrackTintColor="#D8D8E0"
+                thumbTintColor="#1A1A2E"
+                trackStyle={styles.track}
+                thumbStyle={styles.thumb}
               />
 
               <View style={styles.divider} />
 
               {/* Age range */}
               <Text style={styles.sectionTitle}>Age range</Text>
-              <View style={styles.budgetDisplay}>
-                <View style={styles.budgetBadge}>
-                  <Text style={styles.budgetBadgeLabel}>Min</Text>
-                  <Text style={styles.budgetBadgeValue}>{minAge}</Text>
+              <View style={styles.rangeDisplay}>
+                <View style={styles.rangeBadge}>
+                  <Text style={styles.rangeBadgeLabel}>MIN</Text>
+                  <Text style={styles.rangeBadgeValue}>{minAge}</Text>
                 </View>
-                <View style={styles.budgetDash} />
-                <View style={styles.budgetBadge}>
-                  <Text style={styles.budgetBadgeLabel}>Max</Text>
-                  <Text style={styles.budgetBadgeValue}>{maxAge >= 99 ? 'Any' : maxAge}</Text>
+                <View style={styles.rangeDash} />
+                <View style={styles.rangeBadge}>
+                  <Text style={styles.rangeBadgeLabel}>MAX</Text>
+                  <Text style={styles.rangeBadgeValue}>{maxAge >= 50 ? '50+' : maxAge}</Text>
                 </View>
               </View>
-              <Text style={styles.sliderLabel}>Minimum age</Text>
               <Slider
-                style={styles.slider}
                 minimumValue={18}
-                maximumValue={maxAge - 1}
+                maximumValue={50}
                 step={1}
-                value={minAge}
-                onValueChange={(v) => setMinAge(Math.floor(v))}
-                minimumTrackTintColor="#1A3329"
-                maximumTrackTintColor="#D0D8D4"
-                thumbTintColor="#1A3329"
+                value={[minAge, maxAge]}
+                onValueChange={(v) => { const [lo, hi] = v as number[]; setMinAge(lo); setMaxAge(hi); }}
+                minimumTrackTintColor="#1A1A2E"
+                maximumTrackTintColor="#D8D8E0"
+                thumbTintColor="#1A1A2E"
+                trackStyle={styles.track}
+                thumbStyle={styles.thumb}
               />
-              <Text style={styles.sliderLabel}>Maximum age</Text>
-              <Slider
-                style={styles.slider}
-                minimumValue={minAge + 1}
-                maximumValue={99}
-                step={1}
-                value={maxAge}
-                onValueChange={(v) => setMaxAge(Math.floor(v))}
-                minimumTrackTintColor="#1A3329"
-                maximumTrackTintColor="#D0D8D4"
-                thumbTintColor="#1A3329"
-              />
-
-              <View style={styles.divider} />
-
-              {/* Move-in date */}
-              <Text style={styles.sectionTitle}>Move-in date</Text>
-              <View style={styles.chipsRow}>
-                {MOVE_IN_OPTIONS.map(({ val, label }) => {
-                  const on = moveIn === val;
-                  return (
-                    <TouchableOpacity
-                      key={val}
-                      style={[styles.chip, on && styles.chipOn]}
-                      onPress={() => setMoveIn(on ? '' : val)}
-                    >
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Lease duration */}
-              <Text style={styles.sectionTitle}>Lease duration</Text>
-              <View style={styles.chipsRow}>
-                {LEASE_OPTIONS.map(({ val, label }) => {
-                  const on = leaseDuration === val;
-                  return (
-                    <TouchableOpacity
-                      key={val}
-                      style={[styles.chip, on && styles.chipOn]}
-                      onPress={() => setLeaseDuration(on ? null : val)}
-                    >
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
 
               <View style={styles.divider} />
 
@@ -355,10 +303,29 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
               <View style={styles.divider} />
 
+              {/* Move-in date */}
+              <Text style={styles.sectionTitle}>Move-in date</Text>
+              <View style={styles.chipsRow}>
+                {MOVE_IN_OPTIONS.map(({ label }) => {
+                  const on = moveIn === label;
+                  return (
+                    <TouchableOpacity
+                      key={label}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setMoveIn(on ? '' : label)}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.divider} />
+
               {/* Ethnicity preference */}
               <Text style={styles.sectionTitle}>Ethnicity preference</Text>
-              <Text style={styles.sectionSub}>
-                Preferred roommate ethnicity — matching profiles rank higher. Leave blank for no preference.
+              <Text style={[styles.sectionSub, { marginTop: -6, marginBottom: 12 }]}>
+                Matching profiles rank higher in your feed. Leave blank for no preference.
               </Text>
               <View style={styles.chipsRow}>
                 {ETHNICITY_OPTIONS.map((opt) => {
@@ -377,7 +344,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
               <View style={styles.divider} />
 
-              {/* Advanced Filters — visible to all, interactive for premium only */}
+              {/* Advanced Filters */}
               <View style={styles.advancedHeader}>
                 <Text style={styles.sectionTitle}>Advanced Filters</Text>
                 {!isPremium && (
@@ -386,7 +353,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
                   </View>
                 )}
               </View>
-              <Text style={styles.sectionSub}>Strictly exclude profiles that don't meet these criteria.</Text>
+              <Text style={[styles.sectionSub, { marginTop: -6, marginBottom: 12 }]}>Strictly exclude profiles that don't meet these criteria.</Text>
 
               <View style={[styles.advancedControls, !isPremium && styles.advancedControlsLocked]}>
                 {[
@@ -403,7 +370,7 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
                       value={value}
                       onValueChange={isPremium ? set : undefined}
                       disabled={!isPremium}
-                      trackColor={{ false: '#D0D0D8', true: '#1A3329' }}
+                      trackColor={{ false: '#D8D8E0', true: '#1A1A2E' }}
                       thumbColor="#FFFFFF"
                     />
                   </View>
@@ -411,11 +378,10 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
 
                 {!isPremium && (
                   <View style={styles.advancedOverlay}>
-                    <Text style={styles.advancedOverlayText}>🔒 Upgrade to RoomPear+ to use advanced filters</Text>
+                    <Text style={styles.advancedOverlayText}>Upgrade to RoomPear+ to use advanced filters</Text>
                   </View>
                 )}
 
-                {/* Transparent tap-catcher sits on top for free users */}
                 {!isPremium && (
                   <TouchableOpacity
                     style={StyleSheet.absoluteFill}
@@ -426,18 +392,13 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
               </View>
 
             </ScrollView>
-          )}
 
           <TouchableOpacity
             style={styles.applyBtn}
             onPress={handleApply}
-            disabled={saving}
             activeOpacity={0.85}
           >
-            {saving
-              ? <ActivityIndicator color="#FFFFFF" />
-              : <Text style={styles.applyBtnText}>Apply filters</Text>
-            }
+            <Text style={styles.applyBtnText}>Apply</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -452,39 +413,39 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.40)',
   },
   sheet: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 22,
     paddingTop: 12,
-    maxHeight: '88%',
+    maxHeight: '90%',
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    backgroundColor: '#D8D8E0',
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1A2C24',
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    color: '#1A1A2E',
   },
   clearBtn: {
+    fontFamily: fonts.semiBold,
     fontSize: 14,
-    fontWeight: '600',
-    color: '#717182',
+    color: '#A0A0B0',
   },
   content: {
     paddingTop: 8,
@@ -492,29 +453,22 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,0,0,0.08)',
-    marginVertical: 20,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  toggleLeft: {
-    flex: 1,
+    backgroundColor: '#E8E8EC',
+    marginVertical: 22,
   },
   sectionTitle: {
+    fontFamily: fonts.bold,
     fontSize: 15,
-    fontWeight: '700',
-    color: '#1A2C24',
-    marginBottom: 6,
+    color: '#1A1A2E',
+    marginBottom: 10,
   },
   sectionSub: {
+    fontFamily: fonts.regular,
     fontSize: 13,
-    color: '#717182',
+    color: '#A0A0B0',
     lineHeight: 18,
-    marginBottom: 12,
+    marginBottom: 0,
+    marginTop: 6,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -526,126 +480,129 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 50,
     borderWidth: 1.5,
-    borderColor: '#A0B4AC',
-    backgroundColor: '#F0F5F2',
+    borderColor: '#D8D8E0',
+    backgroundColor: '#FFFFFF',
   },
   chipOn: {
-    backgroundColor: '#1A3329',
-    borderColor: '#1A3329',
+    backgroundColor: '#1A1A2E',
+    borderColor: '#1A1A2E',
   },
   chipText: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '600',
-    color: '#1A2C24',
+    color: '#3A3A4A',
   },
   chipTextOn: {
     color: '#FFFFFF',
   },
-  budgetDisplay: {
+  rangeDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  budgetBadge: {
+  rangeBadge: {
     flex: 1,
-    backgroundColor: '#F0F5F2',
-    borderRadius: 10,
-    paddingVertical: 8,
+    backgroundColor: '#F2F2F5',
+    borderRadius: 12,
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  budgetBadgeLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#717182',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  rangeBadgeLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: '#A0A0B0',
+    letterSpacing: 1,
   },
-  budgetBadgeValue: {
+  rangeBadgeValue: {
+    fontFamily: fonts.bold,
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1A2C24',
+    color: '#1A1A2E',
     marginTop: 2,
   },
-  budgetDash: {
-    width: 12,
+  rangeDash: {
+    width: 10,
     height: 2,
     borderRadius: 1,
-    backgroundColor: '#A0B4AC',
+    backgroundColor: '#D8D8E0',
   },
-  sliderLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#717182',
-    marginBottom: 2,
+  track: {
+    height: 4,
+    borderRadius: 2,
   },
-  slider: {
-    width: '100%',
-    height: 36,
-    marginBottom: 4,
+  thumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1A1A2E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   advancedHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     gap: 8,
     marginBottom: 6,
   },
   plusBadge: {
-    backgroundColor: '#030213',
+    backgroundColor: '#1A1A2E',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 2,
   },
   plusBadgeText: {
+    fontFamily: fonts.bold,
     fontSize: 10,
-    fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
   advancedControls: {
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8E8EC',
     overflow: 'hidden',
   },
   advancedControlsLocked: {
-    opacity: 0.55,
+    opacity: 0.50,
   },
   advancedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.07)',
+    borderBottomColor: '#E8E8EC',
   },
   advancedRowLabel: {
+    fontFamily: fonts.semiBold,
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1A2C24',
+    color: '#1A1A2E',
   },
   advancedOverlay: {
     padding: 14,
     alignItems: 'center',
   },
   advancedOverlayText: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '600',
-    color: '#717182',
+    color: '#A0A0B0',
     textAlign: 'center',
   },
   applyBtn: {
-    marginTop: 8,
-    backgroundColor: '#1A3329',
-    paddingVertical: 15,
-    borderRadius: 14,
+    marginTop: 10,
+    backgroundColor: '#1A1A2E',
+    paddingVertical: 16,
+    borderRadius: 16,
     alignItems: 'center',
   },
   applyBtnText: {
+    fontFamily: fonts.bold,
     fontSize: 16,
-    fontWeight: '700',
     color: '#FFFFFF',
   },
 });

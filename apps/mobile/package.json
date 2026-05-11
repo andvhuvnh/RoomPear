@@ -12,9 +12,11 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@expo-google-fonts/lora": "^0.4.2",
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
+    "@miblanchard/react-native-slider": "^2.6.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "^8.5.1",
     "@react-native-community/slider": "5.0.1",

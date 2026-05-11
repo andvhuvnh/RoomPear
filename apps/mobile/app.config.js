@@ -3,6 +3,7 @@ require('dotenv/config');
 module.exports = {
   expo: {
     name: 'RoomPear',
+    entryPoint: './index.ts',
     slug: 'roompear',
     scheme: "roompear",
     version: '1.0.0',

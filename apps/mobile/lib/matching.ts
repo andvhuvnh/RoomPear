@@ -160,12 +160,6 @@ export function scoreCompatibility(
       score += 0.04;
     }
   }
-  if (mine.lease_duration_months != null && theirs.lease_duration_months != null) {
-    if (mine.lease_duration_months === 0 || theirs.lease_duration_months === 0 ||
-        mine.lease_duration_months === theirs.lease_duration_months) {
-      score += 0.03;
-    }
-  }
 
   // Ethnicity — strong soft boost, never a hard filter
   const myEthPref = mine.ethnicity_preference ?? [];
