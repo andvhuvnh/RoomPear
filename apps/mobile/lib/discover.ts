@@ -137,7 +137,7 @@ export async function fetchDiscoverProfiles(
   // This ensures diversity and prevents ethnicity from dominating the feed.
   const ethPref = myPrefs?.ethnicity_preference ?? [];
   if (ethPref.length > 0 && mixed.length > 0) {
-    const CAP = 0.75;
+    const CAP = 0.90;
     const maxEthMatch = Math.floor(mixed.length * CAP);
     const ethMatch = (eth: string | string[]) => Array.isArray(eth) ? eth.some(e => ethPref.includes(e)) : ethPref.includes(eth);
     let ethCount = mixed.filter(x => ethMatch(x.item.ethnicity)).length;
