@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 // Get Supabase URL and anon key from environment variables
@@ -48,7 +49,7 @@ if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder') || s
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
-      storage: typeof global !== 'undefined' && typeof global.localStorage !== 'undefined' ? global.localStorage : undefined,
+      storage: AsyncStorage,
     },
     global: {
       headers: {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Easing,
   Image,
   Modal,
   StyleSheet,
@@ -104,6 +105,18 @@ export default function DiscoverScreen() {
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
+  const logoBobAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoBobAnim, { toValue: -8, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(logoBobAnim, { toValue: 0,  duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [logoBobAnim]);
 
   const refreshDailyUsage = useCallback(async (uid: string) => {
     const u = await getDiscoverUsage(uid);
@@ -273,7 +286,11 @@ export default function DiscoverScreen() {
     return (
       <Background>
         <View style={styles.centered}>
-          <Text style={styles.emptyText}>Finding roommates…</Text>
+          <Animated.Image
+            source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')}
+            style={{ width: 72, height: 72, transform: [{ translateY: logoBobAnim }] }}
+            resizeMode="contain"
+          />
         </View>
       </Background>
     );
