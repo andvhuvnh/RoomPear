@@ -534,11 +534,7 @@ export default function LikesScreen() {
           </View>
         )}
 
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={CHATS_GREEN} />
-          </View>
-        ) : (
+        {!loading && (
           <>
             {sortedLikers.length > 0 && (
               <View style={styles.sortRow}>

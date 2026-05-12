@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     transform: [{ scale: 0.94 }, { translateY: 14 }, { rotate: '1.5deg' }],
-    opacity: 0.6,
+    opacity: 0,
   },
   frontCardWrap: {
     position: 'absolute',

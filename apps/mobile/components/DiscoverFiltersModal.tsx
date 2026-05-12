@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -12,6 +11,7 @@ import { Slider } from '@miblanchard/react-native-slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPreferences, savePreferences } from '../lib/preferences';
 import { fonts } from '../lib/typography';
+import DraggableSheet from './DraggableSheet';
 
 const GENDER_PREF_OPTIONS = [
   { val: 'Man',        label: 'Men' },
@@ -177,11 +177,9 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.handle} />
+    <DraggableSheet visible={visible} onClose={onClose}>
+      <View style={[styles.sheetInner, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.handle} />
 
           <View style={styles.titleRow}>
             <Text style={styles.title}>Filters</Text>
@@ -401,27 +399,14 @@ export default function DiscoverFiltersModal({ visible, userId, onClose, onApply
             <Text style={styles.applyBtnText}>Apply</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+    </DraggableSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.40)',
-  },
-  sheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+  sheetInner: {
     paddingHorizontal: 22,
     paddingTop: 12,
-    maxHeight: '90%',
   },
   handle: {
     width: 36,

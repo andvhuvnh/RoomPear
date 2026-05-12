@@ -435,11 +435,7 @@ export default function ChatsScreen({ navigation }: Props) {
           )}
         </View>
 
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={CHATS_GREEN} />
-          </View>
-        ) : subTab === 'matched' ? (
+        {!loading && subTab === 'matched' ? (
           <>
             {sortedMatches.length > 0 && (
               <View style={styles.sortRow}>

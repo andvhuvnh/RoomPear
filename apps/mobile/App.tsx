@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   useFonts,
@@ -26,6 +26,7 @@ import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
+import PearLoader from './components/PearLoader';
 import { PurchasesProvider } from './context/PurchasesContext';
 import { DiscoverDeckProvider } from './context/DiscoverDeckContext';
 
@@ -114,7 +115,7 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <View style={styles.loadingRoot}>
-            <ActivityIndicator size="large" color="#0C5389" />
+            <PearLoader />
           </View>
         </SafeAreaProvider>
       </GestureHandlerRootView>
@@ -148,6 +149,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E8EEF2',
+    backgroundColor: '#F0F7F0',
   },
 });

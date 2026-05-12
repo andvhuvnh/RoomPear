@@ -33,6 +33,7 @@ import {
   CHATS_GREEN_BORDER,
 } from '../theme/chatsAmbient';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
+import PearLoader from '../components/PearLoader';
 import BlockReportModal from '../components/BlockReportModal';
 
 type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
@@ -310,7 +311,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           />
         </View>
         <View style={[styles.centered, { paddingTop: insets.top + 56 }]}>
-          <ActivityIndicator size="large" color={CHATS_GREEN} />
+          <PearLoader size={64} />
         </View>
       </Background>
     );

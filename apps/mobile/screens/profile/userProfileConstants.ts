@@ -1,37 +1,37 @@
 export const DEALBREAKER_ITEMS = [
-  { key: 'smoking', label: 'Smoking indoors' },
-  { key: 'pets', label: 'Pets in the unit' },
-  { key: 'parties', label: 'Frequent parties' },
-  { key: 'early_bird', label: 'Noise before 8 am' },
-  { key: 'night_owl', label: 'Noise after 11 pm' },
-  { key: 'guests', label: 'Overnight guests' },
-  { key: 'messy', label: 'Messy common areas' },
+  { key: 'smoking', label: 'I smoke indoors' },
+  { key: 'pets', label: 'I have pets' },
+  { key: 'parties', label: 'I throw frequent parties' },
+  { key: 'early_bird', label: 'I make noise before 8 am' },
+  { key: 'night_owl', label: 'I make noise after 11 pm' },
+  { key: 'guests', label: 'I have overnight guests' },
+  { key: 'messy', label: "I'm messy in common areas" },
 ] as const;
 
 export const INTEREST_CATEGORIES = [
   {
     key: 'fitness',
-    label: '🏃 Fitness',
+    label: 'Fitness',
     options: ['Running', 'Yoga', 'Gym', 'Hiking', 'Swimming', 'Cycling', 'Rock Climbing'],
   },
   {
     key: 'food',
-    label: '🍕 Food & Drink',
+    label: 'Food & Drink',
     options: ['Cooking', 'Baking', 'Coffee', 'Wine & Cocktails', 'Foodie Adventures', 'Meal Prep'],
   },
   {
     key: 'arts',
-    label: '🎨 Arts & Culture',
+    label: 'Arts & Culture',
     options: ['Movies', 'Music', 'Reading', 'Photography', 'Art Galleries', 'Theater'],
   },
   {
     key: 'outdoors',
-    label: '🌿 Outdoors',
+    label: 'Outdoors',
     options: ['Camping', 'Travel', 'Beach', 'Gardening', 'Road Trips', 'Surfing'],
   },
   {
     key: 'tech',
-    label: '🎮 Tech & Gaming',
+    label: 'Tech & Gaming',
     options: ['Gaming', 'Coding', 'Podcasts', 'Anime', 'Board Games', 'VR / AR'],
   },
 ] as const;

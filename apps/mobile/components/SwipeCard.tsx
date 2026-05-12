@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Animated,
+  Easing,
   View,
   Text,
   ScrollView,
@@ -40,7 +41,8 @@ export default function SwipeCard({
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
-  const opacityAnim = useRef(new Animated.Value(1)).current;
+  const [prevPhotoUri, setPrevPhotoUri] = useState<string | null>(null);
+  const crossfadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setPhotoTab('profile');
@@ -62,10 +64,16 @@ export default function SwipeCard({
       : Math.max(photoIndex - 1, 0);
     if (next === photoIndex) return;
 
-    opacityAnim.setValue(0);
+    setPrevPhotoUri(activePhotos[photoIndex]);
+    crossfadeAnim.setValue(0);
     setPhotoIndex(next);
-    Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-  }, [photoIndex, activePhotos.length, opacityAnim]);
+    Animated.timing(crossfadeAnim, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => setPrevPhotoUri(null));
+  }, [photoIndex, activePhotos, crossfadeAnim]);
 
   const score = profile.compatibilityScore;
   const matchDotColor = score < 30 ? '#D4183D' : score <= 70 ? '#FF9500' : '#2D6A4F';
@@ -82,19 +90,31 @@ export default function SwipeCard({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
-        bounces={false}
+        bounces
+        decelerationRate={0.993}
+        scrollEventThrottle={16}
       >
         {/* ── Photo card ── */}
         <View style={styles.photoCard}>
-          <Animated.View style={{ opacity: opacityAnim }}>
-            <ExpoImage
-              source={{ uri: activePhotos[photoIndex] }}
-              style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
-            />
-          </Animated.View>
+          <View style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}>
+            {prevPhotoUri ? (
+              <ExpoImage
+                source={{ uri: prevPhotoUri }}
+                style={[StyleSheet.absoluteFill, { width: CARD_WIDTH, height: PHOTO_HEIGHT }]}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : null}
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: crossfadeAnim }]}>
+              <ExpoImage
+                source={{ uri: activePhotos[photoIndex] }}
+                style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
+              />
+            </Animated.View>
+          </View>
 
           {/* Tap zones */}
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -230,7 +250,7 @@ export default function SwipeCard({
             {activeCategories.map((cat, i) => (
               <View key={cat.key} style={i > 0 ? { marginTop: 6 } : undefined}>
                 {i > 0 && <View style={styles.promptDivider} />}
-                <Text style={styles.categoryLabel}>{cat.label.split(' ').slice(1).join(' ').toUpperCase()}</Text>
+                <Text style={styles.categoryLabel}>{cat.label.toUpperCase()}</Text>
                 <View style={styles.chipsRow}>
                   {profile.interests[cat.key].map((item, j) => (
                     <View key={j} style={styles.chip}>
@@ -270,7 +290,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 24,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: 'transparent',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
@@ -280,7 +300,7 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 14,
   },
-  scroll: { flex: 1 },
+  scroll: { flex: 1, backgroundColor: 'transparent' },
   scrollContent: {
     paddingBottom: 120,
     gap: CARD_GAP,

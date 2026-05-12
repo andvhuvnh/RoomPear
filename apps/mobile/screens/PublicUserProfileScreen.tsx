@@ -21,6 +21,7 @@ import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisp
 import PublicProfileCard from '../components/PublicProfileCard';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 import BlockReportModal from '../components/BlockReportModal';
+import PearLoader from '../components/PearLoader';
 import { CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
 import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
 
@@ -175,7 +176,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
     return (
       <View style={styles.root}>
         <View style={[styles.centered, { paddingTop: contentTopPad }]}>
-          <ActivityIndicator color={C.like} size="large" />
+          <PearLoader size={64} />
         </View>
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <ChatStyleTopBar
