@@ -3,13 +3,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Flag } from 'phosphor-react-native';
 import {
   CHATS_CARD,
-  CHATS_GREEN,
   CHATS_GREEN_BORDER,
 } from '../theme/chatsAmbient';
+import { fonts } from '../lib/typography';
 
 const ROUND = 22;
 const BTN = 44;
-const TEXT = '#1A2C24';
 
 type Props = {
   title: string;
@@ -41,7 +40,7 @@ export function ChatStyleTopBar({
           accessibilityLabel={backAccessibilityLabel}
           hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
         >
-          <Ionicons name="chevron-back" size={22} color={CHATS_GREEN} />
+          <Ionicons name="chevron-back" size={22} color="#111111" />
         </TouchableOpacity>
 
         <View style={styles.titleSlot} pointerEvents="none">
@@ -59,7 +58,7 @@ export function ChatStyleTopBar({
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             accessibilityLabel="More options"
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={CHATS_GREEN} />
+            <Ionicons name="ellipsis-horizontal" size={22} color="#111111" />
           </TouchableOpacity>
         ) : onReport ? (
           <TouchableOpacity
@@ -67,7 +66,7 @@ export function ChatStyleTopBar({
             style={styles.roundBtn}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
-            <Flag size={20} color={CHATS_GREEN} />
+            <Flag size={20} color="#111111" />
           </TouchableOpacity>
         ) : (
           <View style={styles.balance} />
@@ -124,9 +123,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   titleText: {
+    fontFamily: fonts.bold,
     fontSize: 16,
-    fontWeight: '700',
-    color: TEXT,
+    color: '#111111',
     textAlign: 'center',
   },
   balance: {

@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
-  Text,
-  ScrollView,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,42 +13,16 @@ import type { LikesStackParamList } from '../navigation/LikesStack';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { supabase } from '../lib/supabase';
 import { getProfileImageUrls } from '../lib/storage';
-import { getPreferences, type Preferences } from '../lib/preferences';
+import { getPreferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
-import PublicProfileCard from '../components/PublicProfileCard';
+import SwipeCard from '../components/SwipeCard';
+import type { DiscoverProfile } from '../lib/discover';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 import BlockReportModal from '../components/BlockReportModal';
 import PearLoader from '../components/PearLoader';
-import { CHATS_CARD, CHATS_GREEN, CHATS_GREEN_BORDER } from '../theme/chatsAmbient';
 import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
 
 type PromptEntry = { question: string; answer: string };
-
-const C = {
-  text: '#1A2C24',
-  grayDim: '#A0A0B0',
-  like: '#2D6A4F',
-};
-
-// Works for both ChatsStack and LikesStack since they share the same param shape
-type Props =
-  | NativeStackScreenProps<ChatsStackParamList, 'ProfileView'>
-  | NativeStackScreenProps<LikesStackParamList, 'ProfileView'>;
-
-function mergeInterestChips(prefs: Preferences | null, hobbies: string[]): string[] {
-  const fromInterests = prefs?.interests
-    ? (Object.values(prefs.interests).flat() as string[])
-    : [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const s of [...fromInterests, ...hobbies]) {
-    const t = typeof s === 'string' ? s.trim() : '';
-    if (!t || seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-  }
-  return out;
-}
 
 function normalizePrompts(raw: unknown): PromptEntry[] {
   if (!Array.isArray(raw)) return [];
@@ -69,27 +40,37 @@ function normalizePrompts(raw: unknown): PromptEntry[] {
   return out.slice(0, 6);
 }
 
-type ProfileRouteParams = {
-  userId: string;
-  name: string;
-  conversationId?: string;
-  profileSource?: 'chats' | 'likes';
-};
+type Props =
+  | NativeStackScreenProps<ChatsStackParamList, 'ProfileView'>
+  | NativeStackScreenProps<LikesStackParamList, 'ProfileView'>;
 
 export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { userId, conversationId, profileSource = 'chats' } = route.params as ProfileRouteParams;
+  const { userId, conversationId, profileSource = 'chats' } = route.params as {
+    userId: string;
+    name: string;
+    conversationId?: string;
+    profileSource?: 'chats' | 'likes';
+  };
   const initialName = route.params.name ?? '';
 
   const [loading, setLoading] = useState(true);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [name, setName] = useState(initialName);
   const [age, setAge] = useState<number | null>(null);
-  const [location, setLocation] = useState('');
+  const [occupation, setOccupation] = useState<string | null>(null);
   const [bio, setBio] = useState<string | null>(null);
-  const [interestChips, setInterestChips] = useState<string[]>([]);
-  const [workSchedule, setWorkSchedule] = useState<string | null>(null);
+  const [hobbies, setHobbies] = useState<string[]>([]);
+  const [interests, setInterests] = useState<Record<string, string[]>>({});
   const [prompts, setPrompts] = useState<PromptEntry[]>([]);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [listingPhotoUrls, setListingPhotoUrls] = useState<string[]>([]);
+  const [location, setLocation] = useState('');
+  const [hasListing, setHasListing] = useState(false);
+  const [listingRent, setListingRent] = useState<number | null>(null);
+  const [listingRoomType, setListingRoomType] = useState<string | null>(null);
+  const [roomType, setRoomType] = useState<string | null>(null);
+  const [minBudget, setMinBudget] = useState<number | null>(null);
+  const [maxBudget, setMaxBudget] = useState<number | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [peerSafetyOpen, setPeerSafetyOpen] = useState(false);
@@ -107,20 +88,28 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
     async function load() {
       setLoading(true);
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('name, age, bio, hobbies, profile_photo_url, prompts')
-        .eq('id', userId)
-        .single();
+      const [profileRes, listingRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('name, age, bio, hobbies, profile_photo_url, prompts, occupation')
+          .eq('id', userId)
+          .single(),
+        supabase
+          .from('listings')
+          .select('rent, room_type, listing_photos')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ]);
 
       if (cancelled) return;
 
-      const hobbyList = Array.isArray(profile?.hobbies) ? profile.hobbies : [];
-
+      const profile = profileRes.data;
       if (profile) {
         setName(profile.name ?? initialName);
         setAge(typeof profile.age === 'number' ? profile.age : null);
+        setOccupation(profile.occupation ?? null);
         setBio(profile.bio ?? null);
+        setHobbies(Array.isArray(profile.hobbies) ? profile.hobbies : []);
         setPrompts(normalizePrompts(profile.prompts));
 
         const paths = profilePhotoPathsFromRow(profile.profile_photo_url);
@@ -132,21 +121,54 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
         }
       }
 
+      const listing = listingRes.data;
+      if (listing) {
+        setHasListing(true);
+        setListingRent(listing.rent ?? null);
+        setListingRoomType(listing.room_type ?? null);
+        if (listing.listing_photos) {
+          const listingUrls = await getProfileImageUrls(listing.listing_photos);
+          if (!cancelled) setListingPhotoUrls(listingUrls ?? []);
+        }
+      }
+
       const prefs = await getPreferences(userId);
       if (cancelled) return;
 
       setLocation(formatLocationLine(prefs));
-      setInterestChips(mergeInterestChips(prefs, hobbyList));
-      setWorkSchedule(prefs?.work_schedule ?? null);
+      setInterests((prefs?.interests as Record<string, string[]>) ?? {});
+      setRoomType(prefs?.room_type ?? null);
+      setMinBudget(prefs?.min_budget ?? null);
+      setMaxBudget(prefs?.max_budget ?? null);
 
       setLoading(false);
     }
 
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [userId, initialName]);
+
+  const discoverProfile = useMemo<DiscoverProfile>(() => ({
+    id: userId,
+    name,
+    age,
+    occupation,
+    bio,
+    hobbies: hobbies.length > 0 ? hobbies : null,
+    interests,
+    prompts,
+    photoUrls: [...imageUrls, ...listingPhotoUrls],
+    profilePhotoCount: imageUrls.length,
+    location,
+    hasListing,
+    roomType,
+    listingRoomType,
+    listingRent,
+    minBudget,
+    maxBudget,
+    compatibilityScore: 0,
+    matchReasons: [],
+  }), [userId, name, age, occupation, bio, hobbies, interests, prompts, imageUrls, listingPhotoUrls, location, hasListing, roomType, listingRoomType, listingRent, minBudget, maxBudget]);
 
   const openChat = useCallback(() => {
     const title = name || initialName || 'Chat';
@@ -163,9 +185,6 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
     (navigation as NativeStackNavigationProp<ChatsStackParamList>).navigate('Chat', params);
   }, [conversationId, initialName, name, navigation, profileSource, userId]);
 
-  /** Space below floating bubbles so the card sits on the canvas, not under the pills. */
-  const contentTopPad = insets.top + 56 + 12;
-
   const openSafetyMenu = useCallback(() => {
     if (profileSource !== 'chats') return;
     setPeerSafetyStart('main');
@@ -175,12 +194,12 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.root}>
-        <View style={[styles.centered, { paddingTop: contentTopPad }]}>
+        <View style={styles.centered}>
           <PearLoader size={64} />
         </View>
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <ChatStyleTopBar
-            title={initialName || 'Profile'}
+            title=""
             onBack={() => navigation.goBack()}
             topInset={insets.top}
             onMenu={profileSource === 'chats' ? openSafetyMenu : undefined}
@@ -192,48 +211,19 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: contentTopPad,
-            paddingHorizontal: 20,
-            paddingBottom: insets.bottom + 96,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <PublicProfileCard
-          imageUrls={imageUrls}
-          name={name}
-          age={age}
-          location={location}
-          bio={bio}
-          workSchedule={workSchedule}
-          hobbies={interestChips}
-          chipsSectionTitle={interestChips.length > 0 ? 'Interests' : null}
-        />
-
-        {prompts.length > 0 ? (
-          <View style={styles.promptsBlock}>
-            <Text style={styles.promptsHeading}>Prompts</Text>
-            {prompts.map((p, i) => (
-              <View key={`${p.question}-${i}`} style={styles.promptCard}>
-                <View style={styles.promptAccent} />
-                <View style={styles.promptContent}>
-                  <Text style={styles.promptQuestion}>{p.question}</Text>
-                  <Text style={styles.promptAnswer}>{p.answer}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </ScrollView>
+      <SwipeCard
+        profile={discoverProfile}
+        style={styles.card}
+        scrollPaddingTop={insets.top + 64}
+        onReport={profileSource === 'chats' ? () => {
+          setPeerSafetyStart('report');
+          setPeerSafetyOpen(true);
+        } : undefined}
+      />
 
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <ChatStyleTopBar
-          title={name || 'Profile'}
+          title=""
           onBack={() => navigation.goBack()}
           topInset={insets.top}
           onMenu={profileSource === 'chats' ? openSafetyMenu : undefined}
@@ -251,7 +241,7 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel={`Message ${name || initialName || 'user'}`}
         >
-          <Ionicons name="chatbubbles" size={26} color={CHATS_GREEN} />
+          <Ionicons name="chatbubbles" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -292,11 +282,19 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    /** Match card surface so safe-area padding above the card is not a visible “gray bar”. */
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F2F4F0',
   },
-  scrollContent: {
-    flexGrow: 1,
+  card: {
+    flex: 1,
+    width: '100%',
+    borderRadius: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   messageFabWrap: {
     position: 'absolute',
@@ -309,62 +307,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: CHATS_CARD,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
-    shadowColor: '#1A3329',
-    shadowOpacity: 0.1,
+    backgroundColor: '#111111',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 12,
-    elevation: 5,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  promptsBlock: {
-    marginTop: 20,
-    maxWidth: 400,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  promptsHeading: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: C.grayDim,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 10,
-  },
-  promptCard: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(45,106,79,0.06)',
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  promptAccent: {
-    width: 3,
-    backgroundColor: C.like,
-  },
-  promptContent: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  promptQuestion: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: C.grayDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  promptAnswer: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.text,
-    lineHeight: 22,
+    elevation: 6,
   },
 });

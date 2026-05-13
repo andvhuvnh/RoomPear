@@ -34,7 +34,6 @@ import type { MainTabParamList } from '../navigation/MainTabNavigator';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const C = {
-  bg:            '#C8E6C9',
   text:          '#1A2C24',
   white:         '#FFFFFF',
   gray:          '#717182',
@@ -46,8 +45,8 @@ const C = {
   like:          '#2D6A4F',
 };
 
-const GRAD = ['#C8EAC0','#D4EEB8','#E2F0C8','#EEF6E0','#F6FAF0','#FFFFFF'] as const;
-const LOCS = [0, 0.18, 0.40, 0.62, 0.82, 1] as const;
+const GRAD = ['#EDF5EA','#F4F9F0','#FAFDF7','#FFFFFF'] as const;
+const LOCS = [0, 0.3, 0.65, 1] as const;
 
 
 type Action = 'like' | 'pass' | 'top_pick';
@@ -62,20 +61,15 @@ type MatchData = {
 
 function Background({ children }: { children: React.ReactNode }) {
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <LinearGradient
-        colors={GRAD}
-        locations={LOCS}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Ambient pear-colored blobs — matches onboarding palette */}
-      <View style={{ position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: '#E8B84B', opacity: 0.13, top: -60, right: -60 }} pointerEvents="none" />
-      <View style={{ position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#D4A028', opacity: 0.10, bottom: 120, left: -60 }} pointerEvents="none" />
-      <View style={{ position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: '#4A9060', opacity: 0.09, bottom: 320, right: 10 }} pointerEvents="none" />
+    <LinearGradient
+      colors={GRAD}
+      locations={LOCS}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
       {children}
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -438,28 +432,28 @@ export default function DiscoverScreen() {
             disabled={!canUndo || actionDisabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
+            <ArrowCounterClockwise size={18} color="#B0B8B4" weight="bold" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionPass]}
             onPress={() => handleAction('pass')}
             disabled={actionDisabled}
           >
-            <X size={24} color="#E5334B" weight="regular" />
+            <X size={28} color="#D4183D" weight="bold" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionLike]}
             onPress={() => handleAction('like')}
             disabled={actionDisabled}
           >
-            <Heart size={28} color="#2D6A4F" weight="regular" />
+            <Heart size={34} color="#111111" weight="regular" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionTop]}
             onPress={() => handleAction('top_pick')}
             disabled={actionDisabled}
           >
-            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={{ width: 26, height: 26 }} resizeMode="contain" />
+            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
@@ -598,14 +592,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontFamily: fonts.semiBold,
-    color: 'rgba(26,44,36,0.65)',
+    color: '#111111',
     lineHeight: 16,
   },
   headerMetricsPremium: {
     flex: 1,
     fontSize: 12,
     fontFamily: fonts.bold,
-    color: '#1A2C24',
+    color: '#111111',
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   nearbyPill: {
@@ -660,19 +654,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E8E8EC',
-    shadowColor: '#000',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 3,
+    shadowColor: '#2D6A4F',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 5,
   },
-  actionUndo:   { width: 44, height: 44 },
-  actionPass:   { width: 58, height: 58 },
-  actionLike:   { width: 68, height: 68, backgroundColor: 'rgba(45,106,79,0.07)', borderColor: 'rgba(45,106,79,0.18)' },
-  actionTop:    { width: 58, height: 58, backgroundColor: 'rgba(232,184,75,0.09)', borderColor: 'rgba(232,184,75,0.28)' },
-  actionLocked: { opacity: 0.35 },
+  actionUndo: { width: 46, height: 46 },
+  actionPass: { width: 64, height: 64 },
+  actionLike: {
+    width: 78, height: 78,
+    shadowOpacity: 0.22, shadowRadius: 16, elevation: 8,
+  },
+  actionTop:  { width: 64, height: 64 },
+  actionLocked: { opacity: 0.28 },
 
   // ── Match modal ──
   matchOverlay: {

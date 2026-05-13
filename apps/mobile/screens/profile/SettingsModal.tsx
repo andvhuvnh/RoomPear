@@ -203,7 +203,7 @@ export default function SettingsModal({
               <TouchableOpacity style={s.premiumCard} onPress={onUpgradeToPlus} activeOpacity={0.88}>
                 <View style={s.premiumLeft}>
                   <View style={s.premiumEyebrowRow}>
-                    <Ionicons name="star" size={11} color="#B07D1A" />
+                    <Ionicons name="star" size={11} color="#C84200" />
                     <Text style={s.premiumEyebrow}>UPGRADE</Text>
                   </View>
                   <Text style={s.premiumTitle}>Get RoomPear+</Text>
@@ -457,14 +457,14 @@ const s = StyleSheet.create({
   // Premium card
   premiumCard: {
     backgroundColor: '#FBF6E8', borderRadius: 18, padding: 16, marginBottom: 4,
-    borderWidth: 1, borderColor: 'rgba(176,125,26,0.22)',
+    borderWidth: 1, borderColor: 'rgba(200,66,0,0.22)',
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    shadowColor: '#B07D1A', shadowOpacity: 0.14,
+    shadowColor: '#C84200', shadowOpacity: 0.14,
     shadowOffset: { width: 0, height: 3 }, shadowRadius: 10, elevation: 3,
   },
   premiumLeft: { flex: 1 },
   premiumEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
-  premiumEyebrow: { fontFamily: fonts.bold, fontSize: 11, color: '#B07D1A', letterSpacing: 0.9 },
+  premiumEyebrow: { fontFamily: fonts.bold, fontSize: 11, color: '#C84200', letterSpacing: 0.9 },
   premiumTitle: { fontFamily: fonts.extraBold, fontSize: 18, color: '#111111', letterSpacing: -0.4 },
   premiumSub: { fontFamily: fonts.regular, fontSize: 13, color: '#3A3020', marginTop: 3 },
   premiumArrow: {

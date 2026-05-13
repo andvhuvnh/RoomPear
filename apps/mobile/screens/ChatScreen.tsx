@@ -26,12 +26,12 @@ import {
 } from '../lib/messaging';
 import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
 import ThemedConfirmSheet from '../components/ThemedConfirmSheet';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  CHATS_SCREEN_BG,
   CHATS_CARD,
-  CHATS_GREEN,
   CHATS_GREEN_BORDER,
 } from '../theme/chatsAmbient';
+import { fonts } from '../lib/typography';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 import PearLoader from '../components/PearLoader';
 import BlockReportModal from '../components/BlockReportModal';
@@ -42,15 +42,14 @@ type Props = NativeStackScreenProps<ChatsStackParamList, 'Chat'>;
 const KEYBOARD_TOP_GAP = 10;
 
 const C = {
-  text: '#1A2C24',
+  text: '#111111',
   gray: '#717182',
-  /** Outgoing bubble — dark gray-green, white type. */
-  mineBubble: '#5A6560',
-  mineTextOnBubble: '#FAFBFA',
+  mineBubble: '#111111',
+  mineTextOnBubble: '#FFFFFF',
   white: '#FFFFFF',
   surface: CHATS_CARD,
   surfaceBorder: CHATS_GREEN_BORDER,
-  cta: '#030213',
+  cta: '#111111',
 };
 
 type ChatListItem =
@@ -107,7 +106,17 @@ function buildChatListItems(rows: ChatMessageRow[]): ChatListItem[] {
 }
 
 function Background({ children }: { children: React.ReactNode }) {
-  return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
+  return (
+    <LinearGradient
+      colors={['#EDF5EA', '#F4F9F0', '#FAFDF7', '#FFFFFF']}
+      locations={[0, 0.3, 0.65, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      {children}
+    </LinearGradient>
+  );
 }
 
 export default function ChatScreen({ navigation, route }: Props) {
@@ -478,8 +487,8 @@ const styles = StyleSheet.create({
     borderColor: CHATS_GREEN_BORDER,
   },
   dateSeparatorText: {
+    fontFamily: fonts.bold,
     fontSize: 12,
-    fontWeight: '700',
     color: C.gray,
     letterSpacing: 0.3,
   },
@@ -510,6 +519,7 @@ const styles = StyleSheet.create({
     borderColor: C.surfaceBorder,
   },
   bubbleText: {
+    fontFamily: fonts.regular,
     fontSize: 16,
     lineHeight: 22,
     color: C.text,
@@ -559,8 +569,8 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   sendBtnText: {
+    fontFamily: fonts.semiBold,
     color: C.white,
-    fontWeight: '600',
     fontSize: 16,
   },
 });

@@ -14,7 +14,9 @@ import {
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fonts } from '../lib/typography';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatsStackParamList } from '../navigation/ChatsStack';
 import { fetchMatches, type Match } from '../lib/matches';
@@ -58,7 +60,17 @@ const C = {
 };
 
 function Background({ children }: { children: React.ReactNode }) {
-  return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
+  return (
+    <LinearGradient
+      colors={['#EDF5EA', '#F4F9F0', '#FAFDF7', '#FFFFFF']}
+      locations={[0, 0.3, 0.65, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      {children}
+    </LinearGradient>
+  );
 }
 
 function formatMatchDate(iso: string) {
@@ -472,7 +484,7 @@ export default function ChatsScreen({ navigation }: Props) {
               }
               ListEmptyComponent={
                 <View style={styles.emptyCard}>
-                  <Text style={styles.emptyEmoji}>🍐</Text>
+                  <Ionicons name="people-outline" size={44} color="#7A9080" style={{ marginBottom: 10 }} />
                   <Text style={styles.emptyTitle}>No matches yet</Text>
                   <Text style={styles.emptyText}>
                     When you and someone both like each other, they'll show up here.
@@ -496,7 +508,7 @@ export default function ChatsScreen({ navigation }: Props) {
             ListEmptyComponent={
               conversations.length === 0 ? (
                 <View style={styles.emptyCard}>
-                  <Text style={styles.emptyEmoji}>💬</Text>
+                  <Ionicons name="chatbubble-ellipses-outline" size={44} color="#7A9080" style={{ marginBottom: 10 }} />
                   <Text style={styles.emptyTitle}>No messages yet</Text>
                   <Text style={styles.emptyText}>
                     Match with someone and send them the first message!
@@ -583,12 +595,13 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   heroTitle: {
+    fontFamily: fonts.extraBold,
     fontSize: 28,
-    fontWeight: '600',
-    color: C.text,
+    color: '#111111',
     letterSpacing: -0.5,
   },
   heroTagline: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: C.gray,
     marginTop: 2,
@@ -643,10 +656,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tabPillActive: {
-    backgroundColor: CHATS_GREEN_SOFT_BG,
-    borderColor: CHATS_GREEN,
-    shadowColor: CHATS_GREEN,
-    shadowOpacity: 0.12,
+    backgroundColor: '#111111',
+    borderColor: '#111111',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
     elevation: 2,
@@ -657,7 +670,7 @@ const styles = StyleSheet.create({
     color: C.gray,
   },
   tabPillTextActive: {
-    color: C.text,
+    color: '#FFFFFF',
   },
   tabBadge: {
     minWidth: 18,
@@ -887,10 +900,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 5,
-  },
-  emptyEmoji: {
-    fontSize: 44,
-    marginBottom: 10,
   },
   emptyTitle: {
     fontSize: 20,

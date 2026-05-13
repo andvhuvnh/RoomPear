@@ -1121,7 +1121,7 @@ export default function UserProfileScreen({ route }: Props) {
                 <TouchableOpacity style={styles.premiumCard} onPress={() => void openUpgradeIfNeeded()} activeOpacity={0.88}>
                   <View style={styles.premiumCardTop}>
                     <View style={styles.premiumEyebrowRow}>
-                      <Ionicons name="star" size={11} color="#B07D1A" />
+                      <Ionicons name="star" size={11} color="#C84200" />
                       <Text style={styles.premiumEyebrow}>ROOMPEAR+</Text>
                     </View>
                     <Text style={styles.premiumTitle}>Find your person faster</Text>
@@ -1738,24 +1738,20 @@ export default function UserProfileScreen({ route }: Props) {
 
       {/* Preview as roommate modal */}
       <Modal visible={previewOpen} animationType="slide" onRequestClose={() => setPreviewOpen(false)}>
-        <View style={{ flex: 1 }}>
-          <LinearGradient
-            colors={['#C8EAC0', '#D4EEB8', '#E2F0C8', '#EEF6E0', '#F6FAF0', '#FFFFFF']}
-            locations={[0, 0.18, 0.40, 0.62, 0.82, 1]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
+        <View style={{ flex: 1, backgroundColor: '#F2F4F0' }}>
+          <SwipeCard
+            profile={previewProfile}
+            scrollPaddingTop={insets.top + 64}
+            style={{ flex: 1, width: '100%', borderRadius: 0, shadowOpacity: 0, elevation: 0 } as any}
           />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: insets.top + 8, paddingBottom: 12 }}>
-            <Text style={{ fontFamily: fonts.bold, fontSize: 17, color: '#111111' }}>how others see you</Text>
-            <TouchableOpacity onPress={() => setPreviewOpen(false)} hitSlop={10} activeOpacity={0.75}>
-              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 }}>
-                <Ionicons name="chevron-down" size={22} color="#111111" />
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flex: 1, alignItems: 'center', paddingTop: 4 }}>
-            <SwipeCard profile={previewProfile} />
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 16 }}>
+              <TouchableOpacity onPress={() => setPreviewOpen(false)} hitSlop={12} activeOpacity={0.75}>
+                <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 }}>
+                  <Ionicons name="chevron-down" size={22} color="#111111" />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1893,10 +1889,10 @@ const styles = StyleSheet.create({
   actionBtnRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
 
   // Premium upsell card
-  premiumCard: { backgroundColor: '#FBF6E8', borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(176,125,26,0.2)', shadowColor: '#B07D1A', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
+  premiumCard: { backgroundColor: '#FBF6E8', borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(200,66,0,0.2)', shadowColor: '#C84200', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
   premiumCardTop: { marginBottom: 14 },
   premiumEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5 },
-  premiumEyebrow: { fontFamily: fonts.bold, fontSize: 11, color: '#B07D1A', letterSpacing: 0.9 },
+  premiumEyebrow: { fontFamily: fonts.bold, fontSize: 11, color: '#C84200', letterSpacing: 0.9 },
   premiumTitle: { fontFamily: fonts.extraBold, fontSize: 19, color: '#111111', letterSpacing: -0.4 },
   premiumFeatures: { gap: 9, marginBottom: 16 },
   premiumFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },

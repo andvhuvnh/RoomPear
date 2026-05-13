@@ -19,6 +19,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fonts } from '../lib/typography';
 import { supabase } from '../lib/supabase';
 import {
   fetchLikers,
@@ -35,15 +36,6 @@ import { hasRoomPearPlusEntitlement } from '../lib/purchasesConfig';
 import { fetchProfileIsPremium } from '../lib/profileSubscriptionTier';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import type { LikesStackParamList } from '../navigation/LikesStack';
-import {
-  CHATS_SCREEN_BG,
-  CHATS_CARD,
-  CHATS_GREEN,
-  CHATS_GREEN_BORDER,
-  CHATS_GREEN_BORDER_STRONG,
-  CHATS_GREEN_DARK,
-  CHATS_GREEN_SOFT_BG,
-} from '../theme/chatsAmbient';
 
 type NavProp = CompositeNavigationProp<
   NativeStackNavigationProp<LikesStackParamList>,
@@ -61,52 +53,28 @@ const GRID_GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 const C = {
-  text: '#1A2C24',
+  text: '#111111',
   gray: '#717182',
   grayDim: '#A0A0B0',
   white: '#FFFFFF',
-  surface: CHATS_CARD,
-  surfaceBorder: CHATS_GREEN_BORDER,
-  accent: CHATS_GREEN,
-  accentSoft: CHATS_GREEN_SOFT_BG,
+  surface: '#FFFFFF',
+  surfaceBorder: 'rgba(0,0,0,0.07)',
+  green: '#2D6A4F',
+  greenSoft: 'rgba(45,106,79,0.10)',
+  greenBorder: 'rgba(45,106,79,0.16)',
 };
 
 function Background({ children }: { children: React.ReactNode }) {
-  return <View style={{ flex: 1, backgroundColor: CHATS_SCREEN_BG }}>{children}</View>;
-}
-
-/** Likes-only ambient layers — moss tones, asymmetric glow (Chats stays flat). */
-function LikesAmbientBackdrop() {
   return (
-    <View style={styles.ambientRoot} pointerEvents="none">
-      <View style={styles.ambientOrbTopRight} />
-      <View style={styles.ambientOrbBottomLeft} />
-      <LinearGradient
-        colors={[
-          'rgba(250, 252, 251, 0)',
-          'rgba(45, 106, 79, 0.035)',
-          'rgba(250, 252, 251, 0)',
-        ]}
-        locations={[0, 0.48, 1]}
-        start={{ x: 0.15, y: 0 }}
-        end={{ x: 0.92, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={['rgba(45, 106, 79, 0.11)', 'rgba(250, 252, 251, 0)']}
-        locations={[0, 1]}
-        start={{ x: 1, y: 0 }}
-        end={{ x: 0.25, y: 0.6 }}
-        style={styles.ambientCornerGlow}
-      />
-      <View style={styles.heroGlow}>
-        <LinearGradient
-          colors={['rgba(45, 106, 79, 0.14)', 'rgba(250, 252, 251, 0)']}
-          locations={[0, 1]}
-          style={styles.heroGradientFill}
-        />
-      </View>
-    </View>
+    <LinearGradient
+      colors={['#EDF5EA', '#F4F9F0', '#FAFDF7', '#FFFFFF']}
+      locations={[0, 0.3, 0.65, 1]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
+      {children}
+    </LinearGradient>
   );
 }
 
@@ -405,14 +373,14 @@ export default function LikesScreen() {
             {!photoClear && (
               <View style={styles.lockOverlay} pointerEvents="none">
                 <View style={styles.lockBubble}>
-                  <Ionicons name="lock-closed" size={22} color={CHATS_GREEN} />
+                  <Ionicons name="lock-closed" size={22} color="#111111" />
                 </View>
               </View>
             )}
 
             {item.usedTopPick && (
               <View style={styles.topPickBadge} pointerEvents="none">
-                <Ionicons name="star" size={11} color={CHATS_GREEN} />
+                <Ionicons name="star" size={11} color="#111111" />
                 <Text style={styles.topPickBadgeText}>Top pick</Text>
               </View>
             )}
@@ -477,64 +445,22 @@ export default function LikesScreen() {
 
   return (
     <Background>
-      <LikesAmbientBackdrop />
-
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <Text style={styles.heroTitle}>Likes</Text>
           <Text style={styles.heroTagline}>People who chose you — reveal photos on your terms</Text>
         </View>
 
-        {!loading && likers.length > 0 && (
-          <View style={styles.statRow}>
-            <View style={styles.statPill}>
-              <Ionicons name="heart" size={16} color={CHATS_GREEN} />
-              <Text style={styles.statPillText}>
-                {likers.length} {likers.length === 1 ? 'person' : 'people'}
-              </Text>
-            </View>
-          </View>
-        )}
-
         {!loading && userId && likers.length > 0 && (
-          <View
-            style={[
-              styles.revealCard,
-              revealSummary.tone === 'plus' && styles.revealCardPlus,
-              revealSummary.tone === 'used' && styles.revealCardUsed,
-            ]}
-          >
-            <View
-              style={[
-                styles.revealAccent,
-                revealSummary.tone === 'plus' && styles.revealAccentPlus,
-                revealSummary.tone === 'used' && styles.revealAccentUsed,
-              ]}
+          <View style={[styles.revealPill, revealSummary.tone === 'used' && styles.revealPillMuted]}>
+            <Ionicons
+              name={revealSummary.icon}
+              size={13}
+              color={revealSummary.tone === 'used' ? C.grayDim : '#2D6A4F'}
             />
-            <View style={styles.revealCardInner}>
-              <View
-                style={[
-                  styles.revealIconWrap,
-                  revealSummary.tone === 'used' && styles.revealIconWrapMuted,
-                ]}
-              >
-                <Ionicons
-                  name={revealSummary.icon}
-                  size={22}
-                  color={
-                    revealSummary.tone === 'plus'
-                      ? CHATS_GREEN
-                      : revealSummary.tone === 'used'
-                        ? C.gray
-                        : CHATS_GREEN
-                  }
-                />
-              </View>
-              <View style={styles.revealCopy}>
-                <Text style={styles.revealTitle}>{revealSummary.title}</Text>
-                <Text style={styles.revealBody}>{revealSummary.body}</Text>
-              </View>
-            </View>
+            <Text style={[styles.revealPillText, revealSummary.tone === 'used' && styles.revealPillTextMuted]}>
+              {revealSummary.body}
+            </Text>
           </View>
         )}
 
@@ -570,12 +496,12 @@ export default function LikesScreen() {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={() => load(true)}
-                  tintColor={CHATS_GREEN}
+                  tintColor="#2D6A4F"
                 />
               }
               ListEmptyComponent={
                 <View style={styles.emptyCard}>
-                  <Text style={styles.emptyEmoji}>💛</Text>
+                  <Ionicons name="heart-outline" size={44} color="#C84200" style={{ marginBottom: 10 }} />
                   <Text style={styles.emptyTitle}>No likes yet</Text>
                   <Text style={styles.emptyText}>
                     When someone likes your profile, they will show up here. Keep swiping in Discover.
@@ -590,7 +516,7 @@ export default function LikesScreen() {
         <Modal visible={!!matchName} transparent animationType="fade">
           <View style={styles.matchOverlay}>
             <View style={styles.matchCard}>
-              <Text style={styles.matchEmoji}>🍐</Text>
+              <Ionicons name="heart-circle-outline" size={48} color="#C84200" style={{ marginBottom: 12 }} />
               <Text style={styles.matchTitle}>{"It's a Match!"}</Text>
               <Text style={styles.matchSub}>
                 You and {matchName} both liked each other.
@@ -619,49 +545,6 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: 'transparent',
-    zIndex: 1,
-  },
-  ambientRoot: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-    overflow: 'hidden',
-  },
-  ambientOrbTopRight: {
-    position: 'absolute',
-    width: SCREEN_WIDTH * 0.92,
-    height: SCREEN_WIDTH * 0.92,
-    borderRadius: SCREEN_WIDTH * 0.46,
-    top: -SCREEN_WIDTH * 0.38,
-    right: -SCREEN_WIDTH * 0.28,
-    backgroundColor: 'rgba(45, 106, 79, 0.06)',
-  },
-  ambientOrbBottomLeft: {
-    position: 'absolute',
-    width: SCREEN_WIDTH * 0.75,
-    height: SCREEN_WIDTH * 0.75,
-    borderRadius: SCREEN_WIDTH * 0.375,
-    bottom: -SCREEN_WIDTH * 0.22,
-    left: -SCREEN_WIDTH * 0.32,
-    backgroundColor: 'rgba(26, 51, 41, 0.045)',
-  },
-  ambientCornerGlow: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: SCREEN_WIDTH * 0.72,
-    height: SCREEN_WIDTH * 0.58,
-  },
-  heroGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 168,
-  },
-  heroGradientFill: {
-    flex: 1,
-    width: '100%',
-    minHeight: 168,
   },
   centered: {
     flex: 1,
@@ -674,14 +557,14 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   heroTitle: {
+    fontFamily: fonts.extraBold,
     fontSize: 28,
-    fontWeight: '600',
-    color: C.text,
+    color: '#111111',
     letterSpacing: -0.5,
   },
   heroTagline: {
+    fontFamily: fonts.regular,
     fontSize: 13,
-    fontWeight: '500',
     color: C.gray,
     marginTop: 4,
     lineHeight: 18,
@@ -695,89 +578,42 @@ const styles = StyleSheet.create({
   statPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: C.white,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
   },
   statPillText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: CHATS_GREEN_DARK,
-  },
-  revealCard: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 18,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  revealCardPlus: {
-    borderColor: CHATS_GREEN,
-    backgroundColor: CHATS_GREEN_SOFT_BG,
-  },
-  revealCardUsed: {
-    backgroundColor: 'rgba(113, 113, 130, 0.06)',
-    borderColor: CHATS_GREEN_BORDER,
-  },
-  revealAccent: {
-    width: 5,
-    backgroundColor: CHATS_GREEN,
-  },
-  revealAccentPlus: {
-    backgroundColor: CHATS_GREEN,
-  },
-  revealAccentUsed: {
-    backgroundColor: C.grayDim,
-  },
-  revealCardInner: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    gap: 12,
-    alignItems: 'center',
-  },
-  revealIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: CHATS_GREEN_SOFT_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
-  },
-  revealIconWrapMuted: {
-    backgroundColor: 'rgba(113, 113, 130, 0.10)',
-    borderColor: 'rgba(113, 113, 130, 0.22)',
-  },
-  revealCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  revealTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: CHATS_GREEN_DARK,
-    marginBottom: 2,
-  },
-  revealBody: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '500',
-    color: C.gray,
-    lineHeight: 18,
+    color: '#111111',
+  },
+  revealPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(45,106,79,0.08)',
+  },
+  revealPillMuted: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  revealPillText: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: '#2D6A4F',
+    flexShrink: 1,
+  },
+  revealPillTextMuted: {
+    color: C.grayDim,
   },
   sortRow: {
     flexDirection: 'row',
@@ -789,21 +625,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: C.white,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    backgroundColor: 'rgba(255,255,255,0.80)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
   },
   sortChipActive: {
-    backgroundColor: CHATS_GREEN_SOFT_BG,
-    borderColor: CHATS_GREEN,
+    backgroundColor: '#111111',
+    borderColor: '#111111',
   },
   sortChipText: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '600',
     color: C.gray,
   },
   sortChipTextActive: {
-    color: CHATS_GREEN,
+    color: '#FFFFFF',
   },
   gridContent: {
     paddingHorizontal: GRID_PADDING,
@@ -817,14 +653,14 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     borderRadius: 18,
     backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.07)',
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
   },
   photoWrap: {
     position: 'relative',
@@ -832,35 +668,35 @@ const styles = StyleSheet.create({
   gridPhoto: {
     width: CARD_WIDTH,
     height: CARD_WIDTH,
-    backgroundColor: CHATS_GREEN_SOFT_BG,
+    backgroundColor: '#EDF5EA',
   },
   gridPhotoPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: CHATS_GREEN,
+    backgroundColor: '#2D6A4F',
   },
   gridPhotoInitial: {
+    fontFamily: fonts.bold,
     fontSize: 36,
-    fontWeight: '700',
     color: C.white,
   },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(250, 252, 251, 0.45)',
+    backgroundColor: 'rgba(237,245,234,0.50)',
   },
   lockBubble: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: CHATS_CARD,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER_STRONG,
-    shadowColor: '#1A3329',
-    shadowOpacity: 0.12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
     elevation: 3,
@@ -874,21 +710,21 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: CHATS_CARD,
-    borderWidth: 1.5,
-    borderColor: CHATS_GREEN,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
     zIndex: 2,
-    shadowColor: '#1A3329',
-    shadowOpacity: 0.14,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
+    elevation: 3,
   },
   topPickBadgeText: {
+    fontFamily: fonts.extraBold,
     fontSize: 10,
-    fontWeight: '800',
-    color: CHATS_GREEN_DARK,
+    color: '#111111',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
@@ -896,32 +732,32 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   gridName: {
+    fontFamily: fonts.bold,
     fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
+    color: '#111111',
     marginBottom: 2,
   },
   gridLocation: {
+    fontFamily: fonts.regular,
     fontSize: 12,
-    fontWeight: '500',
-    color: C.accent,
+    color: C.gray,
     marginBottom: 8,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: CHATS_GREEN,
-    borderRadius: 12,
+    backgroundColor: '#111111',
+    borderRadius: 10,
     paddingVertical: 8,
   },
   actionBtnMuted: {
     backgroundColor: C.grayDim,
   },
   actionBtnText: {
+    fontFamily: fonts.bold,
     color: C.white,
     fontSize: 13,
-    fontWeight: '700',
   },
   emptyList: {
     flexGrow: 1,
@@ -934,86 +770,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 28,
     borderRadius: 22,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  emptyEmoji: {
-    fontSize: 44,
-    marginBottom: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
   },
   emptyTitle: {
+    fontFamily: fonts.bold,
     fontSize: 20,
-    fontWeight: '700',
-    color: C.text,
+    color: '#111111',
     marginBottom: 8,
     letterSpacing: -0.3,
   },
   emptyText: {
+    fontFamily: fonts.regular,
     fontSize: 15,
-    fontWeight: '500',
     color: C.gray,
     textAlign: 'center',
     lineHeight: 22,
   },
   matchOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.60)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: CHATS_CARD,
+    backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 32,
     alignItems: 'center',
-    width: '80%',
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    width: '82%',
     shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
     elevation: 10,
   },
   matchEmoji: { fontSize: 48, marginBottom: 12 },
   matchTitle: {
+    fontFamily: fonts.extraBold,
     fontSize: 26,
-    fontWeight: '800',
-    color: CHATS_GREEN_DARK,
+    color: '#111111',
     marginBottom: 8,
+    letterSpacing: -0.4,
   },
   matchSub: {
+    fontFamily: fonts.regular,
     fontSize: 15,
-    fontWeight: '500',
     color: C.gray,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
   },
   matchBtn: {
-    backgroundColor: CHATS_GREEN,
+    backgroundColor: '#111111',
     paddingHorizontal: 28,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 14,
     marginBottom: 12,
     width: '100%',
     alignItems: 'center',
   },
   matchBtnText: {
+    fontFamily: fonts.bold,
     color: C.white,
-    fontWeight: '700',
     fontSize: 15,
   },
   matchSkip: {
+    fontFamily: fonts.regular,
     fontSize: 14,
-    fontWeight: '500',
     color: C.gray,
-    opacity: 0.85,
   },
 });

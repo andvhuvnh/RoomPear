@@ -8,6 +8,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MapPin, Flag, User, Buildings, Briefcase, CurrencyDollar } from 'phosphor-react-native';
@@ -23,6 +25,7 @@ const CARD_GAP = 8;
 export const CARD_WIDTH = SCREEN_WIDTH - SIDE_MARGIN * 2;
 export const CARD_HEIGHT = SCREEN_HEIGHT * 0.78;
 const PHOTO_HEIGHT = Math.round(CARD_WIDTH * (4 / 3));
+const PHOTO_CARD_HEIGHT = PHOTO_HEIGHT + 8;
 
 type PhotoTab = 'profile' | 'place';
 
@@ -31,6 +34,9 @@ interface Props {
   onReport?: () => void;
   showMatchReasons?: boolean;
   onUnlockReasons?: () => void;
+  style?: StyleProp<ViewStyle>;
+  scrollPaddingTop?: number;
+  hideTabPill?: boolean;
 }
 
 export default function SwipeCard({
@@ -38,6 +44,9 @@ export default function SwipeCard({
   onReport,
   showMatchReasons = false,
   onUnlockReasons,
+  style,
+  scrollPaddingTop = 0,
+  hideTabPill = false,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -87,10 +96,10 @@ export default function SwipeCard({
     : null;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, style]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, scrollPaddingTop > 0 && { paddingTop: scrollPaddingTop }]}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         bounces
@@ -99,11 +108,11 @@ export default function SwipeCard({
       >
         {/* ── Photo card ── */}
         <View style={styles.photoCard}>
-          <View style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}>
+          <View style={styles.photoInner}>
             {prevPhotoUri ? (
               <ExpoImage
                 source={{ uri: prevPhotoUri }}
-                style={[StyleSheet.absoluteFill, { width: CARD_WIDTH, height: PHOTO_HEIGHT }]}
+                style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 cachePolicy="memory-disk"
               />
@@ -111,60 +120,59 @@ export default function SwipeCard({
             <Animated.View style={[StyleSheet.absoluteFill, { opacity: crossfadeAnim }]}>
               <ExpoImage
                 source={{ uri: activePhotos[photoIndex] }}
-                style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
+                style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
               />
             </Animated.View>
-          </View>
 
-          {/* Tap zones */}
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <TouchableOpacity
-              style={styles.tapZoneLeft}
-              onPress={() => advancePhoto('prev')}
-              activeOpacity={1}
-            />
-            <TouchableOpacity
-              style={styles.tapZoneRight}
-              onPress={() => advancePhoto('next')}
-              activeOpacity={1}
-            />
-          </View>
-
-          {/* Dot indicators */}
-          {activePhotos.length > 1 && (
-            <View style={styles.dotsRow} pointerEvents="none">
-              {activePhotos.map((_, i) => (
-                <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
-              ))}
+            {/* Tap zones */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.tapZoneLeft}
+                onPress={() => advancePhoto('prev')}
+                activeOpacity={1}
+              />
+              <TouchableOpacity
+                style={styles.tapZoneRight}
+                onPress={() => advancePhoto('next')}
+                activeOpacity={1}
+              />
             </View>
-          )}
 
-          {/* Tab pill */}
-          {profile.hasListing && (
-            <View style={styles.tabPill} pointerEvents="box-none">
-              <View style={styles.tabPillInner}>
-                <TouchableOpacity
-                  style={[styles.tabOption, photoTab === 'profile' && styles.tabOptionActive]}
-                  onPress={() => switchTab('profile')}
-                  activeOpacity={0.8}
-                >
-                  <User size={18} color={photoTab === 'profile' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
-                </TouchableOpacity>
-                <View style={styles.tabDivider} />
-                <TouchableOpacity
-                  style={[styles.tabOption, photoTab === 'place' && styles.tabOptionActive]}
-                  onPress={() => switchTab('place')}
-                  activeOpacity={0.8}
-                >
-                  <Buildings size={18} color={photoTab === 'place' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
-                </TouchableOpacity>
+            {/* Dot indicators */}
+            {activePhotos.length > 1 && (
+              <View style={styles.dotsRow} pointerEvents="none">
+                {activePhotos.map((_, i) => (
+                  <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
+                ))}
               </View>
-            </View>
-          )}
+            )}
 
+            {/* Tab pill */}
+            {profile.hasListing && !hideTabPill && (
+              <View style={styles.tabPill} pointerEvents="box-none">
+                <View style={styles.tabPillInner}>
+                  <TouchableOpacity
+                    style={[styles.tabOption, photoTab === 'profile' && styles.tabOptionActive]}
+                    onPress={() => switchTab('profile')}
+                    activeOpacity={0.8}
+                  >
+                    <User size={18} color={photoTab === 'profile' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                  </TouchableOpacity>
+                  <View style={styles.tabDivider} />
+                  <TouchableOpacity
+                    style={[styles.tabOption, photoTab === 'place' && styles.tabOptionActive]}
+                    onPress={() => switchTab('place')}
+                    activeOpacity={0.8}
+                  >
+                    <Buildings size={18} color={photoTab === 'place' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* ── Info card ── */}
@@ -321,10 +329,15 @@ const styles = StyleSheet.create({
 
   // ── Photo card ──
   photoCard: {
-    height: PHOTO_HEIGHT,
-    backgroundColor: '#1A1A2E',
-    borderRadius: 20,
+    height: PHOTO_CARD_HEIGHT,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  photoInner: {
+    flex: 1,
+    borderRadius: 18,
     overflow: 'hidden',
+    backgroundColor: '#C8D8CA',
   },
   tabPill: {
     position: 'absolute',
