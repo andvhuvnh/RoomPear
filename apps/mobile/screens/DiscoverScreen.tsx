@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
@@ -19,7 +20,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { DotsThreeVertical, ArrowCounterClockwise, X, Heart } from 'phosphor-react-native';
 import { fonts } from '../lib/typography';
 import { supabase } from '../lib/supabase';
-import { recordSwipe } from '../lib/discover';
+import { recordSwipe, deleteDiscoverSwipe } from '../lib/discover';
+import { useTabBadges } from '../context/TabBadgesContext';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { getDiscoverUsage } from '../lib/dailyDiscoverUsage';
@@ -76,6 +78,7 @@ function Background({ children }: { children: React.ReactNode }) {
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const { presentPaywall } = usePurchases();
+  const { refreshTabBadges } = useTabBadges();
   const {
     userId,
     profiles,
@@ -101,6 +104,8 @@ export default function DiscoverScreen() {
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const logoBobAnim = useRef(new Animated.Value(0)).current;
+  /** Swipe row id for the last non-match Discover action — used to undo without double-counting daily swipes. */
+  const undoableSwipeRef = useRef<{ swipeId: string } | null>(null);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -226,23 +231,22 @@ export default function DiscoverScreen() {
 
     setActionDisabled(true);
     setCanUndo(false);
+    undoableSwipeRef.current = null;
     const current = profiles[currentIndex];
     animateOut(direction, () => {
-      setCurrentIndex(prev => prev + 1);
-      setCanUndo(true);
-      Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => {
-        setActionDisabled(false);
-      });
+      setCurrentIndex((prev) => prev + 1);
+      Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
 
       void (async () => {
         if (!current || !userId) {
           await refreshDailyUsage(userId);
+          setActionDisabled(false);
           return;
         }
         try {
-          const { isMatch } = await recordSwipe(userId, current.id, direction);
+          const { isMatch, swipeRowId } = await recordSwipe(userId, current.id, direction);
           if (isMatch) {
-            const sharedInterests = myHobbies.filter(h => (current.hobbies ?? []).includes(h));
+            const sharedInterests = myHobbies.filter((h) => (current.hobbies ?? []).includes(h));
             setMatchData({
               name: current.name,
               otherUserId: current.id,
@@ -250,9 +254,18 @@ export default function DiscoverScreen() {
               myPhotoUrl,
               sharedInterests,
             });
+            undoableSwipeRef.current = null;
+            setCanUndo(false);
+          } else if (swipeRowId) {
+            undoableSwipeRef.current = { swipeId: swipeRowId };
+            setCanUndo(true);
+          } else {
+            undoableSwipeRef.current = null;
+            setCanUndo(false);
           }
         } finally {
           await refreshDailyUsage(userId);
+          setActionDisabled(false);
         }
       })();
     });
@@ -260,12 +273,31 @@ export default function DiscoverScreen() {
 
   async function handleUndo() {
     if (actionDisabled || !canUndo) return;
+    const swipe = undoableSwipeRef.current;
+    if (!swipe?.swipeId || !userId) return;
+
     setCanUndo(false);
     setActionDisabled(true);
-    cardOpacity.setValue(0);
-    setCurrentIndex(prev => prev - 1);
-    Animated.timing(cardOpacity, { toValue: 1, duration: 220, useNativeDriver: true })
-      .start(() => setActionDisabled(false));
+    try {
+      const ok = await deleteDiscoverSwipe(swipe.swipeId);
+      if (!ok) {
+        Alert.alert('Undo failed', 'Could not remove that swipe. Please try again.');
+        setCanUndo(true);
+        return;
+      }
+      undoableSwipeRef.current = null;
+      cardOpacity.setValue(0);
+      setCurrentIndex((prev) => prev - 1);
+      await new Promise<void>((resolve) => {
+        Animated.timing(cardOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+          if (finished) resolve();
+        });
+      });
+      await refreshDailyUsage(userId);
+      refreshTabBadges();
+    } finally {
+      setActionDisabled(false);
+    }
   }
 
   const currentProfile = profiles[currentIndex];
@@ -428,7 +460,7 @@ export default function DiscoverScreen() {
         <View style={[styles.actionBar, actionDisabled && styles.actionBarDisabled]}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionUndo, (!canUndo || actionDisabled) && styles.actionLocked]}
-            onPress={handleUndo}
+            onPress={() => void handleUndo()}
             disabled={!canUndo || actionDisabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >

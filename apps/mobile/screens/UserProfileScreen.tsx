@@ -85,6 +85,10 @@ const DB_ICON_MAP: Record<string, string> = {
 const DB_CYCLE: DealbreakerLevel[] = ['none', 'soft', 'hard'];
 type PromptEntry = { question: string; answer: string };
 
+type ProfileCompletionDestination =
+  | { kind: 'photos' }
+  | { kind: 'consolidated'; tab: 'basics' | 'prompts' | 'interests' | 'dealbreakers' };
+
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
@@ -935,25 +939,53 @@ export default function UserProfileScreen({ route }: Props) {
     return score;
   }, [imageUrls, profile, prefs, profileInterests.length]);
 
-  const completionHint = useMemo(() => {
+  const completionNextStep = useMemo(() => {
     const validPrompts = Array.isArray(profile?.prompts) ? profile.prompts.filter((p: any) => p?.question && p?.answer) : [];
     const interestNeed = Math.max(0, 5 - profileInterests.length);
     const missingInterestPts = 20 - Math.round((Math.min(profileInterests.length, 5) / 5) * 20);
     const missingPromptPts = 20 - Math.round((Math.min(validPrompts.length, 3) / 3) * 20);
     const need = 3 - Math.min(validPrompts.length, 3);
 
-    const gaps: { pts: number; msg: string }[] = [];
-    if (imageUrls.length === 0)          gaps.push({ pts: 20, msg: 'add a photo — no one can see you without one' });
-    if (missingInterestPts > 0)          gaps.push({ pts: missingInterestPts, msg: `add ${interestNeed} more interest${interestNeed > 1 ? 's' : ''} to find better matches` });
-    if (missingPromptPts > 0)            gaps.push({ pts: missingPromptPts, msg: `add ${need} more prompt${need > 1 ? 's' : ''} to boost your score` });
-    if (!profile?.bio?.trim())           gaps.push({ pts: 15, msg: 'add a bio so future roommates can get to know you' });
-    if (!prefs?.city && !prefs?.state)   gaps.push({ pts: 10, msg: 'add your city to appear in local searches' });
-    if (!profile?.occupation?.trim())    gaps.push({ pts: 10, msg: 'add your occupation to boost your score' });
-    if (!prefs?.min_budget && !prefs?.max_budget) gaps.push({ pts: 5, msg: 'add a budget range to improve your matches' });
+    type GapKey = 'photo' | 'interests' | 'prompts' | 'bio' | 'location' | 'occupation' | 'budget';
+    const gaps: { pts: number; key: GapKey; msg: string }[] = [];
+    if (imageUrls.length === 0) gaps.push({ pts: 20, key: 'photo', msg: 'add a photo — no one can see you without one' });
+    if (missingInterestPts > 0) gaps.push({ pts: missingInterestPts, key: 'interests', msg: `add ${interestNeed} more interest${interestNeed > 1 ? 's' : ''} to find better matches` });
+    if (missingPromptPts > 0) gaps.push({ pts: missingPromptPts, key: 'prompts', msg: `add ${need} more prompt${need > 1 ? 's' : ''} to boost your score` });
+    if (!profile?.bio?.trim()) gaps.push({ pts: 15, key: 'bio', msg: 'add a bio so future roommates can get to know you' });
+    if (!prefs?.city && !prefs?.state) gaps.push({ pts: 10, key: 'location', msg: 'add your city to appear in local searches' });
+    if (!profile?.occupation?.trim()) gaps.push({ pts: 10, key: 'occupation', msg: 'add your occupation to boost your score' });
+    if (!prefs?.min_budget && !prefs?.max_budget) gaps.push({ pts: 5, key: 'budget', msg: 'add a budget range to improve your matches' });
 
     gaps.sort((a, b) => b.pts - a.pts);
-    return gaps[0]?.msg ?? '';
-  }, [imageUrls, profile, prefs]);
+    const top = gaps[0];
+    if (!top) return { hint: '', destination: null as ProfileCompletionDestination | null };
+
+    const destination: ProfileCompletionDestination =
+      top.key === 'photo'
+        ? { kind: 'photos' }
+        : top.key === 'interests'
+          ? { kind: 'consolidated', tab: 'interests' }
+          : top.key === 'prompts'
+            ? { kind: 'consolidated', tab: 'prompts' }
+            : { kind: 'consolidated', tab: 'basics' };
+
+    return { hint: top.msg, destination };
+  }, [imageUrls, profile, prefs, profileInterests.length]);
+
+  const completionHint = completionNextStep.hint;
+  const completionDestination = completionNextStep.destination;
+
+  const navigateToNextCompletionStep = useCallback(() => {
+    const dest = completionNextStep.destination;
+    if (!dest) return;
+    setConsolidatedEditOpen(false);
+    if (dest.kind === 'photos') {
+      if (profileEditorSection !== 'photos') activateProfileSection('photos');
+    } else {
+      setProfileEditorSection(null);
+      openConsolidatedEditor(dest.tab);
+    }
+  }, [completionNextStep, profileEditorSection, activateProfileSection, openConsolidatedEditor]);
 
   const vibesChips = useMemo(() => {
     const chips: string[] = [];
@@ -1092,8 +1124,21 @@ export default function UserProfileScreen({ route }: Props) {
                 </View>
               )}
 
-              {/* Profile strength */}
-              <View style={styles.strengthSection}>
+              {/* Profile strength — tap opens the highest-impact missing section (same priority as the hint). */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.strengthSection,
+                  completionDestination && pressed && { opacity: 0.92 },
+                ]}
+                onPress={navigateToNextCompletionStep}
+                disabled={!completionDestination}
+                accessibilityRole={completionDestination ? 'button' : undefined}
+                accessibilityLabel={
+                  completionDestination
+                    ? `Complete profile: ${completionHint}`
+                    : 'RoomPear ready, profile complete'
+                }
+              >
                 <View style={styles.strengthRow}>
                   <View style={styles.strengthTitleRow}>
                     <View style={styles.strengthIconBadge}>
@@ -1110,8 +1155,14 @@ export default function UserProfileScreen({ route }: Props) {
                 </View>
                 {completionHint ? (
                   <View style={styles.strengthHintRow}>
-                    <Ionicons name="arrow-forward-circle-outline" size={14} color="#6A8070" />
-                    <Text style={styles.strengthHint}>{completionHint}</Text>
+                    <Ionicons
+                      name={completionDestination ? 'arrow-forward-circle-outline' : 'checkmark-circle-outline'}
+                      size={14}
+                      color={completionDestination ? '#6A8070' : '#2D6A4F'}
+                    />
+                    <Text style={styles.strengthHint}>
+                      {completionHint}
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.strengthHintRow}>
@@ -1119,7 +1170,7 @@ export default function UserProfileScreen({ route }: Props) {
                     <Text style={styles.strengthHint}>your profile is ready to show off</Text>
                   </View>
                 )}
-              </View>
+              </Pressable>
 
 
               {/* Bottom action row */}
