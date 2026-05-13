@@ -31,6 +31,7 @@ import {
 import { recordSwipe } from '../lib/discover';
 import { isSameLaCalendarDay } from '../lib/usageDay';
 import { usePurchases } from '../context/PurchasesContext';
+import { useTabBadges } from '../context/TabBadgesContext';
 import { hasRoomPearPlusEntitlement } from '../lib/purchasesConfig';
 import { fetchProfileIsPremium } from '../lib/profileSubscriptionTier';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
@@ -79,6 +80,7 @@ function Background({ children }: { children: React.ReactNode }) {
 
 export default function LikesScreen() {
   const navigation = useNavigation<NavProp>();
+  const { refreshTabBadges } = useTabBadges();
   const { isRoomPearPlus, customerInfo, presentPaywall } = usePurchases();
   const [hasPremiumTier, setHasPremiumTier] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export default function LikesScreen() {
   const [dailyRevealSpentToday, setDailyRevealSpentToday] = useState(false);
   const [bonusRevealBalance, setBonusRevealBalance] = useState(0);
   const [matchName, setMatchName] = useState<string | null>(null);
+  const [matchPeerId, setMatchPeerId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('recent');
 
   /** Same pattern as Chats: no full-screen spinner on every tab focus; optional stale skip avoids redundant fetches. */
@@ -183,7 +186,8 @@ export default function LikesScreen() {
     initialLoadDoneRef.current = true;
     lastFetchedAtRef.current = Date.now();
     setLoading(false);
-  }, [isRoomPearPlus, customerInfo, refreshRevealQuota]);
+    refreshTabBadges();
+  }, [isRoomPearPlus, customerInfo, refreshRevealQuota, refreshTabBadges]);
 
   /** When RC / DB flips to paid while you stay on this tab, or likers list arrives after premium, unlock all. */
   useEffect(() => {
@@ -232,12 +236,44 @@ export default function LikesScreen() {
     await presentPaywall();
   }, [hasPremiumAccess, presentPaywall]);
 
+  /** After a mutual match from Likes: refresh grid (they leave “pending likers”) and land on Chats → Matched. */
+  const finishMatchAndGoToChatsMatched = useCallback(() => {
+    setMatchName(null);
+    setMatchPeerId(null);
+    void load(true, false);
+    navigation.navigate('Chats', {
+      screen: 'ChatsHome',
+      params: { openSubTab: 'matched' },
+    });
+  }, [navigation, load]);
+
+  const openComposerForMatch = useCallback(() => {
+    const peerId = matchPeerId;
+    const title = matchName ?? 'Chat';
+    setMatchName(null);
+    setMatchPeerId(null);
+    void load(true, false);
+    if (peerId) {
+      navigation.navigate('Chats', {
+        screen: 'Chat',
+        params: { otherUserId: peerId, title },
+      });
+    } else {
+      navigation.navigate('Chats', {
+        screen: 'ChatsHome',
+        params: { openSubTab: 'matched' },
+      });
+    }
+  }, [matchPeerId, matchName, navigation, load]);
+
   async function handleLikeBack(liker: Liker) {
     if (!userId || likedBackIds.has(liker.id)) return;
     setLikedBackIds((prev) => new Set([...prev, liker.id]));
     const { isMatch } = await recordSwipe(userId, liker.id, 'like');
+    refreshTabBadges();
     if (isMatch) {
       setMatchName(liker.name);
+      setMatchPeerId(liker.id);
     }
   }
 
@@ -511,14 +547,11 @@ export default function LikesScreen() {
               </Text>
               <TouchableOpacity
                 style={styles.matchBtn}
-                onPress={() => {
-                  setMatchName(null);
-                  navigation.navigate('Chats', { screen: 'ChatsHome' });
-                }}
+                onPress={openComposerForMatch}
               >
                 <Text style={styles.matchBtnText}>Send Message</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setMatchName(null)}>
+              <TouchableOpacity onPress={finishMatchAndGoToChatsMatched}>
                 <Text style={styles.matchSkip}>Keep Browsing</Text>
               </TouchableOpacity>
             </View>

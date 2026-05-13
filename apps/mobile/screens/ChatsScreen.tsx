@@ -78,7 +78,7 @@ function formatConvTime(iso: string | null) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export default function ChatsScreen({ navigation }: Props) {
+export default function ChatsScreen({ navigation, route }: Props) {
   const [subTab, setSubTab] = useState<SubTab>('matched');
   const [sortBy, setSortBy] = useState<SortBy>('recent');
   const [matches, setMatches] = useState<Match[]>([]);
@@ -98,6 +98,14 @@ export default function ChatsScreen({ navigation }: Props) {
   /** Avoid full-screen spinner + list remount on every tab focus — keeps expo-image cache warm. */
   const initialLoadDoneRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
+
+  const openSubTabParam = route.params?.openSubTab;
+  useEffect(() => {
+    if (openSubTabParam === 'matched' || openSubTabParam === 'messages') {
+      setSubTab(openSubTabParam);
+      navigation.setParams({ openSubTab: undefined });
+    }
+  }, [openSubTabParam, navigation]);
 
   const load = useCallback(async (isRefresh = false) => {
     const { data: sessionData } = await supabase.auth.getSession();

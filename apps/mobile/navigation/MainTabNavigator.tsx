@@ -11,6 +11,7 @@ import DiscoverScreen from '../screens/DiscoverScreen';
 import LikesStack, { type LikesStackParamList } from './LikesStack';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import ChatsStack, { type ChatsStackParamList } from './ChatsStack';
+import { TabBadgesProvider } from '../context/TabBadgesContext';
 
 export type MainTabParamList = {
   Discover: undefined;
@@ -157,7 +158,13 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
     return () => { supabase.removeChannel(channel); };
   }, [loadBadgeCounts]);
 
+  const refreshTabBadges = useCallback(() => {
+    const uid = userIdRef.current;
+    if (uid) void loadBadgeCounts(uid);
+  }, [loadBadgeCounts]);
+
   return (
+    <TabBadgesProvider refreshTabBadges={refreshTabBadges}>
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
@@ -219,5 +226,6 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
         }}
       />
     </Tab.Navigator>
+    </TabBadgesProvider>
   );
 }

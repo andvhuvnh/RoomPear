@@ -17,6 +17,7 @@ import { getPreferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import SwipeCard from '../components/SwipeCard';
 import type { DiscoverProfile } from '../lib/discover';
+import { areMutuallyMatched } from '../lib/matches';
 import { ChatStyleTopBar } from '../components/ChatStyleTopBar';
 import BlockReportModal from '../components/BlockReportModal';
 import PearLoader from '../components/PearLoader';
@@ -75,12 +76,26 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const [reportOpen, setReportOpen] = useState(false);
   const [peerSafetyOpen, setPeerSafetyOpen] = useState(false);
   const [peerSafetyStart, setPeerSafetyStart] = useState<PeerSafetyStart>('main');
+  /** From Likes: only show message entry after mutual match is confirmed. Chats / existing thread always allow. */
+  const [likesMutualMatch, setLikesMutualMatch] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.id) setMyUserId(user.id);
     });
   }, []);
+
+  useEffect(() => {
+    if (profileSource !== 'likes' || !myUserId) return;
+    setLikesMutualMatch(false);
+    let cancelled = false;
+    void areMutuallyMatched(myUserId, userId).then((ok) => {
+      if (!cancelled) setLikesMutualMatch(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileSource, myUserId, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +185,14 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
     matchReasons: [],
   }), [userId, name, age, occupation, bio, hobbies, interests, prompts, imageUrls, listingPhotoUrls, location, hasListing, roomType, listingRoomType, listingRent, minBudget, maxBudget]);
 
+  const showMessageFab = useMemo(
+    () =>
+      Boolean(conversationId) ||
+      profileSource === 'chats' ||
+      (profileSource === 'likes' && likesMutualMatch),
+    [conversationId, profileSource, likesMutualMatch]
+  );
+
   const openChat = useCallback(() => {
     const title = name || initialName || 'Chat';
     const params = conversationId
@@ -230,20 +253,22 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
         />
       </View>
 
-      <View
-        style={[styles.messageFabWrap, { bottom: Math.max(insets.bottom, 12) + 8 }]}
-        pointerEvents="box-none"
-      >
-        <TouchableOpacity
-          style={styles.messageFab}
-          onPress={openChat}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel={`Message ${name || initialName || 'user'}`}
+      {showMessageFab ? (
+        <View
+          style={[styles.messageFabWrap, { bottom: Math.max(insets.bottom, 12) + 8 }]}
+          pointerEvents="box-none"
         >
-          <Ionicons name="chatbubbles" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={styles.messageFab}
+            onPress={openChat}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={`Message ${name || initialName || 'user'}`}
+          >
+            <Ionicons name="chatbubbles" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {myUserId && profileSource === 'chats' && (
         <BlockReportModal

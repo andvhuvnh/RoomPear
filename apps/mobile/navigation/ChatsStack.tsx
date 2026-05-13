@@ -4,7 +4,8 @@ import ChatScreen from '../screens/ChatScreen';
 import PublicUserProfileScreen from '../screens/PublicUserProfileScreen';
 
 export type ChatsStackParamList = {
-  ChatsHome: undefined;
+  /** `openSubTab` is consumed on focus so deep links / Likes-after-match can land on Matched vs Messages. */
+  ChatsHome: { openSubTab?: 'matched' | 'messages' } | undefined;
   Chat: { conversationId?: string; otherUserId?: string; title: string };
   ProfileView: {
     userId: string;
