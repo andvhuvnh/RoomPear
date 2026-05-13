@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
   Dimensions,
   TextInput,
 } from 'react-native';
@@ -29,15 +28,6 @@ import { supabase } from '../lib/supabase';
 import BlockReportModal from '../components/BlockReportModal';
 import PeerSafetyActionsModal, { type PeerSafetyStart } from '../components/PeerSafetyActionsModal';
 import ThemedConfirmSheet from '../components/ThemedConfirmSheet';
-import {
-  CHATS_SCREEN_BG,
-  CHATS_CARD,
-  CHATS_GREEN,
-  CHATS_GREEN_BORDER,
-  CHATS_GREEN_BORDER_STRONG,
-  CHATS_GREEN_SOFT_BG,
-} from '../theme/chatsAmbient';
-
 type Props = NativeStackScreenProps<ChatsStackParamList, 'ChatsHome'>;
 type SubTab = 'matched' | 'messages';
 type SortBy = 'recent' | 'name';
@@ -48,14 +38,13 @@ const GRID_GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 const C = {
-  text: '#1A2C24',
+  text: '#111111',
   gray: '#717182',
   grayDim: '#A0A0B0',
   white: '#FFFFFF',
-  surface: CHATS_CARD,
-  surfaceBorder: CHATS_GREEN_BORDER,
-  cta: '#030213',
-  accent: CHATS_GREEN,
+  surface: '#FFFFFF',
+  surfaceBorder: 'rgba(0,0,0,0.07)',
+  green: '#2D6A4F',
   destructive: '#D4183D',
 };
 
@@ -282,7 +271,7 @@ export default function ChatsScreen({ navigation }: Props) {
               }}
               accessibilityLabel="Report"
             >
-              <Ionicons name="flag-outline" size={20} color={C.accent} />
+              <Ionicons name="flag-outline" size={20} color={C.green} />
               <Text style={styles.swipeCompactLabel} numberOfLines={1}>
                 Report
               </Text>
@@ -434,7 +423,7 @@ export default function ChatsScreen({ navigation }: Props) {
                   onChangeText={setMessagesSearchQuery}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  selectionColor={CHATS_GREEN}
+                  selectionColor="#111111"
                   accessibilityLabel="Search conversations"
                 />
                 {messagesSearchQuery.length > 0 && (
@@ -480,7 +469,7 @@ export default function ChatsScreen({ navigation }: Props) {
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={styles.gridContent}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={CHATS_GREEN} />
+                <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} />
               }
               ListEmptyComponent={
                 <View style={styles.emptyCard}>
@@ -503,7 +492,7 @@ export default function ChatsScreen({ navigation }: Props) {
             }
             keyboardShouldPersistTaps="handled"
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={CHATS_GREEN} />
+              <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} />
             }
             ListEmptyComponent={
               conversations.length === 0 ? (
@@ -617,7 +606,7 @@ const styles = StyleSheet.create({
   },
   tabDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: CHATS_GREEN_BORDER_STRONG,
+    backgroundColor: 'rgba(0,0,0,0.08)',
     marginHorizontal: 20,
     marginBottom: 12,
   },
@@ -629,17 +618,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: CHATS_CARD,
+    backgroundColor: 'rgba(255,255,255,0.85)',
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   searchInput: {
     flex: 1,
+    fontFamily: fonts.regular,
     fontSize: 15,
-    fontWeight: '500',
     color: C.text,
     paddingVertical: 0,
     minHeight: 22,
@@ -650,9 +639,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 22,
-    backgroundColor: C.white,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    backgroundColor: 'rgba(255,255,255,0.80)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
     gap: 6,
   },
   tabPillActive: {
@@ -665,8 +654,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   tabPillText: {
+    fontFamily: fonts.semiBold,
     fontSize: 14,
-    fontWeight: '600',
     color: C.gray,
   },
   tabPillTextActive: {
@@ -677,14 +666,14 @@ const styles = StyleSheet.create({
     height: 18,
     paddingHorizontal: 5,
     borderRadius: 9,
-    backgroundColor: C.destructive,
+    backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabBadgeText: {
     color: C.white,
+    fontFamily: fonts.bold,
     fontSize: 11,
-    fontWeight: '700',
   },
   sortRow: {
     flexDirection: 'row',
@@ -696,21 +685,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: C.white,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
+    backgroundColor: 'rgba(255,255,255,0.80)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.10)',
   },
   sortChipActive: {
-    backgroundColor: CHATS_GREEN_SOFT_BG,
-    borderColor: CHATS_GREEN,
+    backgroundColor: '#111111',
+    borderColor: '#111111',
   },
   sortChipText: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
-    fontWeight: '600',
     color: C.gray,
   },
   sortChipTextActive: {
-    color: CHATS_GREEN,
+    color: '#FFFFFF',
   },
   gridContent: {
     paddingHorizontal: GRID_PADDING,
@@ -736,37 +725,37 @@ const styles = StyleSheet.create({
   gridPhoto: {
     width: CARD_WIDTH,
     height: CARD_WIDTH,
-    backgroundColor: CHATS_GREEN_SOFT_BG,
+    backgroundColor: '#EDF5EA',
   },
   gridPhotoPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.accent,
+    backgroundColor: '#2D6A4F',
   },
   gridPhotoInitial: {
+    fontFamily: fonts.bold,
     fontSize: 36,
-    fontWeight: '700',
     color: C.white,
   },
   gridInfo: {
     padding: 10,
   },
   gridName: {
+    fontFamily: fonts.bold,
     fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
+    color: '#111111',
     marginBottom: 2,
   },
   gridLocation: {
+    fontFamily: fonts.regular,
     fontSize: 12,
-    fontWeight: '500',
-    color: C.accent,
+    color: C.gray,
     marginBottom: 4,
   },
   gridMatched: {
+    fontFamily: fonts.regular,
     fontSize: 11,
-    fontWeight: '500',
-    color: C.gray,
+    color: C.grayDim,
   },
   msgListContent: {
     paddingHorizontal: 16,
@@ -803,13 +792,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: CHATS_GREEN_BORDER,
-    backgroundColor: CHATS_CARD,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: '#FFFFFF',
   },
   swipeCompactLabel: {
+    fontFamily: fonts.bold,
     fontSize: 9,
-    fontWeight: '700',
     color: C.text,
     marginTop: 4,
     textAlign: 'center',
@@ -819,22 +808,22 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: C.accent,
+    backgroundColor: '#2D6A4F',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: CHATS_GREEN_BORDER,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
   },
   convAvatarImg: {
     width: 52,
     height: 52,
   },
   convAvatarText: {
+    fontFamily: fonts.bold,
     color: C.white,
     fontSize: 20,
-    fontWeight: '700',
   },
   convBody: {
     flex: 1,
@@ -848,13 +837,13 @@ const styles = StyleSheet.create({
   },
   convName: {
     flex: 1,
+    fontFamily: fonts.bold,
     fontSize: 16,
-    fontWeight: '700',
-    color: C.text,
+    color: '#111111',
   },
   convTime: {
+    fontFamily: fonts.regular,
     fontSize: 12,
-    fontWeight: '500',
     color: C.grayDim,
   },
   convPreviewRow: {
@@ -865,8 +854,8 @@ const styles = StyleSheet.create({
   },
   convPreview: {
     flex: 1,
+    fontFamily: fonts.regular,
     fontSize: 14,
-    fontWeight: '500',
     color: C.gray,
     lineHeight: 19,
   },
@@ -875,14 +864,14 @@ const styles = StyleSheet.create({
     height: 20,
     paddingHorizontal: 6,
     borderRadius: 10,
-    backgroundColor: C.cta,
+    backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
   },
   unreadBadgeText: {
+    fontFamily: fonts.bold,
     color: C.white,
     fontSize: 11,
-    fontWeight: '700',
   },
   emptyCard: {
     alignSelf: 'center',
@@ -891,26 +880,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 28,
     borderRadius: 22,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
   },
   emptyTitle: {
+    fontFamily: fonts.bold,
     fontSize: 20,
-    fontWeight: '700',
-    color: C.text,
+    color: '#111111',
     marginBottom: 8,
     letterSpacing: -0.3,
   },
   emptyText: {
+    fontFamily: fonts.regular,
     fontSize: 15,
-    fontWeight: '500',
     color: C.gray,
     textAlign: 'center',
     lineHeight: 22,
