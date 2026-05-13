@@ -12,6 +12,7 @@ const PROFILE_IMAGES_BUCKET = 'profile-images';
 // Signed URLs expire after 1 year (31536000 seconds)
 // This is long enough for profile images but still provides security
 const SIGNED_URL_EXPIRY = 31536000;
+const signedUrlCache = new Map<string, string>();
 
 /**
  * Stable key for image caches (expo-image `cacheKey`). Supabase `createSignedUrl` returns a new
@@ -142,6 +143,10 @@ export async function getProfileImageUrl(imagePathOrUrl: string | null | undefin
       }
     }
 
+    const cacheKey = filePath.split('?')[0];
+    const cached = signedUrlCache.get(cacheKey);
+    if (cached) return cached;
+
     // Generate signed URL (createSignedUrl is async)
     const { data, error } = await supabase.storage
       .from(PROFILE_IMAGES_BUCKET)
@@ -151,6 +156,7 @@ export async function getProfileImageUrl(imagePathOrUrl: string | null | undefin
       return null;
     }
 
+    signedUrlCache.set(cacheKey, data.signedUrl);
     return data.signedUrl;
   } catch {
     return null;
@@ -462,4 +468,3 @@ export async function uploadAndUpdateProfileImage(
     return { path: null, error: error.message || 'Failed to upload and update profile image' };
   }
 }
-

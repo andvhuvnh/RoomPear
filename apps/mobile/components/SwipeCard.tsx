@@ -1,15 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Animated,
+  Easing,
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { MapPin, Flag, User, Buildings, Briefcase } from 'phosphor-react-native';
+import { MapPin, Flag, User, Buildings, Briefcase, CurrencyDollar } from 'phosphor-react-native';
 import { fonts, serifFonts } from '../lib/typography';
 import { INTEREST_CATEGORIES as CATEGORY_META } from '../screens/profile/userProfileConstants';
 import type { DiscoverProfile } from '../lib/discover';
@@ -22,6 +25,7 @@ const CARD_GAP = 8;
 export const CARD_WIDTH = SCREEN_WIDTH - SIDE_MARGIN * 2;
 export const CARD_HEIGHT = SCREEN_HEIGHT * 0.78;
 const PHOTO_HEIGHT = Math.round(CARD_WIDTH * (4 / 3));
+const PHOTO_CARD_HEIGHT = PHOTO_HEIGHT + 8;
 
 type PhotoTab = 'profile' | 'place';
 
@@ -30,6 +34,9 @@ interface Props {
   onReport?: () => void;
   showMatchReasons?: boolean;
   onUnlockReasons?: () => void;
+  style?: StyleProp<ViewStyle>;
+  scrollPaddingTop?: number;
+  hideTabPill?: boolean;
 }
 
 export default function SwipeCard({
@@ -37,10 +44,14 @@ export default function SwipeCard({
   onReport,
   showMatchReasons = false,
   onUnlockReasons,
+  style,
+  scrollPaddingTop = 0,
+  hideTabPill = false,
 }: Props) {
   const [photoTab, setPhotoTab] = useState<PhotoTab>('profile');
   const [photoIndex, setPhotoIndex] = useState(0);
-  const opacityAnim = useRef(new Animated.Value(1)).current;
+  const [prevPhotoUri, setPrevPhotoUri] = useState<string | null>(null);
+  const crossfadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setPhotoTab('profile');
@@ -62,10 +73,16 @@ export default function SwipeCard({
       : Math.max(photoIndex - 1, 0);
     if (next === photoIndex) return;
 
-    opacityAnim.setValue(0);
+    setPrevPhotoUri(activePhotos[photoIndex]);
+    crossfadeAnim.setValue(0);
     setPhotoIndex(next);
-    Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-  }, [photoIndex, activePhotos.length, opacityAnim]);
+    Animated.timing(crossfadeAnim, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => setPrevPhotoUri(null));
+  }, [photoIndex, activePhotos, crossfadeAnim]);
 
   const score = profile.compatibilityScore;
   const matchDotColor = score < 30 ? '#D4183D' : score <= 70 ? '#FF9500' : '#2D6A4F';
@@ -74,74 +91,88 @@ export default function SwipeCard({
   const fallbackChips = activeCategories.length === 0 ? (profile.hobbies ?? []) : [];
   const hasInterests = activeCategories.length > 0 || fallbackChips.length > 0;
   const hasResponses = profile.prompts.length > 0 || !!profile.bio;
+  const listingRentText = profile.listingRent != null
+    ? `$${profile.listingRent.toLocaleString()}/mo`
+    : null;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, style]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, scrollPaddingTop > 0 && { paddingTop: scrollPaddingTop }]}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
-        bounces={false}
+        bounces
+        decelerationRate={0.993}
+        scrollEventThrottle={16}
       >
         {/* ── Photo card ── */}
         <View style={styles.photoCard}>
-          <Animated.View style={{ opacity: opacityAnim }}>
-            <ExpoImage
-              source={{ uri: activePhotos[photoIndex] }}
-              style={{ width: CARD_WIDTH, height: PHOTO_HEIGHT }}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
-            />
-          </Animated.View>
+          <View style={styles.photoInner}>
+            {prevPhotoUri ? (
+              <ExpoImage
+                source={{ uri: prevPhotoUri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : null}
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: crossfadeAnim }]}>
+              <ExpoImage
+                source={{ uri: activePhotos[photoIndex] }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={`${profile.id}-${photoTab}-${photoIndex}`}
+              />
+            </Animated.View>
 
-          {/* Tap zones */}
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <TouchableOpacity
-              style={styles.tapZoneLeft}
-              onPress={() => advancePhoto('prev')}
-              activeOpacity={1}
-            />
-            <TouchableOpacity
-              style={styles.tapZoneRight}
-              onPress={() => advancePhoto('next')}
-              activeOpacity={1}
-            />
-          </View>
-
-          {/* Dot indicators */}
-          {activePhotos.length > 1 && (
-            <View style={styles.dotsRow} pointerEvents="none">
-              {activePhotos.map((_, i) => (
-                <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
-              ))}
+            {/* Tap zones */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.tapZoneLeft}
+                onPress={() => advancePhoto('prev')}
+                activeOpacity={1}
+              />
+              <TouchableOpacity
+                style={styles.tapZoneRight}
+                onPress={() => advancePhoto('next')}
+                activeOpacity={1}
+              />
             </View>
-          )}
 
-          {/* Tab pill */}
-          {profile.hasListing && (
-            <View style={styles.tabPill} pointerEvents="box-none">
-              <View style={styles.tabPillInner}>
-                <TouchableOpacity
-                  style={[styles.tabOption, photoTab === 'profile' && styles.tabOptionActive]}
-                  onPress={() => switchTab('profile')}
-                  activeOpacity={0.8}
-                >
-                  <User size={18} color={photoTab === 'profile' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
-                </TouchableOpacity>
-                <View style={styles.tabDivider} />
-                <TouchableOpacity
-                  style={[styles.tabOption, photoTab === 'place' && styles.tabOptionActive]}
-                  onPress={() => switchTab('place')}
-                  activeOpacity={0.8}
-                >
-                  <Buildings size={18} color={photoTab === 'place' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
-                </TouchableOpacity>
+            {/* Dot indicators */}
+            {activePhotos.length > 1 && (
+              <View style={styles.dotsRow} pointerEvents="none">
+                {activePhotos.map((_, i) => (
+                  <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
+                ))}
               </View>
-            </View>
-          )}
+            )}
 
+            {/* Tab pill */}
+            {profile.hasListing && !hideTabPill && (
+              <View style={styles.tabPill} pointerEvents="box-none">
+                <View style={styles.tabPillInner}>
+                  <TouchableOpacity
+                    style={[styles.tabOption, photoTab === 'profile' && styles.tabOptionActive]}
+                    onPress={() => switchTab('profile')}
+                    activeOpacity={0.8}
+                  >
+                    <User size={18} color={photoTab === 'profile' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                  </TouchableOpacity>
+                  <View style={styles.tabDivider} />
+                  <TouchableOpacity
+                    style={[styles.tabOption, photoTab === 'place' && styles.tabOptionActive]}
+                    onPress={() => switchTab('place')}
+                    activeOpacity={0.8}
+                  >
+                    <Buildings size={18} color={photoTab === 'place' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'} weight="bold" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* ── Info card ── */}
@@ -162,6 +193,16 @@ export default function SwipeCard({
             <View style={styles.metaRow}>
               <Briefcase size={12} color="#A0A0B0" weight="fill" />
               <Text style={styles.metaText}>{profile.occupation}</Text>
+            </View>
+          )}
+
+          {profile.hasListing && (listingRentText || profile.listingRoomType) && (
+            <View style={styles.placeMetaRow}>
+              <CurrencyDollar size={13} color="#2D6A4F" weight="bold" />
+              <Text style={styles.placeMetaLabel}>Listing:</Text>
+              {listingRentText && <Text style={styles.placeMetaText}>{listingRentText}</Text>}
+              {listingRentText && profile.listingRoomType && <Text style={styles.placeMetaDot}>·</Text>}
+              {profile.listingRoomType && <Text style={styles.placeMetaText}>{profile.listingRoomType} room</Text>}
             </View>
           )}
 
@@ -208,7 +249,7 @@ export default function SwipeCard({
         {/* ── Responses card ── */}
         {hasResponses && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardLabel}>✦  RESPONSES</Text>
+            <Text style={styles.sectionCardLabel}>RESPONSES</Text>
             {profile.prompts.length > 0 ? (
               profile.prompts.map((p, i) => (
                 <View key={i} style={i > 0 ? styles.promptItemSpaced : styles.promptItem}>
@@ -226,11 +267,11 @@ export default function SwipeCard({
         {/* ── Interests card ── */}
         {hasInterests && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardLabel}>✦  INTERESTS</Text>
+            <Text style={styles.sectionCardLabel}>INTERESTS</Text>
             {activeCategories.map((cat, i) => (
               <View key={cat.key} style={i > 0 ? { marginTop: 6 } : undefined}>
                 {i > 0 && <View style={styles.promptDivider} />}
-                <Text style={styles.categoryLabel}>{cat.label.split(' ').slice(1).join(' ').toUpperCase()}</Text>
+                <Text style={styles.categoryLabel}>{cat.label.toUpperCase()}</Text>
                 <View style={styles.chipsRow}>
                   {profile.interests[cat.key].map((item, j) => (
                     <View key={j} style={styles.chip}>
@@ -270,7 +311,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 24,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#F2F4F0',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
@@ -280,7 +321,7 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 14,
   },
-  scroll: { flex: 1 },
+  scroll: { flex: 1, backgroundColor: '#F2F4F0' },
   scrollContent: {
     paddingBottom: 120,
     gap: CARD_GAP,
@@ -288,10 +329,15 @@ const styles = StyleSheet.create({
 
   // ── Photo card ──
   photoCard: {
-    height: PHOTO_HEIGHT,
-    backgroundColor: '#1A1A2E',
-    borderRadius: 20,
+    height: PHOTO_CARD_HEIGHT,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  photoInner: {
+    flex: 1,
+    borderRadius: 18,
     overflow: 'hidden',
+    backgroundColor: '#C8D8CA',
   },
   tabPill: {
     position: 'absolute',
@@ -431,6 +477,32 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: '#C8C8D0',
+  },
+  placeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: 7,
+    backgroundColor: 'rgba(45,106,79,0.08)',
+    borderRadius: 50,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  placeMetaText: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: '#2D6A4F',
+  },
+  placeMetaLabel: {
+    fontFamily: fonts.extraBold,
+    fontSize: 13,
+    color: '#1F4F3A',
+  },
+  placeMetaDot: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: 'rgba(45,106,79,0.45)',
   },
   matchRow: {
     marginTop: 8,

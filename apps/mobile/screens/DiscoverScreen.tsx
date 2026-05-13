@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
@@ -19,7 +20,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { DotsThreeVertical, ArrowCounterClockwise, X, Heart } from 'phosphor-react-native';
 import { fonts } from '../lib/typography';
 import { supabase } from '../lib/supabase';
-import { recordSwipe } from '../lib/discover';
+import { recordSwipe, deleteDiscoverSwipe } from '../lib/discover';
+import { useTabBadges } from '../context/TabBadgesContext';
 import { getProfileImageUrls } from '../lib/storage';
 import { profilePhotoPathsFromRow } from '../lib/profileDisplay';
 import { getDiscoverUsage } from '../lib/dailyDiscoverUsage';
@@ -34,7 +36,6 @@ import type { MainTabParamList } from '../navigation/MainTabNavigator';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const C = {
-  bg:            '#C8E6C9',
   text:          '#1A2C24',
   white:         '#FFFFFF',
   gray:          '#717182',
@@ -46,8 +47,8 @@ const C = {
   like:          '#2D6A4F',
 };
 
-const GRAD = ['#C8EAC0','#D4EEB8','#E2F0C8','#EEF6E0','#F6FAF0','#FFFFFF'] as const;
-const LOCS = [0, 0.18, 0.40, 0.62, 0.82, 1] as const;
+const GRAD = ['#EDF5EA','#F4F9F0','#FAFDF7','#FFFFFF'] as const;
+const LOCS = [0, 0.3, 0.65, 1] as const;
 
 
 type Action = 'like' | 'pass' | 'top_pick';
@@ -62,26 +63,22 @@ type MatchData = {
 
 function Background({ children }: { children: React.ReactNode }) {
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <LinearGradient
-        colors={GRAD}
-        locations={LOCS}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Ambient pear-colored blobs — matches onboarding palette */}
-      <View style={{ position: 'absolute', width: 280, height: 280, borderRadius: 140, backgroundColor: '#E8B84B', opacity: 0.13, top: -60, right: -60 }} pointerEvents="none" />
-      <View style={{ position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: '#D4A028', opacity: 0.10, bottom: 120, left: -60 }} pointerEvents="none" />
-      <View style={{ position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: '#4A9060', opacity: 0.09, bottom: 320, right: 10 }} pointerEvents="none" />
+    <LinearGradient
+      colors={GRAD}
+      locations={LOCS}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={{ flex: 1 }}
+    >
       {children}
-    </View>
+    </LinearGradient>
   );
 }
 
 export default function DiscoverScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const { presentPaywall } = usePurchases();
+  const { refreshTabBadges } = useTabBadges();
   const {
     userId,
     profiles,
@@ -107,6 +104,8 @@ export default function DiscoverScreen() {
   const translateY = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const logoBobAnim = useRef(new Animated.Value(0)).current;
+  /** Swipe row id for the last non-match Discover action — used to undo without double-counting daily swipes. */
+  const undoableSwipeRef = useRef<{ swipeId: string } | null>(null);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -232,23 +231,22 @@ export default function DiscoverScreen() {
 
     setActionDisabled(true);
     setCanUndo(false);
+    undoableSwipeRef.current = null;
     const current = profiles[currentIndex];
     animateOut(direction, () => {
-      setCurrentIndex(prev => prev + 1);
-      setCanUndo(true);
-      Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => {
-        setActionDisabled(false);
-      });
+      setCurrentIndex((prev) => prev + 1);
+      Animated.timing(cardOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
 
       void (async () => {
         if (!current || !userId) {
           await refreshDailyUsage(userId);
+          setActionDisabled(false);
           return;
         }
         try {
-          const { isMatch } = await recordSwipe(userId, current.id, direction);
+          const { isMatch, swipeRowId } = await recordSwipe(userId, current.id, direction);
           if (isMatch) {
-            const sharedInterests = myHobbies.filter(h => (current.hobbies ?? []).includes(h));
+            const sharedInterests = myHobbies.filter((h) => (current.hobbies ?? []).includes(h));
             setMatchData({
               name: current.name,
               otherUserId: current.id,
@@ -256,9 +254,18 @@ export default function DiscoverScreen() {
               myPhotoUrl,
               sharedInterests,
             });
+            undoableSwipeRef.current = null;
+            setCanUndo(false);
+          } else if (swipeRowId) {
+            undoableSwipeRef.current = { swipeId: swipeRowId };
+            setCanUndo(true);
+          } else {
+            undoableSwipeRef.current = null;
+            setCanUndo(false);
           }
         } finally {
           await refreshDailyUsage(userId);
+          setActionDisabled(false);
         }
       })();
     });
@@ -266,12 +273,31 @@ export default function DiscoverScreen() {
 
   async function handleUndo() {
     if (actionDisabled || !canUndo) return;
+    const swipe = undoableSwipeRef.current;
+    if (!swipe?.swipeId || !userId) return;
+
     setCanUndo(false);
     setActionDisabled(true);
-    cardOpacity.setValue(0);
-    setCurrentIndex(prev => prev - 1);
-    Animated.timing(cardOpacity, { toValue: 1, duration: 220, useNativeDriver: true })
-      .start(() => setActionDisabled(false));
+    try {
+      const ok = await deleteDiscoverSwipe(swipe.swipeId);
+      if (!ok) {
+        Alert.alert('Undo failed', 'Could not remove that swipe. Please try again.');
+        setCanUndo(true);
+        return;
+      }
+      undoableSwipeRef.current = null;
+      cardOpacity.setValue(0);
+      setCurrentIndex((prev) => prev - 1);
+      await new Promise<void>((resolve) => {
+        Animated.timing(cardOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+          if (finished) resolve();
+        });
+      });
+      await refreshDailyUsage(userId);
+      refreshTabBadges();
+    } finally {
+      setActionDisabled(false);
+    }
   }
 
   const currentProfile = profiles[currentIndex];
@@ -434,32 +460,32 @@ export default function DiscoverScreen() {
         <View style={[styles.actionBar, actionDisabled && styles.actionBarDisabled]}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionUndo, (!canUndo || actionDisabled) && styles.actionLocked]}
-            onPress={handleUndo}
+            onPress={() => void handleUndo()}
             disabled={!canUndo || actionDisabled}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ArrowCounterClockwise size={18} color="#A0A0B0" weight="bold" />
+            <ArrowCounterClockwise size={18} color="#B0B8B4" weight="bold" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionPass]}
             onPress={() => handleAction('pass')}
             disabled={actionDisabled}
           >
-            <X size={24} color="#E5334B" weight="regular" />
+            <X size={28} color="#D4183D" weight="bold" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionLike]}
             onPress={() => handleAction('like')}
             disabled={actionDisabled}
           >
-            <Heart size={28} color="#2D6A4F" weight="regular" />
+            <Heart size={34} color="#111111" weight="regular" />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionTop]}
             onPress={() => handleAction('top_pick')}
             disabled={actionDisabled}
           >
-            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={{ width: 26, height: 26 }} resizeMode="contain" />
+            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
@@ -480,8 +506,14 @@ export default function DiscoverScreen() {
       {/* ── Match modal ── */}
       <Modal visible={!!matchData} transparent animationType="fade">
         <View style={styles.matchOverlay}>
-          <View style={styles.matchCard}>
-            <Text style={styles.matchEmoji}>🍐</Text>
+          <LinearGradient
+            colors={['#ECF8E8', '#F4FAF0', '#FFFFFF']}
+            locations={[0, 0.45, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.matchCard}
+          >
+            <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={styles.matchPearLogo} resizeMode="contain" />
             <Text style={styles.matchTitle}>It's a Match!</Text>
             <View style={styles.matchAvatars}>
               <View style={styles.matchAvatarWrap}>
@@ -525,7 +557,7 @@ export default function DiscoverScreen() {
             <TouchableOpacity style={styles.matchBtnSecondary} onPress={() => setMatchData(null)}>
               <Text style={styles.matchBtnSecondaryText}>Keep Swiping</Text>
             </TouchableOpacity>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -592,23 +624,23 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontFamily: fonts.semiBold,
-    color: 'rgba(26,44,36,0.65)',
+    color: '#111111',
     lineHeight: 16,
   },
   headerMetricsPremium: {
     flex: 1,
     fontSize: 12,
     fontFamily: fonts.bold,
-    color: '#1A2C24',
+    color: '#111111',
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   nearbyPill: {
     fontFamily: fonts.semiBold,
     fontSize: 12,
-    color: '#1A2C24',
-    backgroundColor: 'rgba(255,255,255,0.60)',
+    color: '#1A3A28',
+    backgroundColor: 'rgba(45,106,79,0.10)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.80)',
+    borderColor: 'rgba(45,106,79,0.22)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -633,7 +665,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     transform: [{ scale: 0.94 }, { translateY: 14 }, { rotate: '1.5deg' }],
-    opacity: 0.6,
+    opacity: 0,
   },
   frontCardWrap: {
     position: 'absolute',
@@ -654,19 +686,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E8E8EC',
-    shadowColor: '#000',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 3,
+    shadowColor: '#2D6A4F',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 5,
   },
-  actionUndo:   { width: 44, height: 44 },
-  actionPass:   { width: 58, height: 58 },
-  actionLike:   { width: 68, height: 68 },
-  actionTop:    { width: 58, height: 58 },
-  actionLocked: { opacity: 0.35 },
+  actionUndo: { width: 46, height: 46 },
+  actionPass: { width: 64, height: 64 },
+  actionLike: {
+    width: 78, height: 78,
+    shadowOpacity: 0.22, shadowRadius: 16, elevation: 8,
+  },
+  actionTop:  { width: 64, height: 64 },
+  actionLocked: { opacity: 0.28 },
 
   // ── Match modal ──
   matchOverlay: {
@@ -674,13 +707,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 28,
+    borderRadius: 28, overflow: 'hidden',
     paddingHorizontal: 28, paddingVertical: 32,
     alignItems: 'center', width: '86%',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.18)',
     shadowColor: '#0A2818', shadowOpacity: 0.18, shadowRadius: 28, elevation: 14,
   },
-  matchEmoji: { fontSize: 48, marginBottom: 6 },
+  matchPearLogo: { width: 56, height: 56, marginBottom: 6 },
   matchTitle: { fontFamily: fonts.extraBold, fontSize: 28, color: C.text, marginBottom: 16 },
   matchSub: {
     fontFamily: fonts.regular, fontSize: 15, color: C.gray, textAlign: 'center',

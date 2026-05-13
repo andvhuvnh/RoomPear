@@ -21,6 +21,7 @@ export type DiscoverProfile = {
   hasListing: boolean;
   roomType: string | null;
   listingRoomType: string | null;
+  listingRent: number | null;
   minBudget: number | null;
   maxBudget: number | null;
   compatibilityScore: number;  // 0–100, display as "XX% Match"
@@ -175,14 +176,16 @@ export async function fetchDiscoverProfiles(
     const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
     let listingRoomType: string | null = null;
+    let listingRent: number | null = null;
     const listingFetch: Promise<string[]> = row.has_listing === true
       ? (async () => {
           const { data: listing } = await supabase
             .from('listings')
-            .select('listing_photos, room_type')
+            .select('listing_photos, room_type, rent')
             .eq('user_id', row.id)
             .maybeSingle();
           listingRoomType = listing?.room_type ?? null;
+          listingRent = listing?.rent ?? null;
           const paths: string[] = Array.isArray(listing?.listing_photos)
             ? listing.listing_photos
             : [];
@@ -217,6 +220,7 @@ export async function fetchDiscoverProfiles(
       location,
       roomType: prefs?.room_type ?? null,
       listingRoomType,
+      listingRent,
       minBudget: prefs?.min_budget ?? null,
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),
@@ -274,15 +278,29 @@ export async function recordSwipe(
   swiperId: string,
   swipedId: string,
   direction: 'like' | 'pass' | 'top_pick'
-): Promise<{ isMatch: boolean }> {
-  await supabase.from('swipes').insert({
-    swiper_id: swiperId,
-    swiped_id: swipedId,
-    direction,
-  });
+): Promise<{ isMatch: boolean; swipeRowId: string | null }> {
+  const { data: inserted, error } = await supabase
+    .from('swipes')
+    .insert({
+      swiper_id: swiperId,
+      swiped_id: swipedId,
+      direction,
+    })
+    .select('id')
+    .single();
 
-  // top_pick counts as a like for match detection
-  if (direction !== 'like' && direction !== 'top_pick') return { isMatch: false };
+  if (error) {
+    console.warn('recordSwipe insert', error.message);
+    return { isMatch: false, swipeRowId: null };
+  }
+
+  const rawId = (inserted as { id?: unknown }).id;
+  const swipeRowId =
+    typeof rawId === 'string' ? rawId : typeof rawId === 'number' ? String(rawId) : null;
+
+  if (direction !== 'like' && direction !== 'top_pick') {
+    return { isMatch: false, swipeRowId };
+  }
 
   // Check if the other person already liked or top-picked us back
   const { data } = await supabase
@@ -313,5 +331,15 @@ export async function recordSwipe(
     sendPushNotification(swipedId, 'Someone liked your profile! 💚', 'Open RoomPear to see who it is.');
   }
 
-  return { isMatch };
+  return { isMatch, swipeRowId };
+}
+
+/** Removes the viewer's swipe row (e.g. Discover undo). Returns false if delete failed (RLS, network). */
+export async function deleteDiscoverSwipe(swipeRowId: string): Promise<boolean> {
+  const { error } = await supabase.from('swipes').delete().eq('id', swipeRowId);
+  if (error) {
+    console.warn('deleteDiscoverSwipe', error.message);
+    return false;
+  }
+  return true;
 }

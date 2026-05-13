@@ -1,7 +1,6 @@
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Listing } from '../../lib/listings';
-import { formatAvailabilityForDisplay } from './listingFormUtils';
 
 export type ProfilePromptEntry = { question: string; answer: string };
 
@@ -36,9 +35,6 @@ export default function ProfileOverviewSection({
   listingPhotoUrls,
   prompts,
 }: Props) {
-  const availabilityLabel = listing?.move_in_date
-    ? formatAvailabilityForDisplay(listing.move_in_date)
-    : '';
   const { first: nameFirst, rest: nameRest } = splitNameForHeader(displayName);
   const metaSubtitle = [
     searchLocationLine.trim() || null,
@@ -84,9 +80,6 @@ export default function ProfileOverviewSection({
             {listing.rent != null ? <Text style={styles.profileListingRent}>${listing.rent}/mo</Text> : null}
           </View>
           {searchLocationLine ? <Text style={styles.profileListingMeta}>{searchLocationLine}</Text> : null}
-          {availabilityLabel ? (
-            <Text style={styles.profileListingMeta}>Available {availabilityLabel}</Text>
-          ) : null}
           {listingPhotoUrls.length > 0 ? (
             <ScrollView
               horizontal

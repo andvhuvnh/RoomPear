@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   useFonts,
@@ -26,10 +26,15 @@ import AuthScreen from './screens/AuthScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
-import { PurchasesProvider } from './context/PurchasesContext';
-import { DiscoverDeckProvider } from './context/DiscoverDeckContext';
+import PearLoader from './components/PearLoader';
+import { PurchasesProvider, usePurchases } from './context/PurchasesContext';
+import { DiscoverDeckProvider, useDiscoverDeck } from './context/DiscoverDeckContext';
+import { getProfileImageUrl, getProfileImageUrls } from './lib/storage';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
+
+const HOME_WARMUP_MIN_MS = 900;
+const HOME_WARMUP_MAX_MS = 5000;
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -114,7 +119,7 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <View style={styles.loadingRoot}>
-            <ActivityIndicator size="large" color="#0C5389" />
+            <PearLoader />
           </View>
         </SafeAreaProvider>
       </GestureHandlerRootView>
@@ -130,24 +135,126 @@ export default function App() {
           <OnboardingScreen onComplete={handleOnboardingComplete} />
         )}
         {appState === 'home' && session?.user && (
-          <PurchasesProvider userId={session.user.id}>
-            <DiscoverDeckProvider userId={session.user.id}>
-              <NavigationContainer>
-                <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-              </NavigationContainer>
-            </DiscoverDeckProvider>
-          </PurchasesProvider>
+          <HomeShell
+            userId={session.user.id}
+            onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined}
+          />
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
+function HomeShell({
+  userId,
+  onDevShowOnboarding,
+}: {
+  userId: string;
+  onDevShowOnboarding?: () => void;
+}) {
+  return (
+    <PurchasesProvider userId={userId}>
+      <DiscoverDeckProvider userId={userId}>
+        <HomeNavigatorWithWarmup userId={userId} onDevShowOnboarding={onDevShowOnboarding} />
+      </DiscoverDeckProvider>
+    </PurchasesProvider>
+  );
+}
+
+function HomeNavigatorWithWarmup({
+  userId,
+  onDevShowOnboarding,
+}: {
+  userId: string;
+  onDevShowOnboarding?: () => void;
+}) {
+  const { isReady: purchasesReady } = usePurchases();
+  const { deckInitialLoading } = useDiscoverDeck();
+  const [minElapsed, setMinElapsed] = useState(false);
+  const [maxElapsed, setMaxElapsed] = useState(false);
+  const [profileWarmupDone, setProfileWarmupDone] = useState(false);
+
+  useEffect(() => {
+    const minTimer = setTimeout(() => setMinElapsed(true), HOME_WARMUP_MIN_MS);
+    const maxTimer = setTimeout(() => setMaxElapsed(true), HOME_WARMUP_MAX_MS);
+    return () => {
+      clearTimeout(minTimer);
+      clearTimeout(maxTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProfileWarmupDone(false);
+    warmProfileImages(userId).finally(() => {
+      if (!cancelled) setProfileWarmupDone(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const showWarmup =
+    !maxElapsed && (!minElapsed || !purchasesReady || deckInitialLoading || !profileWarmupDone);
+
+  return (
+    <View style={styles.homeRoot}>
+      <NavigationContainer>
+        <MainTabNavigator onDevShowOnboarding={onDevShowOnboarding} />
+      </NavigationContainer>
+      {showWarmup && (
+        <View style={styles.homeWarmupOverlay}>
+          <PearLoader />
+        </View>
+      )}
+    </View>
+  );
+}
+
+async function warmProfileImages(userId: string): Promise<void> {
+  const [{ data: profile }, { data: listing }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('profile_photo_url')
+      .eq('id', userId)
+      .maybeSingle(),
+    supabase
+      .from('listings')
+      .select('listing_photos')
+      .eq('user_id', userId)
+      .maybeSingle(),
+  ]);
+
+  const [profileUrls, listingUrls] = await Promise.all([
+    getProfileImageUrls(profile?.profile_photo_url),
+    Promise.all(
+      (Array.isArray(listing?.listing_photos) ? listing.listing_photos : [])
+        .map((path: string) => getProfileImageUrl(path))
+    ),
+  ]);
+
+  const urls = [
+    ...(profileUrls ?? []),
+    ...listingUrls.filter((url): url is string => Boolean(url)),
+  ];
+
+  await Promise.all(urls.map((url) => Image.prefetch(url).catch(() => false)));
+}
+
 const styles = StyleSheet.create({
+  homeRoot: {
+    flex: 1,
+  },
+  homeWarmupOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F0F7F0',
+  },
   loadingRoot: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E8EEF2',
+    backgroundColor: '#F0F7F0',
   },
 });

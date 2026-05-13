@@ -72,3 +72,30 @@ export async function fetchMatches(userId: string): Promise<Match[]> {
 
   return result;
 }
+
+const LIKE_DIRECTIONS = ['like', 'top_pick'] as const;
+
+/** True when both users have a like/top_pick on each other (same rule as discover match). */
+export async function areMutuallyMatched(currentUserId: string, otherUserId: string): Promise<boolean> {
+  const { data: myLike, error: e1 } = await supabase
+    .from('swipes')
+    .select('id')
+    .eq('swiper_id', currentUserId)
+    .eq('swiped_id', otherUserId)
+    .in('direction', [...LIKE_DIRECTIONS])
+    .maybeSingle();
+
+  if (e1 || !myLike) return false;
+
+  const { data: theirLike, error: e2 } = await supabase
+    .from('swipes')
+    .select('id')
+    .eq('swiper_id', otherUserId)
+    .eq('swiped_id', currentUserId)
+    .in('direction', [...LIKE_DIRECTIONS])
+    .maybeSingle();
+
+  if (e2 || !theirLike) return false;
+
+  return true;
+}
