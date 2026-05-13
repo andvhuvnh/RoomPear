@@ -480,7 +480,13 @@ export default function DiscoverScreen() {
       {/* ── Match modal ── */}
       <Modal visible={!!matchData} transparent animationType="fade">
         <View style={styles.matchOverlay}>
-          <View style={styles.matchCard}>
+          <LinearGradient
+            colors={['#ECF8E8', '#F4FAF0', '#FFFFFF']}
+            locations={[0, 0.45, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.matchCard}
+          >
             <Image source={require('../assets/roompear-logo-transparent-2-removebg-preview.png')} style={styles.matchPearLogo} resizeMode="contain" />
             <Text style={styles.matchTitle}>It's a Match!</Text>
             <View style={styles.matchAvatars}>
@@ -525,7 +531,7 @@ export default function DiscoverScreen() {
             <TouchableOpacity style={styles.matchBtnSecondary} onPress={() => setMatchData(null)}>
               <Text style={styles.matchBtnSecondaryText}>Keep Swiping</Text>
             </TouchableOpacity>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -605,10 +611,10 @@ const styles = StyleSheet.create({
   nearbyPill: {
     fontFamily: fonts.semiBold,
     fontSize: 12,
-    color: '#1A2C24',
-    backgroundColor: 'rgba(255,255,255,0.60)',
+    color: '#1A3A28',
+    backgroundColor: 'rgba(45,106,79,0.10)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.80)',
+    borderColor: 'rgba(45,106,79,0.22)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
@@ -664,8 +670,8 @@ const styles = StyleSheet.create({
   },
   actionUndo:   { width: 44, height: 44 },
   actionPass:   { width: 58, height: 58 },
-  actionLike:   { width: 68, height: 68 },
-  actionTop:    { width: 58, height: 58 },
+  actionLike:   { width: 68, height: 68, backgroundColor: 'rgba(45,106,79,0.07)', borderColor: 'rgba(45,106,79,0.18)' },
+  actionTop:    { width: 58, height: 58, backgroundColor: 'rgba(232,184,75,0.09)', borderColor: 'rgba(232,184,75,0.28)' },
   actionLocked: { opacity: 0.35 },
 
   // ── Match modal ──
@@ -674,10 +680,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   matchCard: {
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 28,
+    borderRadius: 28, overflow: 'hidden',
     paddingHorizontal: 28, paddingVertical: 32,
     alignItems: 'center', width: '86%',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1.5, borderColor: 'rgba(45,106,79,0.18)',
     shadowColor: '#0A2818', shadowOpacity: 0.18, shadowRadius: 28, elevation: 14,
   },
   matchPearLogo: { width: 56, height: 56, marginBottom: 6 },

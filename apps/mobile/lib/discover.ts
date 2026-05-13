@@ -21,6 +21,7 @@ export type DiscoverProfile = {
   hasListing: boolean;
   roomType: string | null;
   listingRoomType: string | null;
+  listingRent: number | null;
   minBudget: number | null;
   maxBudget: number | null;
   compatibilityScore: number;  // 0–100, display as "XX% Match"
@@ -175,14 +176,16 @@ export async function fetchDiscoverProfiles(
     const hobbies = interestChips.length > 0 ? null : (row.hobbies ?? null);
 
     let listingRoomType: string | null = null;
+    let listingRent: number | null = null;
     const listingFetch: Promise<string[]> = row.has_listing === true
       ? (async () => {
           const { data: listing } = await supabase
             .from('listings')
-            .select('listing_photos, room_type')
+            .select('listing_photos, room_type, rent')
             .eq('user_id', row.id)
             .maybeSingle();
           listingRoomType = listing?.room_type ?? null;
+          listingRent = listing?.rent ?? null;
           const paths: string[] = Array.isArray(listing?.listing_photos)
             ? listing.listing_photos
             : [];
@@ -217,6 +220,7 @@ export async function fetchDiscoverProfiles(
       location,
       roomType: prefs?.room_type ?? null,
       listingRoomType,
+      listingRent,
       minBudget: prefs?.min_budget ?? null,
       maxBudget: prefs?.max_budget ?? null,
       compatibilityScore: Math.min(100, Math.round(score * 100)),

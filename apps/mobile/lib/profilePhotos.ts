@@ -88,6 +88,35 @@ export async function replaceProfilePhotoAt(
   return { ok: true };
 }
 
+/** Reorder existing photos; keeps the same paths, just changes display order. */
+export async function reorderProfilePhoto(
+  userId: string,
+  fromIndex: number,
+  toIndex: number
+): Promise<{ ok: boolean; error?: string }> {
+  const paths = await getPhotoPathsForUser(userId);
+  if (
+    fromIndex < 0 ||
+    fromIndex >= paths.length ||
+    toIndex < 0 ||
+    toIndex >= paths.length
+  ) {
+    return { ok: false, error: 'Invalid photo order' };
+  }
+  if (fromIndex === toIndex) return { ok: true };
+
+  const next = [...paths];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ profile_photo_url: JSON.stringify(next) })
+    .eq('id', userId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 /** Remove photo by index; enforces MIN_PROFILE_PHOTOS. */
 export async function removeProfilePhotoAt(
   userId: string,

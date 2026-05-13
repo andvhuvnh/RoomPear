@@ -4,11 +4,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Animated,
   Image,
   ScrollView,
   Modal,
   ActivityIndicator,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   TextInput,
   Pressable,
@@ -28,7 +30,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getProfileImageUrls, getProfileImageUrl, pickImage, uploadListingPhoto, pickListingImage } from '../lib/storage';
 import { getPreferences, savePreferences, type Preferences } from '../lib/preferences';
 import { formatLocationLine, profilePhotoPathsFromRow } from '../lib/profileDisplay';
-import { appendProfilePhoto, removeProfilePhotoAt, replaceProfilePhotoAt, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
+import { appendProfilePhoto, removeProfilePhotoAt, replaceProfilePhotoAt, reorderProfilePhoto, MAX_PROFILE_PHOTOS } from '../lib/profilePhotos';
 import SwipeCard from '../components/SwipeCard';
 import type { DiscoverProfile } from '../lib/discover';
 import * as Clipboard from 'expo-clipboard';
@@ -37,7 +39,6 @@ import { getListing, saveListing, deleteListing, type Listing } from '../lib/lis
 import ListingModal from './profile/ListingModal';
 import SettingsModal from './profile/SettingsModal';
 import BlockedUsersModal from '../components/BlockedUsersModal';
-import EditNameModal from './profile/EditNameModal';
 import {
   DEALBREAKER_ITEMS,
   INTEREST_CATEGORIES,
@@ -106,7 +107,8 @@ export default function UserProfileScreen({ route }: Props) {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [photoPaths, setPhotoPaths] = useState<string[]>([]);
 
-  const [editNameOpen, setEditNameOpen] = useState(false);
+  const [nameEditing, setNameEditing] = useState(false);
+  const nameInputRef = useRef<any>(null);
   const [profileEditorSection, setProfileEditorSection] = useState<
     'photos' | 'interests' | 'dealbreakers' | 'prompts' | 'basics' | null
   >(null);
@@ -114,6 +116,9 @@ export default function UserProfileScreen({ route }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [consolidatedEditOpen, setConsolidatedEditOpen] = useState(false);
   const [consolidatedEditTab, setConsolidatedEditTab] = useState<'basics' | 'prompts' | 'interests' | 'dealbreakers'>('basics');
+  const [photoActionIndex, setPhotoActionIndex] = useState<number | null>(null);
+  const [draggingPhotoIndex, setDraggingPhotoIndex] = useState<number | null>(null);
+  const dragOverPhotoIndexRef = useRef<number | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [blockedUsersOpen, setBlockedUsersOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -129,6 +134,12 @@ export default function UserProfileScreen({ route }: Props) {
   const [editInterests, setEditInterests] = useState<Record<string, string[]>>({});
   const [editDealbreakers, setEditDealbreakers] = useState<Record<string, DealbreakerLevel>>({});
   const [expandedPrefCat, setExpandedPrefCat] = useState<string | null>('fitness');
+  const photoGridRef = useRef<View | null>(null);
+  const photoGridFrameRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const photoDragRef = useRef<{ index: number; active: boolean } | null>(null);
+  const photoDragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoDragOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const suppressPhotoPressRef = useRef(false);
 
   // Edit basics state
   const [editBio, setEditBio] = useState('');
@@ -152,6 +163,7 @@ export default function UserProfileScreen({ route }: Props) {
   const [editRent, setEditRent] = useState('');
   const [editRoomType, setEditRoomType] = useState('');
   const [editListingPhotos, setEditListingPhotos] = useState<ListingPhotoItem[]>([]);
+  const listingAutoSaveReadyRef = useRef(false);
 
   const [editName, setEditName] = useState('');
 
@@ -251,6 +263,7 @@ export default function UserProfileScreen({ route }: Props) {
   }, []);
 
   const openListingModal = async () => {
+    listingAutoSaveReadyRef.current = false;
     setEditRent(listing?.rent != null ? String(listing.rent) : '');
     setEditRoomType(listing?.room_type ?? '');
     const paths = listing?.listing_photos ?? [];
@@ -262,16 +275,32 @@ export default function UserProfileScreen({ route }: Props) {
     );
     setEditListingPhotos(items);
     setListingOpen(true);
+    setTimeout(() => { listingAutoSaveReadyRef.current = true; }, 0);
   };
 
-  const handleAddListingPhoto = async () => {
-    if (editListingPhotos.length >= MAX_LISTING_PHOTOS) return;
+  const handleAddListingPhoto = async (replaceIndex?: number) => {
+    if (!user || (replaceIndex == null && editListingPhotos.length >= MAX_LISTING_PHOTOS)) return;
     const uri = await pickListingImage();
     if (!uri) return;
-    setEditListingPhotos((prev) => [...prev, { kind: 'local', uri }]);
+    setSavingListing(true);
+    try {
+      const { path, error } = await uploadListingPhoto(user.id, uri);
+      if (error || !path) {
+        Alert.alert('Error', error ?? 'Photo upload failed');
+        return;
+      }
+      const url = await getProfileImageUrl(path);
+      setEditListingPhotos((prev) => {
+        const item: ListingPhotoItem = { kind: 'path', path, url: url ?? uri };
+        if (replaceIndex == null) return [...prev, item];
+        return prev.map((existing, idx) => idx === replaceIndex ? item : existing);
+      });
+    } finally {
+      setSavingListing(false);
+    }
   };
 
-  const handleSaveListing = async () => {
+  const autoSaveListing = useCallback(async () => {
     if (!user) return;
     setSavingListing(true);
     try {
@@ -285,19 +314,27 @@ export default function UserProfileScreen({ route }: Props) {
           photoPaths.push(path);
         }
       }
+      const rentValue = Number.parseFloat(editRent);
       const result = await saveListing(user.id, {
-        rent: editRent ? parseFloat(editRent) : null,
+        rent: Number.isFinite(rentValue) ? rentValue : null,
         room_type: editRoomType.trim() || null,
         listing_photos: photoPaths,
       });
       if (!result.ok) { Alert.alert('Error', result.error); return; }
-      setListingOpen(false);
       await loadListing(user.id);
       await loadProfile(user.id);
     } finally {
       setSavingListing(false);
     }
-  };
+  }, [editListingPhotos, editRent, editRoomType, loadListing, loadProfile, user]);
+
+  useEffect(() => {
+    if (!listingOpen || !listingAutoSaveReadyRef.current) return;
+    const timer = setTimeout(() => {
+      void autoSaveListing();
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [autoSaveListing, listingOpen]);
 
   const handleDeleteListing = () => {
     if (!user) return;
@@ -390,25 +427,21 @@ export default function UserProfileScreen({ route }: Props) {
   const openEditName = () => {
     if (!profile) return;
     setEditName(profile.name?.trim() ?? '');
-    setEditNameOpen(true);
+    setNameEditing(true);
+    setTimeout(() => nameInputRef.current?.focus(), 50);
   };
 
   const handleSaveName = async () => {
     if (!user) return;
-    setSavingProfile(true);
+    setNameEditing(false);
+    const trimmed = editName.trim();
+    if (!trimmed || trimmed === profile?.name) return;
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({
-          name: editName.trim() || profile?.name,
-        })
+        .update({ name: trimmed })
         .eq('id', user.id);
-
-      if (error) {
-        Alert.alert('Error', error.message);
-        return;
-      }
-      setEditNameOpen(false);
+      if (error) { Alert.alert('Error', error.message); return; }
       await loadProfile(user.id);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to save');
@@ -456,33 +489,157 @@ export default function UserProfileScreen({ route }: Props) {
     }
   };
 
-  const handleRemovePhoto = (index: number) => {
+  const measurePhotoGrid = useCallback(() => {
+    photoGridRef.current?.measureInWindow((x, y, width, height) => {
+      photoGridFrameRef.current = { x, y, width, height };
+    });
+  }, []);
+
+  const photoIndexFromPagePoint = useCallback((pageX: number, pageY: number) => {
+    const frame = photoGridFrameRef.current;
+    if (!frame.width || !frame.height) return null;
+
+    const gap = 10;
+    const slotW = (frame.width - gap * 2) / 3;
+    const slotH = slotW / 0.78;
+    const relX = pageX - frame.x;
+    const relY = pageY - frame.y;
+    if (relX < 0 || relY < 0 || relX > frame.width || relY > frame.height) return null;
+
+    const col = Math.floor(relX / (slotW + gap));
+    const row = Math.floor(relY / (slotH + gap));
+    if (col < 0 || col > 2 || row < 0 || row > 1) return null;
+
+    const inColX = relX - col * (slotW + gap);
+    const inRowY = relY - row * (slotH + gap);
+    if (inColX > slotW || inRowY > slotH) return null;
+
+    const index = row * 3 + col;
+    return index < photoPaths.length ? index : null;
+  }, [photoPaths.length]);
+
+  const handleReorderPhoto = useCallback(async (fromIndex: number, toIndex: number) => {
+    if (!user || fromIndex === toIndex) return;
+
+    const reorder = <T,>(items: T[]) => {
+      const next = [...items];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    };
+
+    setPhotoPaths((prev) => reorder(prev));
+    setImageUrls((prev) => reorder(prev));
+    setSavingPhotos(true);
+    try {
+      const result = await reorderProfilePhoto(user.id, fromIndex, toIndex);
+      if (!result.ok) {
+        Alert.alert('Could not reorder', result.error ?? 'Try again.');
+        await loadProfile(user.id);
+        return;
+      }
+      await loadProfile(user.id);
+    } finally {
+      setSavingPhotos(false);
+    }
+  }, [loadProfile, user]);
+
+  const openPhotoAction = useCallback((index: number) => {
+    if (savingPhotos) return;
+    setPhotoActionIndex(index);
+  }, [savingPhotos]);
+
+  const setPhotoDropTarget = useCallback((index: number | null) => {
+    if (dragOverPhotoIndexRef.current === index) return;
+    dragOverPhotoIndexRef.current = index;
+  }, []);
+
+  const createPhotoDragResponder = useCallback((index: number) => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      if (photoDragTimerRef.current) clearTimeout(photoDragTimerRef.current);
+      photoDragOffset.setValue({ x: 0, y: 0 });
+      measurePhotoGrid();
+      photoDragRef.current = { index, active: false };
+      photoDragTimerRef.current = setTimeout(() => {
+        photoDragRef.current = { index, active: true };
+        suppressPhotoPressRef.current = true;
+        setDraggingPhotoIndex(index);
+        setPhotoDropTarget(index);
+      }, 180);
+    },
+    onPanResponderMove: (_, gestureState) => {
+      if (!photoDragRef.current?.active) return;
+      photoDragOffset.setValue({ x: gestureState.dx, y: gestureState.dy });
+      const over = photoIndexFromPagePoint(gestureState.moveX, gestureState.moveY);
+      setPhotoDropTarget(over);
+    },
+    onPanResponderRelease: (_, gestureState) => {
+      if (photoDragTimerRef.current) {
+        clearTimeout(photoDragTimerRef.current);
+        photoDragTimerRef.current = null;
+      }
+      const from = photoDragRef.current?.index ?? index;
+      const wasDragging = Boolean(photoDragRef.current?.active);
+      const over = dragOverPhotoIndexRef.current ?? photoIndexFromPagePoint(gestureState.moveX, gestureState.moveY);
+      photoDragRef.current = null;
+      photoDragOffset.setValue({ x: 0, y: 0 });
+      setDraggingPhotoIndex(null);
+      setPhotoDropTarget(null);
+      setTimeout(() => { suppressPhotoPressRef.current = false; }, 120);
+      if (wasDragging) {
+        if (over != null && over !== from) void handleReorderPhoto(from, over);
+        return;
+      }
+      if (Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8) {
+        openPhotoAction(index);
+      }
+    },
+    onPanResponderTerminate: () => {
+      if (photoDragTimerRef.current) {
+        clearTimeout(photoDragTimerRef.current);
+        photoDragTimerRef.current = null;
+      }
+      photoDragRef.current = null;
+      photoDragOffset.setValue({ x: 0, y: 0 });
+      setDraggingPhotoIndex(null);
+      setPhotoDropTarget(null);
+      setTimeout(() => { suppressPhotoPressRef.current = false; }, 120);
+    },
+  }), [handleReorderPhoto, measurePhotoGrid, openPhotoAction, photoDragOffset, photoIndexFromPagePoint, setPhotoDropTarget]);
+
+  const handleRemovePhoto = async (index: number) => {
     if (!user) return;
 
-    Alert.alert('Edit photo', 'What would you like to do?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Replace',
-        onPress: () => handleReplacePhoto(index),
-      },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          setSavingPhotos(true);
-          try {
-            const result = await removeProfilePhotoAt(user.id, index);
-            if (!result.ok) {
-              Alert.alert('Cannot remove', result.error ?? 'Error');
-              return;
-            }
-            await loadProfile(user.id);
-          } finally {
-            setSavingPhotos(false);
-          }
-        },
-      },
-    ]);
+    setSavingPhotos(true);
+    try {
+      const result = await removeProfilePhotoAt(user.id, index);
+      if (!result.ok) {
+        Alert.alert('Cannot remove', result.error ?? 'Error');
+        return;
+      }
+      await loadProfile(user.id);
+    } finally {
+      setSavingPhotos(false);
+    }
+  };
+
+  const closePhotoAction = () => setPhotoActionIndex(null);
+
+  const runPhotoAction = async (action: 'add' | 'replace' | 'remove') => {
+    const index = photoActionIndex;
+    closePhotoAction();
+    if (index == null) return;
+    if (action === 'add') {
+      await handleAddPhoto();
+      return;
+    }
+    if (action === 'replace') {
+      await handleReplacePhoto(index);
+      return;
+    }
+    await handleRemovePhoto(index);
   };
 
   const handleSavePrefs = async () => {
@@ -753,24 +910,24 @@ export default function UserProfileScreen({ route }: Props) {
     if (imageUrls.length > 0) score += 20;
     if (profile?.bio?.trim()) score += 15;
     if (profile?.occupation?.trim()) score += 10;
-    const hasInterests = prefs?.interests && (Object.values(prefs.interests as Record<string, string[]>)).some((arr) => Array.isArray(arr) && arr.length > 0);
-    if (hasInterests) score += 20;
+    score += Math.round((Math.min(profileInterests.length, 5) / 5) * 20);
     const validPrompts = Array.isArray(profile?.prompts) ? profile.prompts.filter((p: any) => p?.question && p?.answer) : [];
     score += Math.round((Math.min(validPrompts.length, 3) / 3) * 20);
     if (prefs?.city || prefs?.state) score += 10;
     if (prefs?.min_budget || prefs?.max_budget) score += 5;
     return score;
-  }, [imageUrls, profile, prefs]);
+  }, [imageUrls, profile, prefs, profileInterests.length]);
 
   const completionHint = useMemo(() => {
     const validPrompts = Array.isArray(profile?.prompts) ? profile.prompts.filter((p: any) => p?.question && p?.answer) : [];
-    const hasInterests = prefs?.interests && Object.values(prefs.interests as Record<string, string[]>).some((arr) => Array.isArray(arr) && arr.length > 0);
+    const interestNeed = Math.max(0, 5 - profileInterests.length);
+    const missingInterestPts = 20 - Math.round((Math.min(profileInterests.length, 5) / 5) * 20);
     const missingPromptPts = 20 - Math.round((Math.min(validPrompts.length, 3) / 3) * 20);
     const need = 3 - Math.min(validPrompts.length, 3);
 
     const gaps: { pts: number; msg: string }[] = [];
     if (imageUrls.length === 0)          gaps.push({ pts: 20, msg: 'add a photo — no one can see you without one' });
-    if (!hasInterests)                    gaps.push({ pts: 20, msg: 'add your interests to find better matches' });
+    if (missingInterestPts > 0)          gaps.push({ pts: missingInterestPts, msg: `add ${interestNeed} more interest${interestNeed > 1 ? 's' : ''} to find better matches` });
     if (missingPromptPts > 0)            gaps.push({ pts: missingPromptPts, msg: `add ${need} more prompt${need > 1 ? 's' : ''} to boost your score` });
     if (!profile?.bio?.trim())           gaps.push({ pts: 15, msg: 'add a bio so future roommates can get to know you' });
     if (!prefs?.city && !prefs?.state)   gaps.push({ pts: 10, msg: 'add your city to appear in local searches' });
@@ -814,6 +971,7 @@ export default function UserProfileScreen({ route }: Props) {
     hasListing: listing != null,
     roomType: prefs?.room_type ?? null,
     listingRoomType: listing?.room_type ?? null,
+    listingRent: listing?.rent ?? null,
     minBudget: prefs?.min_budget ?? null,
     maxBudget: prefs?.max_budget ?? null,
     compatibilityScore: 0,
@@ -840,9 +998,25 @@ export default function UserProfileScreen({ route }: Props) {
         <View style={[styles.profileRoot, { paddingTop: insets.top }]}>
           {/* Header */}
           <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.headerNameRow} onPress={openEditName} activeOpacity={0.7}>
-              <Text style={styles.headerTitle}>{displayName || 'Your name'}</Text>
-              <Ionicons name="pencil" size={16} color="#6A8070" style={{ marginTop: 6 }} />
+            <TouchableOpacity style={styles.headerNameRow} onPress={openEditName} activeOpacity={0.7} disabled={nameEditing}>
+              {nameEditing ? (
+                <TextInput
+                  ref={nameInputRef}
+                  style={styles.headerTitleInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  onBlur={handleSaveName}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveName}
+                  maxLength={40}
+                />
+              ) : (
+                <>
+                  <Text style={styles.headerTitle}>{displayName || 'Your name'}</Text>
+                  <Ionicons name="pencil" size={16} color="#6A8070" style={{ marginTop: 6 }} />
+                </>
+              )}
             </TouchableOpacity>
             <Pressable
               onPress={() => setSettingsOpen(true)}
@@ -904,13 +1078,30 @@ export default function UserProfileScreen({ route }: Props) {
               {/* Profile strength */}
               <View style={styles.strengthSection}>
                 <View style={styles.strengthRow}>
-                  <Text style={styles.strengthLabel}>PROFILE STRENGTH</Text>
-                  <Text style={styles.strengthScore}>{completionPct}% complete</Text>
+                  <View style={styles.strengthTitleRow}>
+                    <View style={styles.strengthIconBadge}>
+                      <Ionicons name="sparkles-outline" size={15} color="#2D6A4F" />
+                    </View>
+                    <View>
+                      <Text style={styles.strengthLabel}>ROOMPEAR READY <Text style={styles.strengthScoreInline}>{completionPct}%</Text></Text>
+                      <Text style={styles.strengthSub}>More complete profiles get better matches.</Text>
+                    </View>
+                  </View>
                 </View>
                 <View style={styles.strengthBarTrack}>
                   <View style={[styles.strengthBarFill, { width: `${completionPct}%` as any }]} />
                 </View>
-                {completionHint ? <Text style={styles.strengthHint}>{completionHint}</Text> : null}
+                {completionHint ? (
+                  <View style={styles.strengthHintRow}>
+                    <Ionicons name="arrow-forward-circle-outline" size={14} color="#6A8070" />
+                    <Text style={styles.strengthHint}>{completionHint}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.strengthHintRow}>
+                    <Ionicons name="checkmark-circle-outline" size={14} color="#2D6A4F" />
+                    <Text style={styles.strengthHint}>your profile is ready to show off</Text>
+                  </View>
+                )}
               </View>
 
 
@@ -925,6 +1116,37 @@ export default function UserProfileScreen({ route }: Props) {
                 </TouchableOpacity>
               </View>
 
+              {/* Premium upsell card */}
+              {!showRoomPearPlus && (
+                <TouchableOpacity style={styles.premiumCard} onPress={() => void openUpgradeIfNeeded()} activeOpacity={0.88}>
+                  <View style={styles.premiumCardTop}>
+                    <View style={styles.premiumEyebrowRow}>
+                      <Ionicons name="star" size={11} color="#B07D1A" />
+                      <Text style={styles.premiumEyebrow}>ROOMPEAR+</Text>
+                    </View>
+                    <Text style={styles.premiumTitle}>Find your person faster</Text>
+                  </View>
+                  <View style={styles.premiumFeatures}>
+                    {[
+                      { icon: 'eye-outline',            label: 'See everyone who liked you' },
+                      { icon: 'infinite-outline',       label: 'Unlimited swipes daily' },
+                      { icon: 'star-outline',           label: '5 Top Picks per day' },
+                      { icon: 'flash-outline',          label: 'Priority in discover' },
+                    { icon: 'people-outline',          label: 'More roommates who actually fit what you\'re looking for' },
+                    ].map(({ icon, label }) => (
+                      <View key={label} style={styles.premiumFeatureRow}>
+                        <Ionicons name={icon as any} size={15} color="#8A6A1A" />
+                        <Text style={styles.premiumFeatureText}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.premiumCta}>
+                    <Text style={styles.premiumCtaText}>Upgrade</Text>
+                    <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              )}
+
               <Text style={styles.footerText}>v1.0</Text>
 
             </View>
@@ -933,59 +1155,139 @@ export default function UserProfileScreen({ route }: Props) {
       )}
 
       {/* Profile editor modal */}
-      <DraggableSheet visible={profileEditorSection !== null} onClose={() => setProfileEditorSection(null)} fullScreen>
+      <DraggableSheet
+        visible={profileEditorSection !== null}
+        onClose={() => setProfileEditorSection(null)}
+        fullScreen
+        presentationStyle="fullScreen"
+        topInset={insets.top + 12}
+      >
+        <LinearGradient
+          colors={['#F7E8DC', '#FAF0E8', '#FCF5EF', '#FEFAF7', '#FFFFFF']}
+          locations={[0, 0.25, 0.55, 0.80, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.editorGradientRoot}
+        >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.editorSheetInner, { paddingTop: insets.top }]}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+          style={styles.editorSheetInner}
         >
-            <View style={styles.editorHeaderRow}>
+            <View style={[styles.editorHeaderRow, profileEditorSection === 'photos' && styles.photoEditorHeaderRow]}>
+              {profileEditorSection === 'photos' ? (
+                <View style={{ width: 38 }} />
+              ) : null}
               <Text style={styles.editorTitle}>
-                {profileEditorSection === 'photos' ? 'Photos'
+                {profileEditorSection === 'photos' ? 'edit photos'
                   : profileEditorSection === 'basics' ? 'About Me'
                   : profileEditorSection === 'interests' ? 'Interests'
                   : profileEditorSection === 'dealbreakers' ? 'Dealbreakers'
                   : 'Prompts'}
               </Text>
-              <TouchableOpacity onPress={() => setProfileEditorSection(null)}>
-                <Ionicons name="close" size={24} color="#3A3A3A" />
-              </TouchableOpacity>
+              {profileEditorSection === 'photos' ? (
+                <TouchableOpacity
+                  onPress={() => setProfileEditorSection(null)}
+                  style={styles.editorClosePill}
+                  hitSlop={10}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="chevron-down" size={24} color="#111111" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity onPress={() => setProfileEditorSection(null)}>
+                  <Ionicons name="close" size={24} color="#3A3A3A" />
+                </TouchableOpacity>
+              )}
             </View>
-            <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorScrollContent} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <ScrollView
+              style={styles.editorScroll}
+              contentContainerStyle={[
+                styles.editorScrollContent,
+                profileEditorSection === 'photos' && { paddingBottom: 48 + Math.max(insets.bottom, 16) },
+              ]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              bounces={profileEditorSection !== 'photos'}
+              alwaysBounceVertical={profileEditorSection !== 'photos'}
+              overScrollMode={profileEditorSection === 'photos' ? 'never' : 'auto'}
+              scrollEnabled={profileEditorSection !== 'photos'}
+              {...(Platform.OS === 'ios' ? { automaticallyAdjustKeyboardInsets: true } : {})}
+            >
 
               {/* Photos */}
               {profileEditorSection === 'photos' && (
                 <>
-                  <Text style={styles.photoEditHeading}>your photos</Text>
-                  <Text style={styles.photoEditSub}>Your first photo is your main — tap any to edit or remove</Text>
+                  <Text style={styles.photoEditSectionLabel}>PHOTOS</Text>
+                  <Text style={styles.photoEditSub}>Tap to add or edit. Hold and drag to reorder.</Text>
                   {savingPhotos && <ActivityIndicator style={{ marginVertical: 12 }} color="#111111" />}
-                  <View style={styles.photoEditGrid}>
-                    {imageUrls.map((url, idx) => (
-                      <TouchableOpacity key={`photo-${idx}-${url}`} style={styles.photoEditThumb} onPress={() => handleRemovePhoto(idx)} disabled={savingPhotos} activeOpacity={0.85}>
-                        <Image source={{ uri: url }} style={styles.photoEditThumbImg} />
-                        <View style={styles.photoEditRemoveBtn}>
-                          <Ionicons name="close" size={12} color="#fff" />
-                        </View>
-                        {idx === 0 && (
-                          <View style={styles.photoEditMainBadge}>
-                            <Text style={styles.photoEditMainBadgeText}>Main</Text>
+                  <View
+                    ref={photoGridRef}
+                    style={styles.photoEditGrid}
+                    onLayout={measurePhotoGrid}
+                  >
+                    {Array.from({ length: MAX_PROFILE_PHOTOS }).map((_, idx) => {
+                      const url = imageUrls[idx];
+                      const hasPhoto = Boolean(url);
+                      const dragResponder = hasPhoto ? createPhotoDragResponder(idx) : null;
+                      const isDragging = draggingPhotoIndex === idx;
+                      const slotStyle = [
+                        styles.photoEditSlot,
+                        !hasPhoto && styles.photoEditSlotEmpty,
+                        isDragging && styles.photoEditSlotDragging,
+                      ];
+                      const slotContent = hasPhoto ? (
+                        <>
+                          <Image source={{ uri: url }} style={styles.photoEditThumbImg} />
+                          <View style={styles.photoEditRemoveBtn}>
+                            <Ionicons name="create-outline" size={13} color="#fff" />
                           </View>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                    {photoPaths.length < MAX_PROFILE_PHOTOS && (
-                      <TouchableOpacity style={styles.photoEditAddBtn} onPress={handleAddPhoto} disabled={savingPhotos} activeOpacity={0.8}>
-                        <Ionicons name="camera-outline" size={28} color="#6A8070" />
-                        <Text style={styles.photoEditAddText}>Add</Text>
-                      </TouchableOpacity>
-                    )}
+                          {idx === 0 && (
+                            <View style={styles.photoEditMainBadge}>
+                              <Text style={styles.photoEditMainBadgeText}>Main</Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={28} color="#111111" />
+                          <Text style={styles.photoEditAddText}>Add</Text>
+                        </>
+                      );
+
+                      return hasPhoto && dragResponder ? (
+                        <Animated.View
+                          key={`photo-slot-${idx}`}
+                          style={[
+                            slotStyle,
+                            isDragging && {
+                              zIndex: 20,
+                              elevation: 20,
+                              transform: [
+                                ...photoDragOffset.getTranslateTransform(),
+                                { scale: 1.03 },
+                              ],
+                            },
+                          ]}
+                          {...dragResponder.panHandlers}
+                        >
+                          {slotContent}
+                        </Animated.View>
+                      ) : (
+                        <TouchableOpacity
+                          key={`photo-slot-${idx}`}
+                          style={slotStyle}
+                          onPress={() => openPhotoAction(idx)}
+                          disabled={savingPhotos}
+                          activeOpacity={0.85}
+                        >
+                          {slotContent}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                  {imageUrls.length === 0 && (
-                    <TouchableOpacity style={styles.photoEditEmpty} onPress={handleAddPhoto} disabled={savingPhotos} activeOpacity={0.85}>
-                      <Ionicons name="camera-outline" size={44} color="#9AA89A" />
-                      <Text style={styles.photoEditEmptyTitle}>Add your first photo</Text>
-                      <Text style={styles.photoEditEmptyHint}>Up to {MAX_PROFILE_PHOTOS} photos — your first is shown as your main</Text>
-                    </TouchableOpacity>
-                  )}
                 </>
               )}
 
@@ -1144,22 +1446,122 @@ export default function UserProfileScreen({ route }: Props) {
 
             </ScrollView>
         </KeyboardAvoidingView>
+          {photoActionIndex !== null && profileEditorSection === 'photos' && (
+            <Pressable style={styles.photoActionOverlay} onPress={closePhotoAction}>
+              <Pressable
+                style={[styles.photoActionSheet, { paddingBottom: Math.max(insets.bottom, 16) + 14 }]}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <View style={styles.photoActionHandle} />
+                <View style={styles.photoActionHeader}>
+                  <View style={styles.photoActionIconBadge}>
+                    <Ionicons
+                      name={imageUrls[photoActionIndex] ? 'image-outline' : 'camera-outline'}
+                      size={22}
+                      color="#2D6A4F"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.photoActionTitle}>
+                      {imageUrls[photoActionIndex] ? 'Edit photo' : 'Add photo'}
+                    </Text>
+                    <Text style={styles.photoActionSub}>
+                      {photoActionIndex === 0 && imageUrls[photoActionIndex]
+                        ? 'This is your main profile photo'
+                        : 'Photos update automatically'}
+                    </Text>
+                  </View>
+                </View>
+
+                {imageUrls[photoActionIndex] ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.photoActionPrimary}
+                      onPress={() => void runPhotoAction('replace')}
+                      activeOpacity={0.86}
+                    >
+                      <Ionicons name="swap-horizontal-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.photoActionPrimaryText}>Replace photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.photoActionDanger}
+                      onPress={() => void runPhotoAction('remove')}
+                      activeOpacity={0.84}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#D4183D" />
+                      <Text style={styles.photoActionDangerText}>Remove photo</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.photoActionPrimary}
+                    onPress={() => void runPhotoAction('add')}
+                    activeOpacity={0.86}
+                  >
+                    <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.photoActionPrimaryText}>Choose photo</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={styles.photoActionCancel} onPress={closePhotoAction} activeOpacity={0.8}>
+                  <Text style={styles.photoActionCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </Pressable>
+            </Pressable>
+          )}
+        </LinearGradient>
       </DraggableSheet>
 
       {/* Consolidated edit modal */}
       <DraggableSheet visible={consolidatedEditOpen} onClose={() => setConsolidatedEditOpen(false)} fullScreen>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.editorSheetInner, { paddingTop: insets.top }]}
+          style={styles.editorSheetInner}
         >
-            <View style={{ backgroundColor: '#F8F8F8' }}>
-              <View style={styles.editorHeaderRow}>
-                <Text style={[styles.editorTitle, { flex: 1, textAlign: 'center' }]}>Who You Are</Text>
-                <TouchableOpacity onPress={() => setConsolidatedEditOpen(false)} style={{ position: 'absolute', right: 20 }}>
-                  <Ionicons name="close" size={24} color="#3A3A3A" />
+            <LinearGradient
+              colors={['#E5F5E4', '#F7FBF0', '#FFFFFF']}
+              locations={[0, 0.62, 1]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={[styles.ceHero, { paddingTop: insets.top + 16 }]}
+            >
+              <View style={styles.ceHeroTopRow}>
+                <View style={styles.ceHeroAvatar}>
+                  {imageUrls[0] ? (
+                    <Image source={{ uri: imageUrls[0] }} style={styles.ceHeroAvatarImg} />
+                  ) : (
+                    <Ionicons name="person-outline" size={28} color="#2D6A4F" />
+                  )}
+                </View>
+                <View style={styles.ceHeroCopy}>
+                  <Text style={styles.ceHeroEyebrow}>PROFILE DETAILS</Text>
+                  <Text style={styles.ceHeroTitle}>Who You Are</Text>
+                  <Text style={styles.ceHeroSub}>Make the first impression feel like you.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setConsolidatedEditOpen(false)}
+                  style={styles.ceHeroClose}
+                  hitSlop={10}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="close" size={22} color="#27382D" />
                 </TouchableOpacity>
               </View>
-            </View>
+              <View style={styles.ceHeroStatsRow}>
+                <View style={styles.ceHeroChip}>
+                  <Ionicons name="sparkles-outline" size={13} color="#2D6A4F" />
+                  <Text style={styles.ceHeroChipText}>{profileInterests.length} interests</Text>
+                </View>
+                <View style={styles.ceHeroChip}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={13} color="#2D6A4F" />
+                  <Text style={styles.ceHeroChipText}>{profilePromptsForOverview.length} prompts</Text>
+                </View>
+                <View style={styles.ceHeroChip}>
+                  <Ionicons name="checkmark-circle-outline" size={13} color="#2D6A4F" />
+                  <Text style={styles.ceHeroChipText}>{completionPct}% ready</Text>
+                </View>
+              </View>
+            </LinearGradient>
 
             {/* Tab bar */}
             <View style={[styles.ceTabBar, styles.ceTabBarContent, { justifyContent: 'center' }]}>
@@ -1391,21 +1793,9 @@ export default function UserProfileScreen({ route }: Props) {
         />
       )}
 
-      <EditNameModal
-        visible={editNameOpen}
-        savingProfile={savingProfile}
-        editName={editName}
-        setEditName={setEditName}
-        onClose={() => setEditNameOpen(false)}
-        onSave={handleSaveName}
-        styles={styles}
-        theme={theme}
-      />
-
       <ListingModal
         visible={listingOpen}
         listingExists={Boolean(listing)}
-        savingListing={savingListing}
         editListingPhotos={editListingPhotos}
         maxListingPhotos={MAX_LISTING_PHOTOS}
         editRent={editRent}
@@ -1414,7 +1804,6 @@ export default function UserProfileScreen({ route }: Props) {
         setEditRoomType={setEditRoomType}
         setEditListingPhotos={setEditListingPhotos}
         onClose={() => setListingOpen(false)}
-        onSave={handleSaveListing}
         onAddListingPhoto={handleAddListingPhoto}
         styles={styles}
         theme={theme}
@@ -1437,6 +1826,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10, paddingTop: 6 },
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   headerTitle: { fontFamily: fonts.extraBold, fontSize: 32, color: '#111111', letterSpacing: -0.5, flexShrink: 1 },
+  headerTitleInput: { fontFamily: fonts.extraBold, fontSize: 32, color: '#111111', letterSpacing: -0.5, flexShrink: 1, padding: 0, minWidth: 120 },
   gearBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
 
   profileScroll: { flex: 1 },
@@ -1445,7 +1835,7 @@ const styles = StyleSheet.create({
   // Photo circles
   photoCirclesRow: { flexDirection: 'row', justifyContent: 'center', gap: 32, paddingVertical: 16 },
   photoCircleWrap: { alignItems: 'center', gap: 6 },
-  photoCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#C8D8CA', borderWidth: 2.5, borderColor: '#111111' },
+  photoCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#C8D8CA', borderWidth: 2.5, borderColor: '#111111', shadowColor: '#2D6A4F', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 4 },
   photoCircleEmpty: { alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#C0D8C4', borderStyle: 'dashed' },
   photoCircleEditBadge: { position: 'absolute', bottom: 22, right: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   photoCircleLabel: { fontFamily: fonts.semiBold, fontSize: 12, color: '#6A8070' },
@@ -1456,13 +1846,17 @@ const styles = StyleSheet.create({
   pausedBannerText: { flex: 1, fontSize: 13, color: '#7A5C00', fontWeight: '500' },
 
   // Strength
-  strengthSection: { backgroundColor: 'rgba(255,255,255,0.90)', borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.07)', shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
-  strengthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  strengthLabel: { fontFamily: fonts.bold, fontSize: 11, color: '#888', letterSpacing: 0.7 },
-  strengthScore: { fontFamily: fonts.bold, fontSize: 13, color: '#111111' },
-  strengthBarTrack: { height: 7, backgroundColor: '#E5E5E5', borderRadius: 4, overflow: 'hidden' },
-  strengthBarFill: { height: '100%', backgroundColor: '#111111', borderRadius: 4 },
-  strengthHint: { fontFamily: fonts.regular, fontSize: 12, color: '#888', marginTop: 7 },
+  strengthSection: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 18, padding: 15, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(45,106,79,0.12)', shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
+  strengthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 },
+  strengthTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  strengthIconBadge: { width: 34, height: 34, borderRadius: 13, backgroundColor: 'rgba(45,106,79,0.09)', alignItems: 'center', justifyContent: 'center' },
+  strengthLabel: { fontFamily: fonts.bold, fontSize: 11, color: '#111111', letterSpacing: 0.7 },
+  strengthSub: { fontFamily: fonts.regular, fontSize: 12, color: '#6A8070', marginTop: 2 },
+  strengthScoreInline: { fontFamily: fonts.bold, fontSize: 11, color: '#888888' },
+  strengthBarTrack: { height: 6, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 3, overflow: 'hidden' },
+  strengthBarFill: { height: '100%', backgroundColor: '#111111', borderRadius: 3 },
+  strengthHintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  strengthHint: { flex: 1, fontFamily: fonts.regular, fontSize: 12, color: '#6A8070' },
 
 
   // Section blocks
@@ -1496,7 +1890,19 @@ const styles = StyleSheet.create({
   statLabel: { fontFamily: fonts.bold, fontSize: 10, color: '#8AA89A', letterSpacing: 0.6, marginTop: 2 },
 
   // Bottom action row
-  actionBtnRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
+  actionBtnRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+
+  // Premium upsell card
+  premiumCard: { backgroundColor: '#FBF6E8', borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(176,125,26,0.2)', shadowColor: '#B07D1A', shadowOpacity: 0.07, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
+  premiumCardTop: { marginBottom: 14 },
+  premiumEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5 },
+  premiumEyebrow: { fontFamily: fonts.bold, fontSize: 11, color: '#B07D1A', letterSpacing: 0.9 },
+  premiumTitle: { fontFamily: fonts.extraBold, fontSize: 19, color: '#111111', letterSpacing: -0.4 },
+  premiumFeatures: { gap: 9, marginBottom: 16 },
+  premiumFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  premiumFeatureText: { fontFamily: fonts.regular, fontSize: 14, color: '#3A3020' },
+  premiumCta: { backgroundColor: '#111111', borderRadius: 13, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  premiumCtaText: { fontFamily: fonts.bold, fontSize: 15, color: '#FFFFFF', letterSpacing: -0.1 },
   previewBtnSmall: { flex: 7, backgroundColor: '#111111', borderRadius: 16, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   previewBtnSmallText: { fontFamily: fonts.bold, fontSize: 15, color: '#FFFFFF', letterSpacing: -0.2 },
   editProfileBtn: { flex: 3, height: 52, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.88)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.1)' },
@@ -1508,6 +1914,18 @@ const styles = StyleSheet.create({
   ceTabActive: { backgroundColor: '#111111' },
   ceTabText: { fontFamily: fonts.semiBold, fontSize: 13, color: '#888' },
   ceTabTextActive: { color: '#FFFFFF' },
+  ceHero: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(45,106,79,0.10)' },
+  ceHeroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ceHeroAvatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: 'rgba(45,106,79,0.10)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(45,106,79,0.12)' },
+  ceHeroAvatarImg: { width: '100%', height: '100%' },
+  ceHeroCopy: { flex: 1 },
+  ceHeroEyebrow: { fontFamily: fonts.bold, fontSize: 10, color: '#6A8B70', letterSpacing: 1.1, marginBottom: 2 },
+  ceHeroTitle: { fontFamily: fonts.extraBold, fontSize: 26, color: '#111111', letterSpacing: -0.5 },
+  ceHeroSub: { fontFamily: fonts.regular, fontSize: 13, color: '#6F8574', marginTop: 2 },
+  ceHeroClose: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.72)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
+  ceHeroStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 13 },
+  ceHeroChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(45,106,79,0.13)' },
+  ceHeroChipText: { fontFamily: fonts.semiBold, fontSize: 12, color: '#2D6A4F' },
   sectionCardCount: { fontFamily: fonts.regular, fontSize: 12, color: '#9AAAA0' },
   // Legacy preview button (kept for style reference)
   previewBtn: { backgroundColor: '#111111', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 22, gap: 12 },
@@ -1546,26 +1964,43 @@ const styles = StyleSheet.create({
   interestDisplayChipText: { fontFamily: fonts.semiBold, fontSize: 12, color: '#2D6A4F' },
 
   // Editor modal
+  editorGradientRoot: { flex: 1 },
   editorSheetInner: { flex: 1 },
-  editorHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.07)', backgroundColor: '#F8F8F8' },
-  editorTitle: { fontFamily: fonts.bold, fontSize: 19, color: '#111111' },
+  editorHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
+  editorClosePill: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
+  editorTitle: { fontFamily: fonts.extraBold, fontSize: 20, color: '#111111', letterSpacing: -0.4 },
   editorScroll: { flex: 1 },
-  editorScrollContent: { padding: 20, paddingBottom: 40 },
+  editorScrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
 
   // Photo editing
+  photoEditorHeaderRow: { paddingTop: 18, paddingBottom: 14 },
   photoEditHeading: { fontFamily: fonts.extraBold, fontSize: 20, color: '#111111', letterSpacing: -0.4, marginBottom: 4 },
-  photoEditSub: { fontFamily: fonts.regular, fontSize: 13, color: '#8AA89A', marginBottom: 16 },
+  photoEditSectionLabel: { fontFamily: fonts.bold, fontSize: 11, color: '#111111', letterSpacing: 0.8, marginBottom: 6, marginTop: 22 },
+  photoEditSub: { fontFamily: fonts.regular, fontSize: 13, color: '#444444', marginBottom: 12, marginTop: -2 },
   photoEditGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  photoEditThumb: { position: 'relative', borderRadius: 14, overflow: 'hidden', width: '47.5%', aspectRatio: 3 / 4 },
-  photoEditThumbImg: { width: '100%', height: '100%', backgroundColor: '#C8D8CA' },
-  photoEditRemoveBtn: { position: 'absolute', top: 7, right: 7, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
-  photoEditMainBadge: { position: 'absolute', bottom: 7, left: 7, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 3 },
+  photoEditSlot: { position: 'relative', width: '31.3%', aspectRatio: 0.78, borderRadius: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#2D6A4F', shadowOpacity: 0.10, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8, elevation: 3 },
+  photoEditSlotDragging: { opacity: 0.95, shadowColor: '#2D6A4F', shadowOpacity: 0.24, shadowOffset: { width: 0, height: 8 }, shadowRadius: 16, elevation: 8 },
+  photoEditSlotEmpty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(180,120,90,0.30)', backgroundColor: 'rgba(255,255,255,0.72)', gap: 4 },
+  photoEditThumbImg: { width: '100%', height: '100%', backgroundColor: '#C8D8CA', borderRadius: 14 },
+  photoEditRemoveBtn: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  photoEditMainBadge: { position: 'absolute', bottom: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   photoEditMainBadgeText: { fontFamily: fonts.bold, fontSize: 10, color: '#fff', letterSpacing: 0.3 },
-  photoEditAddBtn: { width: '47.5%', aspectRatio: 3 / 4, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(106,128,112,0.4)', backgroundColor: 'rgba(255,255,255,0.6)', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  photoEditAddText: { fontFamily: fonts.semiBold, fontSize: 12, color: '#6A8070' },
-  photoEditEmpty: { width: '100%', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(0,0,0,0.12)', backgroundColor: '#F4F7F4', alignItems: 'center', justifyContent: 'center', paddingVertical: 40, paddingHorizontal: 24, marginTop: 8, gap: 8 },
-  photoEditEmptyTitle: { fontFamily: fonts.semiBold, fontSize: 16, color: '#111111' },
-  photoEditEmptyHint: { fontFamily: fonts.regular, fontSize: 13, color: '#8AA89A', textAlign: 'center', lineHeight: 18 },
+  photoEditAddText: { fontFamily: fonts.semiBold, fontSize: 12, color: '#111111' },
+
+  // Photo action sheet
+  photoActionOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.34)', paddingHorizontal: 12, zIndex: 20 },
+  photoActionSheet: { backgroundColor: '#F7FAF1', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.65)', shadowColor: '#000', shadowOpacity: 0.18, shadowOffset: { width: 0, height: -8 }, shadowRadius: 22, elevation: 22 },
+  photoActionHandle: { alignSelf: 'center', width: 42, height: 5, borderRadius: 999, backgroundColor: 'rgba(45,106,79,0.18)', marginBottom: 16 },
+  photoActionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  photoActionIconBadge: { width: 44, height: 44, borderRadius: 15, backgroundColor: 'rgba(45,106,79,0.10)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(45,106,79,0.12)' },
+  photoActionTitle: { fontFamily: fonts.extraBold, fontSize: 20, color: '#111111', letterSpacing: -0.4 },
+  photoActionSub: { fontFamily: fonts.regular, fontSize: 13, color: '#7A9080', marginTop: 2 },
+  photoActionPrimary: { minHeight: 56, borderRadius: 17, backgroundColor: '#111111', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginBottom: 10 },
+  photoActionPrimaryText: { fontFamily: fonts.bold, fontSize: 16, color: '#FFFFFF', letterSpacing: -0.1 },
+  photoActionDanger: { minHeight: 54, borderRadius: 17, backgroundColor: 'rgba(212,24,61,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(212,24,61,0.18)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginBottom: 10 },
+  photoActionDangerText: { fontFamily: fonts.bold, fontSize: 16, color: '#D4183D', letterSpacing: -0.1 },
+  photoActionCancel: { minHeight: 52, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.74)', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.07)' },
+  photoActionCancelText: { fontFamily: fonts.semiBold, fontSize: 15, color: '#5E6F62' },
 
   // Edit chips
   prefSectionSub: { fontSize: 13, color: '#888', marginBottom: 14 },
@@ -1611,7 +2046,7 @@ const styles = StyleSheet.create({
   accordionSaveBtnText: { fontFamily: fonts.bold, fontSize: 16, color: '#FFFFFF' },
   basicsLabel: { fontFamily: fonts.semiBold, fontSize: 13, color: '#888', marginTop: 16, marginBottom: 8 },
   basicsOptional: { fontSize: 12, fontWeight: '400', color: '#AAA' },
-  basicsTextInput: { backgroundColor: '#F7F7F7', borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111111', minHeight: 80, textAlignVertical: 'top' },
+  basicsTextInput: { backgroundColor: '#F7F7F7', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(45,106,79,0.12)', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111111', minHeight: 80, textAlignVertical: 'top', shadowColor: '#2D6A4F', shadowOpacity: 0.09, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8, elevation: 2 },
 
   // Stubs for modal children (SettingsModal / ListingModal / EditNameModal pass styles={styles})
   nameFieldLabel: { fontSize: 14, fontFamily: fonts.semiBold, color: '#111111', marginBottom: 8 },

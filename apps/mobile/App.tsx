@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   useFonts,
@@ -29,6 +29,7 @@ import { redeemPendingReferralIfAny } from './lib/referrals';
 import PearLoader from './components/PearLoader';
 import { PurchasesProvider, usePurchases } from './context/PurchasesContext';
 import { DiscoverDeckProvider, useDiscoverDeck } from './context/DiscoverDeckContext';
+import { getProfileImageUrl, getProfileImageUrls } from './lib/storage';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
 
@@ -154,21 +155,24 @@ function HomeShell({
   return (
     <PurchasesProvider userId={userId}>
       <DiscoverDeckProvider userId={userId}>
-        <HomeNavigatorWithWarmup onDevShowOnboarding={onDevShowOnboarding} />
+        <HomeNavigatorWithWarmup userId={userId} onDevShowOnboarding={onDevShowOnboarding} />
       </DiscoverDeckProvider>
     </PurchasesProvider>
   );
 }
 
 function HomeNavigatorWithWarmup({
+  userId,
   onDevShowOnboarding,
 }: {
+  userId: string;
   onDevShowOnboarding?: () => void;
 }) {
   const { isReady: purchasesReady } = usePurchases();
   const { deckInitialLoading } = useDiscoverDeck();
   const [minElapsed, setMinElapsed] = useState(false);
   const [maxElapsed, setMaxElapsed] = useState(false);
+  const [profileWarmupDone, setProfileWarmupDone] = useState(false);
 
   useEffect(() => {
     const minTimer = setTimeout(() => setMinElapsed(true), HOME_WARMUP_MIN_MS);
@@ -179,8 +183,19 @@ function HomeNavigatorWithWarmup({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setProfileWarmupDone(false);
+    warmProfileImages(userId).finally(() => {
+      if (!cancelled) setProfileWarmupDone(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   const showWarmup =
-    !maxElapsed && (!minElapsed || !purchasesReady || deckInitialLoading);
+    !maxElapsed && (!minElapsed || !purchasesReady || deckInitialLoading || !profileWarmupDone);
 
   return (
     <View style={styles.homeRoot}>
@@ -194,6 +209,36 @@ function HomeNavigatorWithWarmup({
       )}
     </View>
   );
+}
+
+async function warmProfileImages(userId: string): Promise<void> {
+  const [{ data: profile }, { data: listing }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('profile_photo_url')
+      .eq('id', userId)
+      .maybeSingle(),
+    supabase
+      .from('listings')
+      .select('listing_photos')
+      .eq('user_id', userId)
+      .maybeSingle(),
+  ]);
+
+  const [profileUrls, listingUrls] = await Promise.all([
+    getProfileImageUrls(profile?.profile_photo_url),
+    Promise.all(
+      (Array.isArray(listing?.listing_photos) ? listing.listing_photos : [])
+        .map((path: string) => getProfileImageUrl(path))
+    ),
+  ]);
+
+  const urls = [
+    ...(profileUrls ?? []),
+    ...listingUrls.filter((url): url is string => Boolean(url)),
+  ];
+
+  await Promise.all(urls.map((url) => Image.prefetch(url).catch(() => false)));
 }
 
 const styles = StyleSheet.create({

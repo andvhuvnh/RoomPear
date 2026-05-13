@@ -10,7 +10,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { MapPin, Flag, User, Buildings, Briefcase } from 'phosphor-react-native';
+import { MapPin, Flag, User, Buildings, Briefcase, CurrencyDollar } from 'phosphor-react-native';
 import { fonts, serifFonts } from '../lib/typography';
 import { INTEREST_CATEGORIES as CATEGORY_META } from '../screens/profile/userProfileConstants';
 import type { DiscoverProfile } from '../lib/discover';
@@ -82,6 +82,9 @@ export default function SwipeCard({
   const fallbackChips = activeCategories.length === 0 ? (profile.hobbies ?? []) : [];
   const hasInterests = activeCategories.length > 0 || fallbackChips.length > 0;
   const hasResponses = profile.prompts.length > 0 || !!profile.bio;
+  const listingRentText = profile.listingRent != null
+    ? `$${profile.listingRent.toLocaleString()}/mo`
+    : null;
 
   return (
     <View style={styles.card}>
@@ -182,6 +185,16 @@ export default function SwipeCard({
             <View style={styles.metaRow}>
               <Briefcase size={12} color="#A0A0B0" weight="fill" />
               <Text style={styles.metaText}>{profile.occupation}</Text>
+            </View>
+          )}
+
+          {profile.hasListing && (listingRentText || profile.listingRoomType) && (
+            <View style={styles.placeMetaRow}>
+              <CurrencyDollar size={13} color="#2D6A4F" weight="bold" />
+              <Text style={styles.placeMetaLabel}>Listing:</Text>
+              {listingRentText && <Text style={styles.placeMetaText}>{listingRentText}</Text>}
+              {listingRentText && profile.listingRoomType && <Text style={styles.placeMetaDot}>·</Text>}
+              {profile.listingRoomType && <Text style={styles.placeMetaText}>{profile.listingRoomType} room</Text>}
             </View>
           )}
 
@@ -451,6 +464,32 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     color: '#C8C8D0',
+  },
+  placeMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: 7,
+    backgroundColor: 'rgba(45,106,79,0.08)',
+    borderRadius: 50,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  placeMetaText: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: '#2D6A4F',
+  },
+  placeMetaLabel: {
+    fontFamily: fonts.extraBold,
+    fontSize: 13,
+    color: '#1F4F3A',
+  },
+  placeMetaDot: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: 'rgba(45,106,79,0.45)',
   },
   matchRow: {
     marginTop: 8,

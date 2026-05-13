@@ -12,6 +12,8 @@ type Props = {
   children: React.ReactNode;
   maxHeight?: string | number;
   fullScreen?: boolean;
+  presentationStyle?: 'fullScreen' | 'pageSheet' | 'formSheet' | 'overFullScreen';
+  topInset?: number;
 };
 
 export default function DraggableSheet({
@@ -20,12 +22,33 @@ export default function DraggableSheet({
   children,
   maxHeight = '90%',
   fullScreen = false,
+  presentationStyle = 'fullScreen',
+  topInset = 0,
 }: Props) {
   if (fullScreen) {
+    if (topInset > 0) {
+      return (
+        <Modal
+          visible={visible}
+          transparent
+          animationType="slide"
+          presentationStyle="overFullScreen"
+          allowSwipeDismissal={false}
+          onRequestClose={onClose}
+        >
+          <View style={[s.floatingStage, { paddingTop: topInset }]}>
+            <View style={s.floatingSurface}>{children}</View>
+          </View>
+        </Modal>
+      );
+    }
+
     return (
       <Modal
         visible={visible}
         animationType="slide"
+        presentationStyle={presentationStyle}
+        allowSwipeDismissal={false}
         onRequestClose={onClose}
       >
         <View style={s.fullScreenSheet}>{children}</View>
@@ -73,6 +96,17 @@ const s = StyleSheet.create({
   },
   fullScreenSheet: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  floatingStage: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.16)',
+  },
+  floatingSurface: {
+    flex: 1,
+    overflow: 'hidden',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     backgroundColor: '#FFFFFF',
   },
 });
