@@ -225,9 +225,7 @@ export function PurchasesProvider({
         onClose={() => setRoomPearPaywallVisible(false)}
         onSelectPlan={handlePaywallSelectPlan}
         onTryNativePurchaseFlow={
-          Platform.OS === 'web'
-            ? undefined
-            : () => tryPresentRevenueCatNativePaywall()
+          Platform.OS === 'web' ? undefined : () => tryPresentRevenueCatNativePaywall()
         }
       />
     </PurchasesContext.Provider>

@@ -14,6 +14,7 @@ import {
   Platform,
   TextInput,
   Pressable,
+  InteractionManager,
 } from 'react-native';
 import DraggableSheet from '../components/DraggableSheet';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -905,13 +906,13 @@ export default function UserProfileScreen({ route }: Props) {
     await presentPaywall();
   }, [showRoomPearPlus, presentPaywall]);
 
-  /** Settings is a RN Modal; opening the paywall (another Modal) on top freezes iOS — close settings first (same pattern as blocked users). */
+  /** Close settings first — two RN Modals at once freezes iOS; then show the real page-sheet paywall. */
   const openUpgradeFromSettings = useCallback(() => {
     if (showRoomPearPlus) return;
     setSettingsOpen(false);
-    setTimeout(() => {
+    InteractionManager.runAfterInteractions(() => {
       void presentPaywall();
-    }, 320);
+    });
   }, [showRoomPearPlus, presentPaywall]);
 
   const openCustomerCenterFromSettings = useCallback(() => {
