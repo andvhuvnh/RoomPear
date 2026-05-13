@@ -905,6 +905,22 @@ export default function UserProfileScreen({ route }: Props) {
     await presentPaywall();
   }, [showRoomPearPlus, presentPaywall]);
 
+  /** Settings is a RN Modal; opening the paywall (another Modal) on top freezes iOS — close settings first (same pattern as blocked users). */
+  const openUpgradeFromSettings = useCallback(() => {
+    if (showRoomPearPlus) return;
+    setSettingsOpen(false);
+    setTimeout(() => {
+      void presentPaywall();
+    }, 320);
+  }, [showRoomPearPlus, presentPaywall]);
+
+  const openCustomerCenterFromSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setTimeout(() => {
+      void presentCustomerCenter();
+    }, 320);
+  }, [presentCustomerCenter]);
+
   const completionPct = useMemo(() => {
     let score = 0;
     if (imageUrls.length > 0) score += 20;
@@ -1769,8 +1785,8 @@ export default function UserProfileScreen({ route }: Props) {
         onCopyReferralCode={handleCopyReferralCode}
         onApplyReferralCode={handleApplyReferralCode}
         isPremium={showRoomPearPlus}
-        onUpgradeToPlus={() => { void openUpgradeIfNeeded(); }}
-        onManageSubscription={() => { void presentCustomerCenter(); }}
+        onUpgradeToPlus={openUpgradeFromSettings}
+        onManageSubscription={openCustomerCenterFromSettings}
         onDeleteAccount={handleDeleteAccount}
         onOpenBlockedUsers={() => { setSettingsOpen(false); setTimeout(() => setBlockedUsersOpen(true), 280); }}
         onSignOut={handleSignOut}
