@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 24,
-    backgroundColor: 'transparent',
+    backgroundColor: '#F2F4F0',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 14,
   },
-  scroll: { flex: 1, backgroundColor: 'transparent' },
+  scroll: { flex: 1, backgroundColor: '#F2F4F0' },
   scrollContent: {
     paddingBottom: 120,
     gap: CARD_GAP,

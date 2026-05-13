@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  RefreshControl,
   Dimensions,
   TextInput,
 } from 'react-native';
@@ -85,7 +84,6 @@ export default function ChatsScreen({ navigation }: Props) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [messagesSearchQuery, setMessagesSearchQuery] = useState('');
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [reportPeer, setReportPeer] = useState<{ id: string; name: string } | null>(null);
@@ -102,14 +100,11 @@ export default function ChatsScreen({ navigation }: Props) {
   const lastUserIdRef = useRef<string | null>(null);
 
   const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user.id;
     if (!uid) {
       setMyUserId(null);
       setLoading(false);
-      setRefreshing(false);
       initialLoadDoneRef.current = false;
       lastUserIdRef.current = null;
       return;
@@ -138,7 +133,6 @@ export default function ChatsScreen({ navigation }: Props) {
     setConversations(convData ?? []);
     initialLoadDoneRef.current = true;
     setLoading(false);
-    setRefreshing(false);
   }, []);
 
   useFocusEffect(
@@ -188,6 +182,7 @@ export default function ChatsScreen({ navigation }: Props) {
   function renderMatchItem({ item }: { item: Match }) {
     return (
       <View style={styles.gridCard}>
+        <View style={styles.gridCardClip}>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() =>
@@ -208,7 +203,7 @@ export default function ChatsScreen({ navigation }: Props) {
               contentFit="cover"
               cachePolicy="memory-disk"
               recyclingKey={item.primaryPhotoCacheKey ?? item.photoUrls[0]}
-              transition={0}
+              transition={200}
             />
           ) : (
             <View style={[styles.gridPhoto, styles.gridPhotoPlaceholder]}>
@@ -229,6 +224,7 @@ export default function ChatsScreen({ navigation }: Props) {
           )}
           <Text style={styles.gridMatched}>Tap to message · {formatMatchDate(item.matchedAt)}</Text>
         </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -342,7 +338,7 @@ export default function ChatsScreen({ navigation }: Props) {
                   contentFit="cover"
                   cachePolicy="memory-disk"
                   recyclingKey={item.otherAvatarCacheKey ?? item.otherAvatarUrl}
-                  transition={0}
+                  transition={200}
                 />
               ) : (
                 <Text style={styles.convAvatarText}>
@@ -468,9 +464,6 @@ export default function ChatsScreen({ navigation }: Props) {
               numColumns={2}
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={styles.gridContent}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} />
-              }
               ListEmptyComponent={
                 <View style={styles.emptyCard}>
                   <Ionicons name="people-outline" size={44} color="#7A9080" style={{ marginBottom: 10 }} />
@@ -491,9 +484,6 @@ export default function ChatsScreen({ navigation }: Props) {
               conversations.length === 0 ? styles.gridContent : styles.msgListContent
             }
             keyboardShouldPersistTaps="handled"
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} />
-            }
             ListEmptyComponent={
               conversations.length === 0 ? (
                 <View style={styles.emptyCard}>
@@ -605,8 +595,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tabDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,0,0,0.08)',
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)',
     marginHorizontal: 20,
     marginBottom: 12,
   },
@@ -713,14 +703,17 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     borderRadius: 18,
     backgroundColor: C.surface,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  gridCardClip: {
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: C.surfaceBorder,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
   },
   gridPhoto: {
     width: CARD_WIDTH,

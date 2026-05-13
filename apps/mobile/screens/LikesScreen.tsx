@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  RefreshControl,
   Dimensions,
   Alert,
   Modal,
@@ -85,7 +84,6 @@ export default function LikesScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [likers, setLikers] = useState<Liker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [likedBackIds, setLikedBackIds] = useState<Set<string>>(new Set());
   const [dailyRevealSpentToday, setDailyRevealSpentToday] = useState(false);
@@ -121,8 +119,6 @@ export default function LikesScreen() {
   }, []);
 
   const load = useCallback(async (isRefresh = false, skipIfFresh = false) => {
-    if (isRefresh) setRefreshing(true);
-
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData.session?.user.id;
     if (!uid) {
@@ -132,7 +128,6 @@ export default function LikesScreen() {
       setRevealedIds(new Set());
       setLikedBackIds(new Set());
       setLoading(false);
-      setRefreshing(false);
       initialLoadDoneRef.current = false;
       lastUserIdRef.current = null;
       lastFetchedAtRef.current = 0;
@@ -173,7 +168,6 @@ export default function LikesScreen() {
       !isRefresh &&
       Date.now() - lastFetchedAtRef.current < FOCUS_STALE_MS
     ) {
-      setRefreshing(false);
       setLoading(false);
       return;
     }
@@ -189,7 +183,6 @@ export default function LikesScreen() {
     initialLoadDoneRef.current = true;
     lastFetchedAtRef.current = Date.now();
     setLoading(false);
-    setRefreshing(false);
   }, [isRoomPearPlus, customerInfo, refreshRevealQuota]);
 
   /** When RC / DB flips to paid while you stay on this tab, or likers list arrives after premium, unlock all. */
@@ -338,6 +331,7 @@ export default function LikesScreen() {
 
     return (
       <View style={styles.gridCard}>
+        <View style={styles.gridCardClip}>
         <TouchableOpacity
           activeOpacity={photoClear ? 0.85 : 1}
           onPress={() => {
@@ -359,7 +353,7 @@ export default function LikesScreen() {
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 recyclingKey={`${item.id}-${photoClear ? 'c' : 'b'}`}
-                transition={0}
+                transition={200}
                 blurRadius={photoClear ? 0 : 70}
               />
             ) : (
@@ -439,6 +433,7 @@ export default function LikesScreen() {
             </TouchableOpacity>
           )}
         </View>
+        </View>
       </View>
     );
   }
@@ -492,13 +487,6 @@ export default function LikesScreen() {
               numColumns={2}
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={sortedLikers.length === 0 ? styles.emptyList : styles.gridContent}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={() => load(true)}
-                  tintColor="#2D6A4F"
-                />
-              }
               ListEmptyComponent={
                 <View style={styles.emptyCard}>
                   <Ionicons name="heart-outline" size={44} color="#C84200" style={{ marginBottom: 10 }} />
@@ -653,14 +641,17 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     borderRadius: 18,
     backgroundColor: C.surface,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  gridCardClip: {
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(0,0,0,0.07)',
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 3,
   },
   photoWrap: {
     position: 'relative',
