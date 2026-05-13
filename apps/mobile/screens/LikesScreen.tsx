@@ -253,6 +253,10 @@ export default function LikesScreen() {
     }, [load])
   );
 
+  useEffect(() => {
+    void load(false, true);
+  }, [load]);
+
   const sortedLikers = useMemo(() => {
     const copy = [...likers];
     if (sortBy === 'name') return copy.sort((a, b) => a.name.localeCompare(b.name));

@@ -76,6 +76,7 @@ export default function MainTabNavigator({ onDevShowOnboarding }: Props) {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        lazy: false,
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: TAB_ACTIVE,
         tabBarInactiveTintColor: TAB_INACTIVE,

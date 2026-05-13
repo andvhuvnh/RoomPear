@@ -27,10 +27,13 @@ import OnboardingScreen from './screens/OnboardingScreen';
 import MainTabNavigator from './navigation/MainTabNavigator';
 import { redeemPendingReferralIfAny } from './lib/referrals';
 import PearLoader from './components/PearLoader';
-import { PurchasesProvider } from './context/PurchasesContext';
-import { DiscoverDeckProvider } from './context/DiscoverDeckContext';
+import { PurchasesProvider, usePurchases } from './context/PurchasesContext';
+import { DiscoverDeckProvider, useDiscoverDeck } from './context/DiscoverDeckContext';
 
 type AppState = 'loading' | 'auth' | 'onboarding' | 'home';
+
+const HOME_WARMUP_MIN_MS = 900;
+const HOME_WARMUP_MAX_MS = 5000;
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -131,20 +134,78 @@ export default function App() {
           <OnboardingScreen onComplete={handleOnboardingComplete} />
         )}
         {appState === 'home' && session?.user && (
-          <PurchasesProvider userId={session.user.id}>
-            <DiscoverDeckProvider userId={session.user.id}>
-              <NavigationContainer>
-                <MainTabNavigator onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined} />
-              </NavigationContainer>
-            </DiscoverDeckProvider>
-          </PurchasesProvider>
+          <HomeShell
+            userId={session.user.id}
+            onDevShowOnboarding={__DEV__ ? () => setAppState('onboarding') : undefined}
+          />
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
+function HomeShell({
+  userId,
+  onDevShowOnboarding,
+}: {
+  userId: string;
+  onDevShowOnboarding?: () => void;
+}) {
+  return (
+    <PurchasesProvider userId={userId}>
+      <DiscoverDeckProvider userId={userId}>
+        <HomeNavigatorWithWarmup onDevShowOnboarding={onDevShowOnboarding} />
+      </DiscoverDeckProvider>
+    </PurchasesProvider>
+  );
+}
+
+function HomeNavigatorWithWarmup({
+  onDevShowOnboarding,
+}: {
+  onDevShowOnboarding?: () => void;
+}) {
+  const { isReady: purchasesReady } = usePurchases();
+  const { deckInitialLoading } = useDiscoverDeck();
+  const [minElapsed, setMinElapsed] = useState(false);
+  const [maxElapsed, setMaxElapsed] = useState(false);
+
+  useEffect(() => {
+    const minTimer = setTimeout(() => setMinElapsed(true), HOME_WARMUP_MIN_MS);
+    const maxTimer = setTimeout(() => setMaxElapsed(true), HOME_WARMUP_MAX_MS);
+    return () => {
+      clearTimeout(minTimer);
+      clearTimeout(maxTimer);
+    };
+  }, []);
+
+  const showWarmup =
+    !maxElapsed && (!minElapsed || !purchasesReady || deckInitialLoading);
+
+  return (
+    <View style={styles.homeRoot}>
+      <NavigationContainer>
+        <MainTabNavigator onDevShowOnboarding={onDevShowOnboarding} />
+      </NavigationContainer>
+      {showWarmup && (
+        <View style={styles.homeWarmupOverlay}>
+          <PearLoader />
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  homeRoot: {
+    flex: 1,
+  },
+  homeWarmupOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F0F7F0',
+  },
   loadingRoot: {
     flex: 1,
     justifyContent: 'center',

@@ -343,9 +343,22 @@ export default function UserProfileScreen({ route }: Props) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      const u = session?.user;
+      setUser(u ? { id: u.id, email: u.email } : null);
+      if (u) {
+        loadProfile(u.id);
+        loadListing(u.id);
+      }
+    });
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
       const u = session?.user;
       setUser(u ? { id: u.id, email: u.email } : null);
       if (u) { loadProfile(u.id); loadListing(u.id); }
@@ -358,7 +371,10 @@ export default function UserProfileScreen({ route }: Props) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [loadProfile, loadListing]);
 
   useFocusEffect(

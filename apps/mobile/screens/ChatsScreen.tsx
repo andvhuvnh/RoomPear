@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -145,6 +145,10 @@ export default function ChatsScreen({ navigation }: Props) {
       load();
     }, [load])
   );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const sortedMatches = [...matches].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name);
